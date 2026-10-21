@@ -1,0 +1,210 @@
+import { Order } from '../types/order';
+
+export const initialMockOrders: Order[] = [
+  {
+    id: 'PT-2026-1001',
+    createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(), // 15 mins ago
+    userId: 'USR-DEMO-001',
+    customer: {
+      fullname: 'Nguyễn Minh Anh',
+      phone: '0900000001',
+      email: 'demo@pizzatime.local',
+    },
+    fulfillmentType: 'DELIVERY',
+    address: 'Số 45 Lê Lợi, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+    items: [
+      {
+        productId: 'PZ001',
+        productName: 'Margherita Pizza',
+        variantName: 'Vừa (25cm)',
+        addonNames: ['Thêm phô mai tươi'],
+        quantity: 1,
+        unitPrice: 184000,
+        lineTotal: 184000,
+        image: 'https://images.unsplash.com/photo-1604382355076-af4b0eb60143?auto=format&fit=crop&w=400&q=80',
+      },
+      {
+        productId: 'PZ002',
+        productName: 'Pepperoni Pizza',
+        variantName: 'Nhỏ (20cm)',
+        addonNames: [],
+        quantity: 1,
+        unitPrice: 159000,
+        lineTotal: 159000,
+        image: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?auto=format&fit=crop&w=400&q=80',
+      },
+    ],
+    status: 'PENDING_CONFIRMATION',
+    paymentMethod: 'COD',
+    paymentStatus: 'UNPAID',
+    subtotal: 343000,
+    discount: 50000,
+    deliveryFee: 0,
+    tax: 29300,
+    total: 322300,
+    statusHistory: [
+      {
+        status: 'PENDING_CONFIRMATION',
+        at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+        note: 'Đơn hàng mới được tạo trên hệ thống',
+      },
+    ],
+  },
+  {
+    id: 'PT-2026-1002',
+    createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+    userId: 'USR-DEMO-001',
+    customer: {
+      fullname: 'Nguyễn Minh Anh',
+      phone: '0900000001',
+      email: 'demo@pizzatime.local',
+    },
+    fulfillmentType: 'PICKUP',
+    address: 'Nhận tại: 123 Đặng Dung, Q1',
+    items: [
+      {
+        productId: 'PA001',
+        productName: 'Spaghetti Carbonara',
+        addonNames: ['Thêm thịt xông khói giòn'],
+        quantity: 1,
+        unitPrice: 164000,
+        lineTotal: 164000,
+        image: 'https://images.unsplash.com/photo-1612874742237-6526221588e3?auto=format&fit=crop&w=400&q=80',
+      },
+    ],
+    status: 'PREPARING',
+    paymentMethod: 'MOCK_WALLET',
+    paymentStatus: 'PAID_DEMO',
+    subtotal: 164000,
+    discount: 0,
+    deliveryFee: 0,
+    tax: 16400,
+    total: 180400,
+    statusHistory: [
+      {
+        status: 'PENDING_CONFIRMATION',
+        at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+      },
+      {
+        status: 'CONFIRMED',
+        at: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
+        note: 'Bếp đã xác nhận đơn hàng',
+      },
+      {
+        status: 'PREPARING',
+        at: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
+        note: 'Đầu bếp đang nấu mì',
+      },
+    ],
+  },
+  {
+    id: 'PT-2026-1003',
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), // Yesterday
+    userId: 'USR-DEMO-001',
+    customer: {
+      fullname: 'Nguyễn Minh Anh',
+      phone: '0900000001',
+    },
+    fulfillmentType: 'DELIVERY',
+    address: 'Số 45 Lê Lợi, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+    items: [
+      {
+        productId: 'PZ004',
+        productName: 'Four Cheese Pizza',
+        variantName: 'Lớn (30cm)',
+        addonNames: ['Mật ong hoa rừng nguyên chất'],
+        quantity: 1,
+        unitPrice: 289000,
+        lineTotal: 289000,
+        image: 'https://images.unsplash.com/photo-1573821663912-569905455b1c?auto=format&fit=crop&w=400&q=80',
+      },
+      {
+        productId: 'DR002',
+        productName: 'Peach Iced Tea',
+        variantName: 'Ly lớn (700ml)',
+        addonNames: ['Thêm đào miếng giòn'],
+        quantity: 2,
+        unitPrice: 70000,
+        lineTotal: 140000,
+        image: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=400&q=80',
+      },
+    ],
+    status: 'COMPLETED',
+    paymentMethod: 'COD',
+    paymentStatus: 'PAID_DEMO',
+    subtotal: 429000,
+    discount: 30000,
+    deliveryFee: 0,
+    tax: 39900,
+    total: 438900,
+    statusHistory: [
+      {
+        status: 'PENDING_CONFIRMATION',
+        at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+      },
+      {
+        status: 'CONFIRMED',
+        at: new Date(Date.now() - 1000 * 60 * 60 * 23.8).toISOString(),
+      },
+      {
+        status: 'PREPARING',
+        at: new Date(Date.now() - 1000 * 60 * 60 * 23.5).toISOString(),
+      },
+      {
+        status: 'READY',
+        at: new Date(Date.now() - 1000 * 60 * 60 * 23.2).toISOString(),
+      },
+      {
+        status: 'OUT_FOR_DELIVERY',
+        at: new Date(Date.now() - 1000 * 60 * 60 * 23).toISOString(),
+      },
+      {
+        status: 'COMPLETED',
+        at: new Date(Date.now() - 1000 * 60 * 60 * 22.5).toISOString(),
+        note: 'Giao hàng thành công',
+      },
+    ],
+  },
+  {
+    id: 'PT-2026-1004',
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(), // 2 days ago
+    userId: 'USR-DEMO-001',
+    customer: {
+      fullname: 'Nguyễn Minh Anh',
+      phone: '0900000001',
+    },
+    fulfillmentType: 'PICKUP',
+    address: 'Nhận tại: 123 Đặng Dung, Q1',
+    items: [
+      {
+        productId: 'SU001',
+        productName: 'Salmon Maki',
+        variantName: 'Phần 6 miếng',
+        addonNames: [],
+        quantity: 1,
+        unitPrice: 129000,
+        lineTotal: 129000,
+        image: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fit=crop&w=400&q=80',
+      },
+    ],
+    status: 'CANCELLED',
+    paymentMethod: 'COD',
+    paymentStatus: 'UNPAID',
+    subtotal: 129000,
+    discount: 0,
+    deliveryFee: 0,
+    tax: 12900,
+    total: 141900,
+    statusHistory: [
+      {
+        status: 'PENDING_CONFIRMATION',
+        at: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
+      },
+      {
+        status: 'CANCELLED',
+        at: new Date(Date.now() - 1000 * 60 * 60 * 47.5).toISOString(),
+        note: 'Khách hàng hủy đơn hàng',
+      },
+    ],
+  },
+];

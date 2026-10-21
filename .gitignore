@@ -39,3 +39,11 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# IDE & Editors
+.idea/
+.vscode/
+
+# Temporary / demo captures
+emulator_current.png
+
