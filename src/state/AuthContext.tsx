@@ -11,7 +11,7 @@ interface AuthContextType {
   loginDemo: (email?: string) => Promise<void>;
   registerDemo: (name: string, email: string, phone: string) => Promise<void>;
   logout: () => Promise<void>;
-  updateProfile: (name: string, phone: string) => Promise<void>;
+  updateProfile: (name: string, phone: string, birthday?: string, gender?: string, email?: string) => Promise<void>;
 }
 
 const AUTH_STORAGE_KEY = '@pizza_time_auth_v1';
@@ -27,14 +27,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
         if (stored) {
-          setUser(JSON.parse(stored));
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.isLoggedOut) {
+            setUser(null);
+          } else {
+            setUser(parsed);
+          }
         } else {
-          // Pre-populate with default demo user for frictionless testing if preferred
+          // Start as demoUser or null if guest
           setUser(demoUser);
           await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(demoUser));
         }
       } catch {
-        // Fallback
+        setUser(null);
       } finally {
         setIsLoading(false);
       }
@@ -65,12 +70,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     setUser(null);
-    await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ isLoggedOut: true }));
   };
 
-  const updateProfile = async (name: string, phone: string) => {
+  const updateProfile = async (name: string, phone: string, birthday?: string, gender?: string, email?: string) => {
     if (!user) return;
-    const updated = { ...user, fullname: name, phone };
+    const updated = {
+      ...user,
+      fullname: name,
+      phone,
+      birthday: birthday !== undefined ? birthday : user.birthday,
+      gender: gender !== undefined ? gender : user.gender,
+      email: email !== undefined ? email : user.email,
+    };
     setUser(updated);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated));
   };
@@ -79,7 +91,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         user,
-        isAuthenticated: !!user,
+        isAuthenticated: !!user && !(user as any).isLoggedOut,
         isLoading,
         loginDemo,
         registerDemo,

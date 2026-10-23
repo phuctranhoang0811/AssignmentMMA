@@ -30,7 +30,7 @@ export default function ProductDetailScreen() {
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [quantity, setQuantity] = useState(1);
-  const [showAddedToast, setShowAddedToast] = useState(false);
+  // toast removed
 
   const { addItem } = useCart();
   const { isFavorite, toggleFavorite } = useFavorites();
@@ -92,10 +92,12 @@ export default function ProductDetailScreen() {
       quantity,
     });
 
-    setShowAddedToast(true);
-    setTimeout(() => {
-      setShowAddedToast(false);
-    }, 2800);
+    // Directly navigate back to previous screen (menu/home)
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/menu');
+    }
   };
 
   return (
@@ -200,26 +202,6 @@ export default function ProductDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Added Toast Feedback */}
-      {showAddedToast && (
-        <View style={styles.toast}>
-          <CheckCircle2 size={18} color={colors.white} />
-          <AppText variant="captionMedium" color={colors.white} style={styles.toastText}>
-            Đã thêm vào giỏ hàng
-          </AppText>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/cart')}>
-            <AppText
-              variant="captionMedium"
-              color={colors.white}
-              style={{ textDecorationLine: 'underline', marginLeft: spacing.sm }}
-            >
-              Xem giỏ
-            </AppText>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Sticky Bottom Action Bar */}
       <BottomActionBar
         title="Thêm vào giỏ"
         price={totalPrice}

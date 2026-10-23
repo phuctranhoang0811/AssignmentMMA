@@ -33,7 +33,15 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const stored = await AsyncStorage.getItem(CART_STORAGE_KEY);
         if (stored) {
-          setItems(JSON.parse(stored));
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            setItems(
+              parsed.map((item) => ({
+                ...item,
+                quantity: Number(item.quantity) || 1,
+              }))
+            );
+          }
         }
       } catch {
         // Fallback
@@ -50,6 +58,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [items, isLoaded]);
 
   const addItem = (item: Omit<CartItem, 'lineId'>) => {
+    const qty = Number(item.quantity) || 1;
     const lineId = generateCartLineKey(
       item.productId,
       item.variantId,
@@ -61,11 +70,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const existingIndex = prev.findIndex((i) => i.lineId === lineId);
       if (existingIndex > -1) {
         const updated = [...prev];
-        const newQty = Math.min(20, updated[existingIndex].quantity + item.quantity);
+        const currentQty = Number(updated[existingIndex].quantity) || 1;
+        const newQty = Math.min(20, currentQty + qty);
         updated[existingIndex] = { ...updated[existingIndex], quantity: newQty };
         return updated;
       }
-      return [...prev, { ...item, lineId }];
+      return [...prev, { ...item, quantity: qty, lineId }];
     });
   };
 
@@ -89,14 +99,15 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const itemCount = useMemo(() => {
-    return items.reduce((acc, i) => acc + i.quantity, 0);
+    return items.reduce((acc, i) => acc + (Number(i.quantity) || 1), 0);
   }, [items]);
 
   const subtotal = useMemo(() => {
     return items.reduce((acc, item) => {
       const product = productsMap[item.productId];
-      const unitPrice = getItemLineUnitPrice(item, product);
-      return acc + unitPrice * item.quantity;
+      const unitPrice = getItemLineUnitPrice(item, product) || 0;
+      const qty = Number(item.quantity) || 1;
+      return acc + unitPrice * qty;
     }, 0);
   }, [items]);
 

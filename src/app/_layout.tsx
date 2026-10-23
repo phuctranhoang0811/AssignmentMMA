@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+﻿import React, { useEffect } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -43,6 +43,7 @@ export default function RootLayout() {
       <Stack.Screen name="checkout/review" options={{ headerShown: false }} />
       <Stack.Screen name="order/success" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="order/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="welcome" options={{ headerShown: false }} />
       <Stack.Screen name="auth/login" options={{ headerShown: false }} />
       <Stack.Screen name="auth/register" options={{ headerShown: false }} />
       <Stack.Screen name="profile/edit" options={{ headerShown: false }} />

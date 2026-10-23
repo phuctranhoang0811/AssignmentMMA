@@ -4,6 +4,8 @@ export type DemoUser = {
   email: string;
   phone: string;
   avatar?: string;
+  birthday?: string;
+  gender?: string;
   isDemo?: boolean;
 };
 

@@ -7,47 +7,52 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Image,
+  TextInput,
+  Text,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Eye, EyeOff, Lock, Mail, Flame, Sparkles } from 'lucide-react-native';
-import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
-import { AppText } from '../../components/ui/AppText';
-import { AppInput } from '../../components/ui/AppInput';
-import { AppButton } from '../../components/ui/AppButton';
-import { ScreenHeader } from '../../components/ui/ScreenHeader';
+import { StatusBar } from 'expo-status-bar';
+import {
+  ArrowLeft,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  BadgePercent,
+  Star,
+  Smartphone,
+  Sparkles,
+} from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
-import { isValidEmail } from '../../utils/validators';
 
 export default function LoginScreen() {
   const { loginDemo } = useAuth();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleLogin = async () => {
-    const errs: Record<string, string> = {};
-    if (!isValidEmail(email)) {
-      errs.email = 'Vui lòng nhập email hợp lệ';
+    setErrorMessage('');
+    if (!identifier.trim()) {
+      setErrorMessage('Vui lòng nhập email hoặc số điện thoại của bạn');
+      return;
     }
     if (!password || password.length < 6) {
-      errs.password = 'Mật khẩu phải có ít nhất 6 ký tự';
-    }
-
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs);
+      setErrorMessage('Mật khẩu phải có ít nhất 6 ký tự');
       return;
     }
 
     setIsLoading(true);
     try {
-      await loginDemo(email);
+      await loginDemo(identifier.includes('@') ? identifier : 'demo@pizzatime.local');
       router.back();
     } catch (e: any) {
-      Alert.alert('Đăng nhập thất bại', e.message);
+      Alert.alert('Đăng nhập thất bại', e.message || 'Tài khoản hoặc mật khẩu không đúng');
     } finally {
       setIsLoading(false);
     }
@@ -64,148 +69,401 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScreenHeader title="Đăng nhập" showBack />
+    <View style={styles.container}>
+      <StatusBar style="light" />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+      {/* Background Graphic (Orange Header with Pizza Art -> White Bottom) */}
+      <Image
+        source={require('../../../assets/login-bg.png')}
+        style={styles.bgImage}
+        resizeMode="cover"
+      />
+
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        {/* Top Header Navigation */}
+        <View style={styles.topNav}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+            <Text style={styles.backText}>Quay lại</Text>
+          </TouchableOpacity>
+        </View>
+
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
         >
-          {/* Logo & Welcome */}
-          <View style={styles.brandHeader}>
-            <View style={styles.logoCircle}>
-              <Flame size={36} color={colors.primary} />
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+            bounces={false}
+          >
+            {/* Header Brand & Badges */}
+            <View style={styles.brandSection}>
+              {/* Seamless HD Mockup Logo */}
+              <View style={styles.logoWrapper}>
+                <Image
+                  source={require('../../../assets/mockup_logo_circle.png')}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
+              </View>
+
+              <Text style={styles.brandSubtitle}>Đăng nhập để mở khóa</Text>
+              <Text style={styles.brandTitle}>lợi ích tuyệt vời</Text>
+
+              {/* 3 Badges Row */}
+              <View style={styles.badgesContainer}>
+                {/* Badge 1 */}
+                <View style={styles.badgeItem}>
+                  <BadgePercent size={23} color="#FFFFFF" strokeWidth={1.8} />
+                  <View style={styles.badgeTextWrap}>
+                    <Text style={styles.badgeMainText}>Ưu đãi</Text>
+                    <Text style={styles.badgeSubText}>Nhiều khuyến mãi</Text>
+                  </View>
+                </View>
+
+                <View style={styles.badgeDivider} />
+
+                {/* Badge 2 */}
+                <View style={styles.badgeItem}>
+                  <Star size={22} color="#FFFFFF" strokeWidth={1.8} />
+                  <View style={styles.badgeTextWrap}>
+                    <Text style={styles.badgeMainText}>Rewards</Text>
+                    <Text style={styles.badgeSubText}>Tích điểm nhanh</Text>
+                  </View>
+                </View>
+
+                <View style={styles.badgeDivider} />
+
+                {/* Badge 3 */}
+                <View style={styles.badgeItem}>
+                  <Smartphone size={22} color="#FFFFFF" strokeWidth={1.8} />
+                  <View style={styles.badgeTextWrap}>
+                    <Text style={styles.badgeMainText}>Đặt món</Text>
+                    <Text style={styles.badgeSubText}>Dễ dàng, tiện lợi</Text>
+                  </View>
+                </View>
+              </View>
             </View>
-            <AppText variant="h1" align="center" style={styles.title}>
-              Chào mừng trở lại!
-            </AppText>
-            <AppText variant="body" color={colors.textSecondary} align="center">
-              Đăng nhập để xem lịch sử đơn hàng và địa chỉ đã lưu
-            </AppText>
-          </View>
 
-          {/* Form Fields */}
-          <View style={styles.form}>
-            <AppInput
-              label="Địa chỉ Email"
-              placeholder="nhapemail@domain.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={(t) => {
-                setEmail(t);
-                setErrors((prev) => ({ ...prev, email: '' }));
-              }}
-              error={errors.email}
-              leftIcon={<Mail size={18} color={colors.textSecondary} />}
-            />
+            {/* White Form Card */}
+            <View style={styles.card}>
+              {/* Email / SĐT Field */}
+              <Text style={styles.inputLabel}>Email / Số điện thoại</Text>
+              <View style={[styles.inputBox, errorMessage.includes('email') && styles.inputError]}>
+                <Mail size={18} color="#9CA3AF" strokeWidth={1.8} />
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Vui lòng nhập email hoặc số điện thoại của bạn"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  value={identifier}
+                  onChangeText={(val) => {
+                    setIdentifier(val);
+                    if (errorMessage) setErrorMessage('');
+                  }}
+                />
+              </View>
 
-            <AppInput
-              label="Mật khẩu"
-              placeholder="Nhập mật khẩu"
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={(t) => {
-                setPassword(t);
-                setErrors((prev) => ({ ...prev, password: '' }));
-              }}
-              error={errors.password}
-              leftIcon={<Lock size={18} color={colors.textSecondary} />}
-              rightIcon={
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              {/* Password Field */}
+              <Text style={[styles.inputLabel, { marginTop: 14 }]}>Mật khẩu</Text>
+              <View style={[styles.inputBox, errorMessage.includes('Mật khẩu') && styles.inputError]}>
+                <Lock size={18} color="#9CA3AF" strokeWidth={1.8} />
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Vui lòng nhập mật khẩu của bạn"
+                  placeholderTextColor="#9CA3AF"
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={(val) => {
+                    setPassword(val);
+                    if (errorMessage) setErrorMessage('');
+                  }}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={styles.eyeBtn}
+                >
                   {showPassword ? (
-                    <EyeOff size={18} color={colors.textSecondary} />
+                    <EyeOff size={18} color="#9CA3AF" strokeWidth={1.8} />
                   ) : (
-                    <Eye size={18} color={colors.textSecondary} />
+                    <Eye size={18} color="#9CA3AF" strokeWidth={1.8} />
                   )}
                 </TouchableOpacity>
-              }
-            />
+              </View>
 
-            <AppButton
-              title="Đăng nhập"
-              onPress={handleLogin}
-              isLoading={isLoading}
-              style={styles.submitBtn}
-            />
+              {/* Error Banner */}
+              {errorMessage ? (
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              ) : null}
 
-            {/* Quick Demo Login Option */}
-            <View style={styles.demoLoginBox}>
-              <AppButton
-                title="Đăng nhập nhanh với tài khoản Demo"
-                variant="secondary"
-                icon={<Sparkles size={16} color={colors.primary} />}
+              {/* Quên mật khẩu link */}
+              <TouchableOpacity
+                style={styles.forgotBtn}
+                onPress={() => Alert.alert('Quên mật khẩu', 'Tính năng gửi mã xác thực khôi phục mật khẩu sẽ được gửi đến SĐT/Email của bạn.')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.forgotText}>Quên mật khẩu</Text>
+              </TouchableOpacity>
+
+              {/* Submit Button */}
+              <TouchableOpacity
+                style={styles.submitBtn}
+                onPress={handleLogin}
+                disabled={isLoading}
+                activeOpacity={0.88}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.submitText}>Đăng Nhập</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Quick Demo Login Shortcut */}
+              <TouchableOpacity
+                style={styles.demoLoginBtn}
                 onPress={handleQuickDemoLogin}
-                isLoading={isLoading}
-              />
-              <AppText variant="caption" color={colors.textSecondary} align="center" style={{ marginTop: 6 }}>
-                demo@pizzatime.local • Nguyễn Minh Anh
-              </AppText>
-            </View>
-          </View>
+                activeOpacity={0.7}
+              >
+                <Sparkles size={14} color="#DE4525" />
+                <Text style={styles.demoLoginText}>Đăng nhập nhanh với tài khoản Demo</Text>
+              </TouchableOpacity>
 
-          {/* Footer Register Link */}
-          <View style={styles.footer}>
-            <AppText variant="body" color={colors.textSecondary}>
-              Chưa có tài khoản?{' '}
-            </AppText>
-            <TouchableOpacity onPress={() => router.push('/auth/register')}>
-              <AppText variant="bodyMedium" color={colors.primary}>
-                Đăng ký ngay
-              </AppText>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+              {/* Footer Register Navigation */}
+              <View style={styles.footerRow}>
+                <Text style={styles.footerNormalText}>Bạn chưa có tài khoản? </Text>
+                <TouchableOpacity
+                  onPress={() => router.push('/auth/register')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.footerLinkText}>Tạo tài khoản</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FAF9F8',
+  },
+  bgImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+  },
   safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+  },
+  topNav: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 2,
+    zIndex: 10,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  backText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+    marginLeft: 6,
   },
   scrollContent: {
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing['4xl'],
+    paddingBottom: 24,
   },
-  brandHeader: {
+  brandSection: {
     alignItems: 'center',
-    marginBottom: spacing.xl,
+    paddingHorizontal: 16,
+    paddingTop: 0,
+    paddingBottom: 14,
   },
-  logoCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: colors.primarySoft,
+  logoWrapper: {
+    width: 95,
+    height: 95,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.base,
+    marginBottom: 6,
   },
-  title: {
-    marginBottom: spacing.xs,
+  logoImage: {
+    width: '100%',
+    height: '100%',
   },
-  form: {
-    marginBottom: spacing.xl,
+  brandSubtitle: {
+    fontSize: 15.5,
+    color: '#FFFFFF',
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+  brandTitle: {
+    fontSize: 21,
+    color: '#FFFFFF',
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 2,
+    letterSpacing: 0.3,
+  },
+  badgesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 14,
+    paddingHorizontal: 2,
+  },
+  badgeItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  badgeTextWrap: {
+    marginLeft: 6,
+  },
+  badgeMainText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 15,
+  },
+  badgeSubText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 9.5,
+    fontWeight: '400',
+    marginTop: 1,
+    lineHeight: 12,
+  },
+  badgeDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    marginHorizontal: 14,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 22,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  inputLabel: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#1F1F1F',
+    marginBottom: 6,
+  },
+  inputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 48,
+    backgroundColor: '#FFFFFF',
+  },
+  inputError: {
+    borderColor: '#EF4444',
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 13.5,
+    color: '#1F1F1F',
+    marginLeft: 8,
+    height: '100%',
+  },
+  eyeBtn: {
+    padding: 6,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 12,
+    marginTop: 6,
+    marginLeft: 2,
+  },
+  forgotBtn: {
+    alignSelf: 'flex-end',
+    marginTop: 10,
+    marginBottom: 16,
+    paddingVertical: 2,
+  },
+  forgotText: {
+    color: '#DE4525',
+    fontSize: 13,
+    fontWeight: '600',
   },
   submitBtn: {
-    marginTop: spacing.sm,
-    marginBottom: spacing.lg,
+    backgroundColor: '#DE4525',
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#DE4525',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  demoLoginBox: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.lg,
+  submitText: {
+    color: '#FFFFFF',
+    fontSize: 15.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
-  footer: {
+  demoLoginBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingVertical: 6,
+  },
+  demoLoginText: {
+    color: '#DE4525',
+    fontSize: 12.5,
+    fontWeight: '500',
+    marginLeft: 6,
+  },
+  footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 14,
+  },
+  footerNormalText: {
+    color: '#6B7280',
+    fontSize: 13.5,
+  },
+  footerLinkText: {
+    color: '#DE4525',
+    fontSize: 13.5,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });
