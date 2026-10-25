@@ -9,7 +9,7 @@ import { AppText } from '../ui/AppText';
 interface OrderTimelineProps {
   status: OrderStatus;
   fulfillmentType: FulfillmentType;
-  history?: Array<{ status: OrderStatus; at: string; note?: string }>;
+  history?: { status: OrderStatus; at: string; note?: string }[];
 }
 
 type StepDefinition = {

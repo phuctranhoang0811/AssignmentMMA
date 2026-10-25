@@ -10,9 +10,11 @@
     "expo": "^58.0.0",
     "expo-constants": "~58.0.13",
     "expo-font": "~58.0.10",
+    "expo-haptics": "~58.0.0",
     "expo-linking": "~58.0.14",
     "expo-router": "~58.0.26",
     "expo-status-bar": "~58.0.4",
+    "firebase": "^13.1.0",
     "lucide-react-native": "^1.58.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -35,6 +37,7 @@
     "android": "expo start --android --go",
     "ios": "expo start --ios --go",
     "web": "expo start --web",
+    "seed:firebase": "npx tsx scripts/seed-firebase-products.ts",
     "lint": "expo lint"
   },
   "private": true

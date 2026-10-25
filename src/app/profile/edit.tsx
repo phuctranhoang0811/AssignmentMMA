@@ -39,7 +39,7 @@ export default function EditProfileScreen() {
           Alert.alert('Thành công', 'Cập nhật hồ sơ thành công!');
         }
         setIsEditing(false);
-      } catch (err) {
+      } catch {
         Alert.alert('Lỗi', 'Không thể lưu thay đổi. Vui lòng thử lại.');
       }
     } else {

@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  Alert,
   Platform,
   Modal,
   TextInput,
@@ -24,6 +23,8 @@ import {
 } from 'lucide-react-native';
 import Svg, { Path, Polygon } from 'react-native-svg';
 import { useCart } from '../../state/CartContext';
+import { useToast } from '../../state/ToastContext';
+import { triggerHaptic } from '../../utils/haptics';
 import { mockProducts } from '../../data/mockProducts';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { getItemLineUnitPrice } from '../../utils/calculateTotals';
@@ -124,7 +125,8 @@ const EmptyTicketIcon = () => (
 
 export default function CartScreen() {
   const router = useRouter();
-  const { items, removeItem, addItem, updateQuantity, clearCart } = useCart();
+  const { items, removeItem, addItem } = useCart();
+  const { showToast } = useToast();
 
   // Cutlery state & modal (Image 2)
   const [needCutlery, setNeedCutlery] = useState(false);
@@ -170,9 +172,12 @@ export default function CartScreen() {
   const handleAddRecommendation = (rec: (typeof RECOMMENDATIONS)[0]) => {
     addItem({
       productId: rec.id,
+      addonIds: [],
       quantity: 1,
       addonIds: [],
     });
+    triggerHaptic('success');
+    showToast({ message: `Đã thêm ${rec.name} vào giỏ hàng`, type: 'success' });
   };
 
   // Open Cutlery Modal
@@ -195,10 +200,11 @@ export default function CartScreen() {
     const voucher = VALID_VOUCHERS[code];
     if (voucher) {
       if (subtotal < voucher.minSubtotal) {
-        Alert.alert(
-          'Chưa đủ điều kiện',
-          `Đơn hàng cần tối thiểu ${formatCurrency(voucher.minSubtotal)} để áp dụng mã này.`
-        );
+        triggerHaptic('warning');
+        showToast({
+          message: `Đơn hàng cần tối thiểu ${formatCurrency(voucher.minSubtotal)} để áp dụng mã`,
+          type: 'info',
+        });
         return;
       }
       setSelectedVoucher({
@@ -207,9 +213,11 @@ export default function CartScreen() {
         discountAmount: voucher.discountAmount,
         isFreeShip: voucher.isFreeShip,
       });
-      Alert.alert('Áp dụng thành công', `Đã áp dụng mã ${code}: ${voucher.title}`);
+      triggerHaptic('success');
+      showToast({ message: `Đã áp dụng mã ${code}: ${voucher.title}`, type: 'success' });
     } else {
-      Alert.alert('Mã không hợp lệ', 'Vui lòng kiểm tra lại mã giảm giá của bạn.');
+      triggerHaptic('error');
+      showToast({ message: 'Mã giảm giá không hợp lệ. Vui lòng kiểm tra lại!', type: 'error' });
     }
   };
 
@@ -339,7 +347,11 @@ export default function CartScreen() {
                         <Text style={styles.editActionText}>Sửa</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        onPress={() => removeItem(item.lineId)}
+                        onPress={() => {
+                          triggerHaptic('medium');
+                          removeItem(item.lineId);
+                          showToast({ message: 'Đã xóa món khỏi giỏ hàng', type: 'info' });
+                        }}
                         activeOpacity={0.7}
                         style={{ marginLeft: 16 }}
                       >

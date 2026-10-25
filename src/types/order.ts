@@ -70,11 +70,11 @@ export type Order = {
   deliveryFee: number;
   tax: number;
   total: number;
-  statusHistory: Array<{
+  statusHistory: {
     status: OrderStatus;
     at: string;
     note?: string;
-  }>;
+  }[];
 };
 
 export type OrderPricing = {

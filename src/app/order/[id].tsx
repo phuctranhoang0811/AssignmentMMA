@@ -24,7 +24,7 @@ import { Order } from '../../types/order';
 
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getOrderById, cancelOrder, advanceOrderStatus, refreshOrders } = useOrders();
+  const { getOrderById, cancelOrder, advanceOrderStatus } = useOrders();
   const { addItem } = useCart();
   const [order, setOrder] = useState<Order | undefined>(undefined);
   const [isAdvancing, setIsAdvancing] = useState(false);

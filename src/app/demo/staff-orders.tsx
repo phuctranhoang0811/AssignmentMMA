@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { View, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { ChefHat, Check, X, Truck, Package, Clock } from 'lucide-react-native';
+import { Check, X } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { spacing, radius } from '../../theme/spacing';
 import { AppText } from '../../components/ui/AppText';
@@ -11,7 +10,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { PriceText } from '../../components/ui/PriceText';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useOrders } from '../../state/OrderContext';
-import { Order, OrderStatus } from '../../types/order';
+import { Order } from '../../types/order';
 
 export default function StaffOrdersScreen() {
   const { orders, advanceOrderStatus, cancelOrder } = useOrders();

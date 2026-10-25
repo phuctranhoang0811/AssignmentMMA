@@ -1,6 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import {
-  View,
   Image,
   StyleSheet,
   Animated,
@@ -14,8 +13,17 @@ export default function SplashScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.96)).current;
 
+  const handleNavigateNext = useCallback(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      router.replace('/welcome');
+    });
+  }, [fadeAnim, router]);
+
   useEffect(() => {
-    // Hieu ung Fade & nhe nhang Scale in
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -30,23 +38,12 @@ export default function SplashScreen() {
       }),
     ]).start();
 
-    // Giu man hinh Splash 2.2 giay roi tu dong chuyen vao Home
     const timer = setTimeout(() => {
       handleNavigateNext();
     }, 2200);
 
     return () => clearTimeout(timer);
-  }, []);
-
-  const handleNavigateNext = () => {
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      router.replace('/welcome');
-    });
-  };
+  }, [fadeAnim, scaleAnim, handleNavigateNext]);
 
   return (
     <Pressable style={styles.container} onPress={handleNavigateNext}>

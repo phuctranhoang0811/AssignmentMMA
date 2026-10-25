@@ -10,7 +10,6 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../../state/AuthContext';
 
 const BRAND_RED = '#CF4226';
 
@@ -76,7 +75,6 @@ const REWARD_ITEMS: RewardItem[] = [
 ];
 
 export default function RewardsScreen() {
-  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'list' | 'my_gifts' | 'history'>('list');
   const [userPoints, setUserPoints] = useState(0);
 

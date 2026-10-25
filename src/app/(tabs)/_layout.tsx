@@ -1,9 +1,11 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 import { Tabs, useRouter, usePathname } from 'expo-router';
 import { Home, User, ShoppingCart } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCart } from '../../state/CartContext';
+import { triggerHaptic } from '../../utils/haptics';
 
 const BRAND_RED = '#CF4226';
 
@@ -32,9 +34,41 @@ export default function TabsLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const { itemCount } = useCart();
+  const insets = useSafeAreaInsets();
+  const cartScaleAnim = useRef(new Animated.Value(itemCount > 0 ? 1 : 0)).current;
+
+  const isAndroid = Platform.OS === 'android';
+  const bottomInset = insets.bottom;
+  const tabBottomPadding = Math.max(bottomInset, isAndroid ? 12 : 8);
+  const tabHeight = 60 + tabBottomPadding;
 
   const showFloatingCart = itemCount > 0 && !pathname.includes('cart');
   const isHome = pathname === '/' || pathname === '/(tabs)/home' || pathname === '/home' || pathname.endsWith('home');
+
+  useEffect(() => {
+    if (showFloatingCart) {
+      Animated.sequence([
+        Animated.spring(cartScaleAnim, {
+          toValue: 1.15,
+          friction: 4,
+          tension: 60,
+          useNativeDriver: true,
+        }),
+        Animated.spring(cartScaleAnim, {
+          toValue: 1,
+          friction: 4,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.timing(cartScaleAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [showFloatingCart, itemCount, cartScaleAnim]);
 
   return (
     <View style={styles.container}>
@@ -47,13 +81,19 @@ export default function TabsLayout() {
             backgroundColor: '#FFFFFF',
             borderTopColor: '#ECECEC',
             borderTopWidth: 1,
-            height: 60,
-            paddingBottom: 8,
-            paddingTop: 6,
+            height: tabHeight,
+            paddingBottom: tabBottomPadding,
+            paddingTop: 8,
+            elevation: 8,
+            shadowColor: '#000000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 4,
           },
           tabBarLabelStyle: {
             fontSize: 11,
-            fontWeight: '500',
+            fontWeight: '600',
+            marginTop: 2,
           },
         }}
       >
@@ -103,18 +143,31 @@ export default function TabsLayout() {
         />
       </Tabs>
 
-      {/* Floating Red Cart Button with Badge */}
+      {/* Floating Cart Button with Badge */}
       {showFloatingCart && (
-        <TouchableOpacity
-          style={[styles.floatingCartBtn, isHome && { bottom: 130 }]}
-          activeOpacity={0.88}
-          onPress={() => router.push('/(tabs)/cart')}
+        <Animated.View
+          style={[
+            styles.floatingCartWrap,
+            {
+              bottom: isHome ? tabHeight + 68 : tabHeight + 14,
+              transform: [{ scale: cartScaleAnim }],
+            },
+          ]}
         >
-          <ShoppingCart size={24} color="#FFFFFF" strokeWidth={2.2} />
-          <View style={styles.cartBadge}>
-            <Text style={styles.cartBadgeText}>{itemCount}</Text>
-          </View>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.floatingCartBtn}
+            activeOpacity={0.88}
+            onPress={() => {
+              triggerHaptic('light');
+              router.push('/(tabs)/cart');
+            }}
+          >
+            <ShoppingCart size={24} color="#FFFFFF" strokeWidth={2.2} />
+            <View style={styles.cartBadge}>
+              <Text style={styles.cartBadgeText}>{itemCount}</Text>
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
       )}
     </View>
   );
@@ -124,10 +177,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  floatingCartBtn: {
+  floatingCartWrap: {
     position: 'absolute',
-    bottom: 74,
     right: 18,
+    zIndex: 9999,
+  },
+  floatingCartBtn: {
     width: 58,
     height: 58,
     borderRadius: 29,
@@ -139,7 +194,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.38,
     shadowRadius: 10,
     elevation: 8,
-    zIndex: 9999,
   },
   cartBadge: {
     position: 'absolute',

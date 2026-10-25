@@ -1,4 +1,4 @@
-import { CheckoutDraft, FulfillmentType, PaymentMethod } from '../types/order';
+import { CheckoutDraft } from '../types/order';
 
 let currentDraft: CheckoutDraft = {
   fullname: 'Nguyễn Minh Anh',

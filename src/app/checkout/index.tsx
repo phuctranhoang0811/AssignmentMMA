@@ -30,6 +30,7 @@ import { useAuth } from '../../state/AuthContext';
 import { mockProducts } from '../../data/mockProducts';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { getItemLineUnitPrice } from '../../utils/calculateTotals';
+import { triggerHaptic } from '../../utils/haptics';
 
 const BRAND_RED = '#CF4226';
 
@@ -90,7 +91,7 @@ export default function CheckoutScreen() {
   // Address & Notes
   const [address, setAddress] = useState('29 Đường Lê Duẩn, Sai Gon, Ho Chi Minh, Vietnam');
   const [deliveryNote, setDeliveryNote] = useState('');
-  const [deliveryTime, setDeliveryTime] = useState('10:30');
+  const [deliveryTime] = useState('10:30');
 
   // Customer Information
   const [fullname, setFullname] = useState(user?.fullname || 'anh hùng');
@@ -210,6 +211,8 @@ export default function CheckoutScreen() {
       ':' +
       pad(now.getSeconds());
     setOrderDateString(dateFormatted);
+    triggerHaptic('success');
+    clearCart();
 
     // Switch to order confirmation screen
     setOrderConfirmed(true);
@@ -314,6 +317,8 @@ export default function CheckoutScreen() {
               const product = productsMap[item.productId];
               const unitPrice = getItemLineUnitPrice(item, product) || 0;
               const lineTotal = unitPrice * (Number(item.quantity) || 1);
+              const variant = product?.variants?.find((v) => v.id === item.variantId);
+              const variantName = variant?.name || 'Đế Truyền Thống';
               return (
                 <View key={item.lineId || idx} style={styles.orderItemRow}>
                   <View style={styles.orderItemMainLine}>
@@ -324,12 +329,7 @@ export default function CheckoutScreen() {
                     <Text style={styles.orderItemPrice}>{formatCurrency(lineTotal)}</Text>
                   </View>
                   <Text style={styles.orderItemOptions}>
-                    {(item as any).size === 'small' ? 'Nhỏ' : (item as any).size === 'medium' ? 'Vừa' : 'Lớn'},{' '}
-                    {(item as any).crust === 'thin'
-                      ? 'Đế Mỏng Giòn'
-                      : (item as any).crust === 'pan'
-                      ? 'Đế Giòn Xốp(Nhỏ)'
-                      : 'Đế Truyền Thống'}
+                    {variantName}
                   </Text>
                 </View>
               );

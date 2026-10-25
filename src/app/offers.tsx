@@ -1,22 +1,31 @@
 import React, { useState } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Tag, Copy, Check, Clock } from 'lucide-react-native';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
 import { AppText } from '../components/ui/AppText';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { mockCoupons } from '../data/mockPromotions';
-import { formatCurrency } from '../utils/formatCurrency';
 import { updateCheckoutDraft } from '../state/checkoutDraft';
+import { useToast } from '../state/ToastContext';
+import { triggerHaptic } from '../utils/haptics';
 
 export default function OffersScreen() {
+  const router = useRouter();
+  const { showToast } = useToast();
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const handleCopyCode = (code: string) => {
     updateCheckoutDraft({ promoCode: code });
     setCopiedCode(code);
-    Alert.alert('Đã lưu mã', `Mã ${code} đã được chọn để tự động áp dụng tại giỏ hàng và thanh toán!`);
+    triggerHaptic('success');
+    showToast({
+      message: `Mã ${code} đã được lưu cho đơn hàng tiếp theo`,
+      actionText: 'Xem giỏ',
+      onAction: () => router.push('/(tabs)/cart'),
+    });
     setTimeout(() => setCopiedCode(null), 3000);
   };
 

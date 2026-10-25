@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   FlatList,
@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Search, SlidersHorizontal, X } from 'lucide-react-native';
+import { Search, SlidersHorizontal } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { spacing, radius } from '../../theme/spacing';
 import { AppText } from '../../components/ui/AppText';
@@ -30,7 +30,7 @@ export default function MenuScreen() {
   const [onlyAvailable, setOnlyAvailable] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadMenu = async () => {
+  const loadMenu = useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await productService.list({
@@ -42,11 +42,11 @@ export default function MenuScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedCategory, sortOption, onlyAvailable]);
 
   useEffect(() => {
     loadMenu();
-  }, [selectedCategory, sortOption, onlyAvailable]);
+  }, [loadMenu]);
 
   const clearFilters = () => {
     setSelectedCategory('all');

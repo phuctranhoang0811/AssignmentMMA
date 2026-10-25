@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Svg, { Path, Circle, Rect, G } from 'react-native-svg';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import {
   LogIn,
   UserPlus,
@@ -22,13 +22,11 @@ import {
   Lock,
   LogOut,
   X,
-  Sparkles,
 } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 
 // Brand colors
 const PRIMARY_COLOR = '#CF4226';
-const PRIMARY_DARK = '#B8321B';
 
 // Custom Pizza Reward Slice Badge Icon (exact match to user mockup)
 const PizzaRewardIcon = ({ size = 22, color = '#1E2024' }: { size?: number; color?: string }) => (
