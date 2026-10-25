@@ -32,6 +32,7 @@ import { useCart } from '../../state/CartContext';
 import { useToast } from '../../state/ToastContext';
 import { triggerHaptic } from '../../utils/haptics';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
 
 const BRAND_RED = '#CF4226';
 
@@ -70,6 +71,13 @@ export default function HomeScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
   const [refreshing, setRefreshing] = useState(false);
+
+  // Store Location / Address Autocomplete Modal
+  const [showStoreLocationModal, setShowStoreLocationModal] = useState(false);
+  const [currentAddress, setCurrentAddress] = useState(
+    '29 Đường 48, Khu phố 6, Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
+  );
+  const [fulfillmentMode, setFulfillmentMode] = useState<'delivery' | 'takeaway'>('delivery');
 
   // Lunch Combo 3/4 Sheet State
   const [showLunchSheet, setShowLunchSheet] = useState(false);
@@ -261,15 +269,17 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.locationCard}
             activeOpacity={0.8}
-            onPress={() => router.push('/profile/addresses')}
+            onPress={() => setShowStoreLocationModal(true)}
           >
             <View style={styles.locationIconWrap}>
               <MapPin size={20} color={BRAND_RED} />
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.locationLabel}>Giao hàng tới</Text>
+              <Text style={styles.locationLabel}>
+                {fulfillmentMode === 'delivery' ? 'Giao hàng tới' : 'Mua mang về'}
+              </Text>
               <Text style={styles.locationDetail} numberOfLines={1}>
-                29 Đường Lê Duẩn, Quận 1, TP. Hồ Chí Minh
+                {currentAddress}
               </Text>
             </View>
             <ChevronRight size={20} color="#9CA3AF" />
@@ -505,6 +515,22 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal Tìm cửa hàng gần bạn nhất / Gợi ý địa chỉ tự động */}
+      <StoreLocationModal
+        visible={showStoreLocationModal}
+        onClose={() => setShowStoreLocationModal(false)}
+        currentAddress={currentAddress}
+        initialFulfillment={fulfillmentMode}
+        onConfirmAddress={(addr, mode) => {
+          setCurrentAddress(addr);
+          setFulfillmentMode(mode);
+          showToast({
+            message: mode === 'delivery' ? `Đã chọn giao tới: ${addr}` : 'Đã chọn mua mang về',
+            type: 'success',
+          });
+        }}
+      />
     </SafeAreaView>
   );
 }

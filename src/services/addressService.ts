@@ -1,0 +1,336 @@
+/**
+ * Address Autocomplete Service for Vietnam
+ * Combines free OpenStreetMap (Nominatim) search with a fast local Vietnam address catalog.
+ */
+
+export interface AddressSuggestion {
+  id: string;
+  title: string;
+  subtitle: string;
+  fullAddress: string;
+}
+
+// Danh mục đường phố, khu phố và quận huyện phổ biến
+const VIETNAM_POPULAR_STREETS = [
+  // TP. Thủ Đức & Khu vực Hiệp Bình, Tam Hà (Khớp với dữ liệu thực tế trong app mẫu)
+  {
+    street: 'Đường 48',
+    subArea: 'Khu phố 6',
+    ward: 'Hiệp Bình Chánh',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Hẻm 75',
+    subArea: 'Đường 48/29 Hẻm 75, Khu phố 6',
+    ward: 'Hiệp Bình Chánh',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường 29',
+    subArea: 'Khu phố 6',
+    ward: 'Tam Hà',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường số 48',
+    subArea: 'Khu dân cư Him Lam',
+    ward: 'Tân Hưng',
+    district: 'Quận 7',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường số 48',
+    subArea: 'Khu phố 4',
+    ward: 'Phường 3',
+    district: 'Quận 4',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Hiệp Bình',
+    subArea: 'Khu phố 7',
+    ward: 'Hiệp Bình Chánh',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Kha Vạn Cân',
+    subArea: 'Khu phố 3',
+    ward: 'Linh Chiểu',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Võ Văn Ngân',
+    subArea: 'Khu phố 1',
+    ward: 'Bình Thọ',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Phạm Văn Đồng',
+    subArea: 'Khu phố 5',
+    ward: 'Hiệp Bình Chánh',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường D1, Khu Công nghệ cao',
+    subArea: 'Lô E2a-7',
+    ward: 'Long Thạnh Mỹ',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  // Trung tâm TP. Hồ Chí Minh
+  {
+    street: 'Đường Lê Duẩn',
+    subArea: 'Bến Nghé',
+    ward: 'Bến Nghé',
+    district: 'Quận 1',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Nguyễn Huệ',
+    subArea: 'Bến Nghé',
+    ward: 'Bến Nghé',
+    district: 'Quận 1',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Đồng Khởi',
+    subArea: 'Bến Nghé',
+    ward: 'Bến Nghé',
+    district: 'Quận 1',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Nam Kỳ Khởi Nghĩa',
+    subArea: 'Bến Thành',
+    ward: 'Bến Thành',
+    district: 'Quận 1',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Nguyễn Thị Minh Khai',
+    subArea: 'Đa Kao',
+    ward: 'Đa Kao',
+    district: 'Quận 1',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Hai Bà Trưng',
+    subArea: 'Tân Định',
+    ward: 'Tân Định',
+    district: 'Quận 1',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Pasteur',
+    subArea: 'Võ Thị Sáu',
+    ward: 'Võ Thị Sáu',
+    district: 'Quận 3',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Cách Mạng Tháng 8',
+    subArea: 'Phường 11',
+    ward: 'Phường 11',
+    district: 'Quận 3',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Nguyễn Trãi',
+    subArea: 'Phường 7',
+    ward: 'Phường 7',
+    district: 'Quận 5',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Phan Xích Long',
+    subArea: 'Phường 2',
+    ward: 'Phường 2',
+    district: 'Quận Phú Nhuận',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Quang Trung',
+    subArea: 'Phường 10',
+    ward: 'Phường 10',
+    district: 'Quận Gò Vấp',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Sư Vạn Hạnh',
+    subArea: 'Phường 12',
+    ward: 'Phường 12',
+    district: 'Quận 10',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Cộng Hòa',
+    subArea: 'Phường 13',
+    ward: 'Phường 13',
+    district: 'Quận Tân Bình',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đường Hoàng Hoa Thám',
+    subArea: 'Phường 13',
+    ward: 'Phường 13',
+    district: 'Quận Tân Bình',
+    city: 'TP. Hồ Chí Minh',
+  },
+  // Hà Nội
+  {
+    street: 'Phố Duy Tân',
+    subArea: 'Tòa nhà FPT',
+    ward: 'Dịch Vọng Hậu',
+    district: 'Quận Cầu Giấy',
+    city: 'Hà Nội',
+  },
+  {
+    street: 'Đường Cầu Giấy',
+    subArea: 'Quan Hoa',
+    ward: 'Quan Hoa',
+    district: 'Quận Cầu Giấy',
+    city: 'Hà Nội',
+  },
+  {
+    street: 'Phố Tràng Tiền',
+    subArea: 'Tràng Tiền',
+    ward: 'Tràng Tiền',
+    district: 'Quận Hoàn Kiếm',
+    city: 'Hà Nội',
+  },
+  {
+    street: 'Đường Kim Mã',
+    subArea: 'Kim Mã',
+    ward: 'Kim Mã',
+    district: 'Quận Ba Đình',
+    city: 'Hà Nội',
+  },
+  {
+    street: 'Đường Giải Phóng',
+    subArea: 'Đồng Tâm',
+    ward: 'Đồng Tâm',
+    district: 'Quận Hai Bà Trưng',
+    city: 'Hà Nội',
+  },
+];
+
+// Hàm bỏ dấu tiếng Việt để tìm kiếm không phân biệt dấu
+function removeVietnameseTones(str: string): string {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase();
+}
+
+/**
+ * Tìm kiếm địa chỉ tự động theo thời gian thực
+ */
+export async function searchVietnamAddresses(query: string): Promise<AddressSuggestion[]> {
+  const cleanQuery = query.trim();
+  if (!cleanQuery) return [];
+
+  const normalizedQuery = removeVietnameseTones(cleanQuery);
+
+  // Tách số nhà nếu có ở đầu chuỗi (ví dụ: "29 Đường 48" -> số "29", phần còn lại "Đường 48")
+  const matchNumber = cleanQuery.match(/^(\d+[\w\/\-]*)\s*(.*)$/);
+  const houseNumber = matchNumber ? matchNumber[1] : '';
+  const streetPart = matchNumber ? matchNumber[2].trim() : cleanQuery;
+  const normalizedStreetPart = removeVietnameseTones(streetPart);
+
+  // 1. Tìm trong bộ dữ liệu cục bộ trước (Siêu nhanh 0ms, không phụ thuộc mạng)
+  const localMatches: AddressSuggestion[] = [];
+
+  for (let i = 0; i < VIETNAM_POPULAR_STREETS.length; i++) {
+    const item = VIETNAM_POPULAR_STREETS[i];
+    const fullStreetStr = `${item.street} ${item.subArea} ${item.ward} ${item.district} ${item.city}`;
+    const normFull = removeVietnameseTones(fullStreetStr);
+
+    const matchOverall = normFull.includes(normalizedQuery);
+    const matchStreet = normalizedStreetPart && normFull.includes(normalizedStreetPart);
+    const matchTokens = normalizedQuery
+      .split(/\s+/)
+      .filter(Boolean)
+      .every((token) => normFull.includes(token));
+
+    if (matchOverall || matchStreet || matchTokens) {
+      // Xác định tiêu đề hiển thị
+      const displayTitle = houseNumber
+        ? `${houseNumber} ${item.street}`
+        : item.street;
+
+      const displaySubtitle = houseNumber
+        ? `${houseNumber} ${item.street}, ${item.subArea}, ${item.ward}, ${item.district}, ${item.city}`
+        : `${item.street}, ${item.subArea}, ${item.ward}, ${item.district}, ${item.city}`;
+
+      localMatches.push({
+        id: `local-${i}`,
+        title: displayTitle,
+        subtitle: displaySubtitle,
+        fullAddress: displaySubtitle,
+      });
+    }
+  }
+
+  // 2. Thử gọi API OpenStreetMap (Nominatim) nếu máy có kết nối mạng
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1800);
+
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+      cleanQuery
+    )}&format=json&countrycodes=vn&addressdetails=1&limit=5`;
+
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'PizzaFPTApp/1.0 (contact@pizzafpt.vn)',
+        'Accept-Language': 'vi,en',
+      },
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const apiSuggestions: AddressSuggestion[] = data.map((item: any, idx: number) => {
+          const name = item.name || item.address?.road || cleanQuery;
+          return {
+            id: `osm-${item.place_id || idx}`,
+            title: name,
+            subtitle: item.display_name,
+            fullAddress: item.display_name,
+          };
+        });
+
+        // Kết hợp kết quả từ API và Local, loại bỏ trùng lặp
+        const combined = [...apiSuggestions, ...localMatches];
+        const unique = combined.filter(
+          (v, index, self) => index === self.findIndex((t) => t.title === v.title)
+        );
+        return unique.slice(0, 7);
+      }
+    }
+  } catch {
+    // Nếu offline hoặc lỗi kết nối, tự động trả về kết quả local
+  }
+
+  // Nếu local chưa có khớp chính xác, tạo gợi ý thông minh từ chính địa chỉ người dùng đang gõ
+  if (localMatches.length === 0 && cleanQuery.length >= 3) {
+    localMatches.push({
+      id: 'custom-input',
+      title: cleanQuery,
+      subtitle: `${cleanQuery}, TP. Hồ Chí Minh`,
+      fullAddress: `${cleanQuery}, TP. Hồ Chí Minh`,
+    });
+  }
+
+  return localMatches.slice(0, 6);
+}

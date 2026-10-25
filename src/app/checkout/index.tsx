@@ -23,6 +23,8 @@ import {
   Banknote,
   Smartphone,
   MapPin,
+  Map,
+  XCircle,
 } from 'lucide-react-native';
 import Svg, { Path, Polygon, Circle } from 'react-native-svg';
 import { useCart } from '../../state/CartContext';
@@ -31,6 +33,7 @@ import { mockProducts } from '../../data/mockProducts';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { getItemLineUnitPrice } from '../../utils/calculateTotals';
 import { triggerHaptic } from '../../utils/haptics';
+import { searchVietnamAddresses, AddressSuggestion } from '../../services/addressService';
 
 const BRAND_RED = '#CF4226';
 
@@ -132,6 +135,35 @@ export default function CheckoutScreen() {
   const [addressModalVisible, setAddressModalVisible] = useState(false);
   const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'takeaway'>('delivery');
   const [manualAddressInput, setManualAddressInput] = useState(address);
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [isSearchingAddress, setIsSearchingAddress] = useState(false);
+
+  // Debounced search for Vietnamese address autocomplete
+  useEffect(() => {
+    if (!addressModalVisible) {
+      setAddressSuggestions([]);
+      return;
+    }
+    const query = manualAddressInput.trim();
+    if (query.length < 2) {
+      setAddressSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsSearchingAddress(true);
+        const results = await searchVietnamAddresses(query);
+        setAddressSuggestions(results);
+      } catch {
+        setAddressSuggestions([]);
+      } finally {
+        setIsSearchingAddress(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [manualAddressInput, addressModalVisible]);
 
   // Terms Agreement
   const [agreeTerms, setAgreeTerms] = useState(true);
@@ -190,6 +222,26 @@ export default function CheckoutScreen() {
       setAddress(manualAddressInput.trim());
     }
     setAddressModalVisible(false);
+  };
+
+  const handleChooseFromMap = () => {
+    triggerHaptic('light');
+    Alert.alert(
+      'Chọn từ bản đồ',
+      'Đã định vị thành công vị trí hiện tại của bạn tại TP. Hồ Chí Minh.',
+      [
+        {
+          text: 'Xác nhận vị trí này',
+          onPress: () => {
+            setManualAddressInput(
+              '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
+            );
+            setAddressSuggestions([]);
+          },
+        },
+        { text: 'Đóng', style: 'cancel' },
+      ]
+    );
   };
 
   const handlePlaceOrder = () => {
@@ -699,24 +751,31 @@ export default function CheckoutScreen() {
           {/* Header */}
           <View style={styles.addressModalHeader}>
             <TouchableOpacity
-              style={styles.backButton}
+              style={styles.addressModalBackBtn}
               onPress={() => setAddressModalVisible(false)}
               activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <ChevronLeft size={26} color="#111827" />
+              <ChevronLeft size={28} color="#111827" strokeWidth={2.2} />
             </TouchableOpacity>
             <Text style={styles.addressModalTitle}>Tìm cửa hàng gần bạn nhất</Text>
-            <View style={styles.placeholder} />
+            <View style={{ width: 28 }} />
           </View>
 
-          <ScrollView style={styles.modalBodyScroll} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.modalBodyScroll}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Subtitle */}
+            <Text style={styles.addressModalSubtitle}>
+              Nhập địa chỉ của bạn để xem các ưu đãi, phiếu giảm giá và khuyến mại tại địa phương.
+            </Text>
+
             {/* Fulfillment Mode Radio */}
             <View style={styles.fulfillmentRadioGroup}>
               <TouchableOpacity
-                style={[
-                  styles.fulfillmentOption,
-                  fulfillmentType === 'delivery' && styles.fulfillmentOptionActive,
-                ]}
+                style={styles.fulfillmentRadioItem}
                 onPress={() => setFulfillmentType('delivery')}
                 activeOpacity={0.7}
               >
@@ -728,21 +787,11 @@ export default function CheckoutScreen() {
                 >
                   {fulfillmentType === 'delivery' && <View style={styles.radioDot} />}
                 </View>
-                <Text
-                  style={[
-                    styles.fulfillmentText,
-                    fulfillmentType === 'delivery' && styles.fulfillmentTextActive,
-                  ]}
-                >
-                  Giao hàng tới
-                </Text>
+                <Text style={styles.fulfillmentText}>Giao hàng tới</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[
-                  styles.fulfillmentOption,
-                  fulfillmentType === 'takeaway' && styles.fulfillmentOptionActive,
-                ]}
+                style={styles.fulfillmentRadioItem}
                 onPress={() => setFulfillmentType('takeaway')}
                 activeOpacity={0.7}
               >
@@ -754,80 +803,94 @@ export default function CheckoutScreen() {
                 >
                   {fulfillmentType === 'takeaway' && <View style={styles.radioDot} />}
                 </View>
-                <Text
-                  style={[
-                    styles.fulfillmentText,
-                    fulfillmentType === 'takeaway' && styles.fulfillmentTextActive,
-                  ]}
+                <Text style={styles.fulfillmentText}>Mua mang về</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Section: Vị trí của tôi */}
+            <Text style={styles.myLocationSectionTitle}>Vị trí của tôi</Text>
+
+            {/* Address Search Bar */}
+            <View style={styles.addressSearchBox}>
+              <View style={styles.crosshairBadge}>
+                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                  <Circle cx="12" cy="12" r="7" stroke="#FFFFFF" strokeWidth={2} />
+                  <Circle cx="12" cy="12" r="2.5" fill="#FFFFFF" />
+                  <Path
+                    d="M12 2 L12 5 M12 19 L12 22 M2 12 L5 12 M19 12 L22 12"
+                    stroke="#FFFFFF"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                  />
+                </Svg>
+              </View>
+
+              <TextInput
+                style={styles.addressSearchInput}
+                value={manualAddressInput}
+                onChangeText={setManualAddressInput}
+                placeholder="Nhập địa chỉ của bạn"
+                placeholderTextColor="#9CA3AF"
+                returnKeyType="search"
+                autoCorrect={false}
+              />
+
+              {manualAddressInput.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setManualAddressInput('');
+                    setAddressSuggestions([]);
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={styles.clearInputBtn}
                 >
-                  Mua mang về
-                </Text>
-              </TouchableOpacity>
+                  <XCircle size={20} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
             </View>
 
-            {/* Vị trí của tôi Card with Manual Input */}
-            <View style={styles.locationCard}>
-              <View style={styles.locationCardHeader}>
-                <View style={styles.crosshairWrap}>
-                  <CrosshairIcon />
-                </View>
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.locationCardTitle}>Vị trí của bạn (Nhập tay)</Text>
-                  <Text style={styles.locationCardSub}>
-                    Nhập địa chỉ nhận hàng chi tiết không cần bật GPS
-                  </Text>
-                </View>
+            {/* Autocomplete Suggestions Dropdown */}
+            {addressSuggestions.length > 0 && (
+              <View style={styles.suggestionsCard}>
+                {addressSuggestions.map((item, index) => (
+                  <TouchableOpacity
+                    key={item.id || index}
+                    style={[
+                      styles.suggestionRowItem,
+                      index === addressSuggestions.length - 1 && { borderBottomWidth: 0 },
+                    ]}
+                    activeOpacity={0.65}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setManualAddressInput(item.fullAddress);
+                      setAddressSuggestions([]);
+                    }}
+                  >
+                    <View style={styles.suggestionPinBox}>
+                      <MapPin size={22} color="#1E2024" strokeWidth={1.8} />
+                    </View>
+                    <View style={styles.suggestionTextCol}>
+                      <Text style={styles.suggestionTitleText} numberOfLines={1}>
+                        {item.title}
+                      </Text>
+                      <Text style={styles.suggestionSubText} numberOfLines={1}>
+                        {item.subtitle}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
               </View>
+            )}
 
-              <View style={styles.manualInputWrapper}>
-                <TextInput
-                  style={styles.manualAddressTextInput}
-                  value={manualAddressInput}
-                  onChangeText={setManualAddressInput}
-                  placeholder="Nhập số nhà, tên đường, phường/xã, quận/huyện..."
-                  placeholderTextColor="#9CA3AF"
-                  multiline
-                />
-              </View>
-
-              {/* Quick suggestions */}
-              <Text style={styles.suggestionTitle}>Địa chỉ gợi ý nhanh:</Text>
-              <TouchableOpacity
-                style={styles.suggestionItem}
-                onPress={() =>
-                  setManualAddressInput('29 Đường Lê Duẩn, Bến Nghé, Quận 1, TP. Hồ Chí Minh')
-                }
-              >
-                <MapPin size={16} color={BRAND_RED} />
-                <Text style={styles.suggestionItemText}>
-                  29 Đường Lê Duẩn, Bến Nghé, Quận 1, TP. Hồ Chí Minh
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.suggestionItem}
-                onPress={() =>
-                  setManualAddressInput('Tòa nhà FPT, Phố Duy Tân, Dịch Vọng Hậu, Cầu Giấy, Hà Nội')
-                }
-              >
-                <MapPin size={16} color={BRAND_RED} />
-                <Text style={styles.suggestionItemText}>
-                  Tòa nhà FPT, Phố Duy Tân, Cầu Giấy, Hà Nội
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.suggestionItem}
-                onPress={() =>
-                  setManualAddressInput('Lô E2a-7, Đường D1 Khu Công nghệ cao, P. Long Thạnh Mỹ, TP. Thủ Đức')
-                }
-              >
-                <MapPin size={16} color={BRAND_RED} />
-                <Text style={styles.suggestionItemText}>
-                  Khu Công nghệ cao, P. Long Thạnh Mỹ, TP. Thủ Đức
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* Action: Chọn từ bản đồ */}
+            <TouchableOpacity
+              style={styles.chooseFromMapBtn}
+              activeOpacity={0.7}
+              onPress={handleChooseFromMap}
+            >
+              <Map size={22} color={BRAND_RED} strokeWidth={2} />
+              <Text style={styles.chooseFromMapText}>Chọn từ bản đồ</Text>
+            </TouchableOpacity>
           </ScrollView>
 
           {/* Confirm Button */}
@@ -1508,119 +1571,153 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   addressModalHeader: {
-    height: 52,
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  addressModalBackBtn: {
+    padding: 2,
   },
   addressModalTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
     color: '#111827',
   },
   modalBodyScroll: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 16,
+  },
+  addressModalSubtitle: {
+    fontSize: 13.5,
+    color: '#4B5563',
+    lineHeight: 20,
+    marginTop: 14,
+    marginBottom: 16,
   },
   fulfillmentRadioGroup: {
     flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 16,
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  fulfillmentOption: {
-    flex: 1,
+  fulfillmentRadioItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 6,
+    marginRight: 28,
   },
-  fulfillmentOptionActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#9CA3AF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  radioCircleActive: {
+    borderColor: BRAND_RED,
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: BRAND_RED,
   },
   fulfillmentText: {
     fontSize: 14,
-    color: '#4B5563',
+    color: '#374151',
     fontWeight: '500',
-    marginLeft: 6,
   },
-  fulfillmentTextActive: {
-    color: BRAND_RED,
-    fontWeight: '700',
-  },
-  locationCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 16,
-  },
-  locationCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  crosshairWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FEE2E2',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationCardTitle: {
+  myLocationSectionTitle: {
     fontSize: 15,
     fontWeight: '700',
     color: '#111827',
+    marginBottom: 10,
   },
-  locationCardSub: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  manualInputWrapper: {
-    marginBottom: 16,
-  },
-  manualAddressTextInput: {
-    borderWidth: 1.5,
-    borderColor: BRAND_RED,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#111827',
-    minHeight: 68,
-    backgroundColor: '#FAFAFA',
-    textAlignVertical: 'top',
-  },
-  suggestionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  suggestionItem: {
+  addressSearchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    padding: 3,
+    marginBottom: 8,
   },
-  suggestionItemText: {
-    fontSize: 13,
-    color: '#374151',
-    marginLeft: 8,
+  crosshairBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 6,
+    backgroundColor: BRAND_RED,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addressSearchInput: {
     flex: 1,
+    fontSize: 14.5,
+    color: '#111827',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  clearInputBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  suggestionsCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  suggestionRowItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  suggestionPinBox: {
+    marginRight: 12,
+  },
+  suggestionTextCol: {
+    flex: 1,
+  },
+  suggestionTitleText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  suggestionSubText: {
+    fontSize: 12.5,
+    color: '#6B7280',
+  },
+  chooseFromMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    marginTop: 6,
+    marginBottom: 20,
+  },
+  chooseFromMapText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: BRAND_RED,
+    marginLeft: 8,
   },
   modalBottomBar: {
     padding: 16,
@@ -1679,25 +1776,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#F3F4F6',
-  },
-  radioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#9CA3AF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  radioCircleActive: {
-    borderColor: BRAND_RED,
-  },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: BRAND_RED,
   },
   pmIconWrap: {
     width: 32,
