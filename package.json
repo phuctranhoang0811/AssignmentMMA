@@ -7,6 +7,7 @@
     "@expo/metro-runtime": "~58.0.15",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@types/nodemailer": "^8.0.2",
     "expo": "^58.0.0",
     "expo-constants": "~58.0.13",
     "expo-font": "~58.0.10",
@@ -16,6 +17,7 @@
     "expo-status-bar": "~58.0.4",
     "firebase": "^13.1.0",
     "lucide-react-native": "^1.58.0",
+    "nodemailer": "^10.2.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.0",
@@ -38,6 +40,7 @@
     "ios": "expo start --ios --go",
     "web": "expo start --web",
     "seed:firebase": "npx tsx scripts/seed-firebase-products.ts",
+    "view:firebase": "npx tsx scripts/view-firebase-data.ts",
     "lint": "expo lint"
   },
   "private": true

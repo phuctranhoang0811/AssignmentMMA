@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import { ChevronLeft, ChevronDown, Check, Eye, EyeOff } from 'lucide-react-native';
 import Svg, { Path, Polygon, Circle, G } from 'react-native-svg';
 import { useAuth } from '../../state/AuthContext';
+import { generateOtpCode, sendOtpToEmail } from '../../services/otpService';
 
 const BRAND_RED = '#CF4226';
 
@@ -76,7 +77,9 @@ export default function RegisterScreen() {
   // OTP Modal State
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '']);
-  const [timerSeconds, setTimerSeconds] = useState(296);
+  const [timerSeconds, setTimerSeconds] = useState(300);
+  const [serverOtp, setServerOtp] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
 
   // Modals for Step 2 Date/Gender
   const [showGenderPicker, setShowGenderPicker] = useState(false);
@@ -115,14 +118,56 @@ export default function RegisterScreen() {
   };
 
   // Step 1: Send OTP to Email
-  const handleStep1Submit = () => {
-    if (!email || !email.includes('@')) {
+  const handleStep1Submit = async () => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !trimmedEmail.includes('@')) {
       Alert.alert('Thông báo', 'Vui lòng nhập email hợp lệ.');
       return;
     }
-    setTimerSeconds(296);
+
+    setIsSendingOtp(true);
+    const newOtp = generateOtpCode();
+    setServerOtp(newOtp);
+
+    const result = await sendOtpToEmail(trimmedEmail, newOtp);
+    setIsSendingOtp(false);
+
+    setTimerSeconds(300);
     setOtp(['', '', '', '']);
     setShowOtpModal(true);
+
+    if (result.success) {
+      Alert.alert(
+        'Đã gửi mã OTP',
+        `Mã xác nhận 4 số đã được gửi đến email:\n${trimmedEmail}\n\nVui lòng kiểm tra hộp thư đến (hoặc hòm thư Spam).`
+      );
+    } else {
+      Alert.alert(
+        'Thông báo xác thực',
+        `Không thể kết nối dịch vụ gửi email: ${result.error}\n(Mã xác thực tạm thời của bạn là: ${newOtp})`
+      );
+    }
+  };
+
+  // Resend OTP
+  const handleResendOtp = async () => {
+    if (isSendingOtp) return;
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) return;
+
+    setIsSendingOtp(true);
+    const newOtp = generateOtpCode();
+    setServerOtp(newOtp);
+
+    const result = await sendOtpToEmail(trimmedEmail, newOtp);
+    setIsSendingOtp(false);
+    setTimerSeconds(300);
+
+    if (result.success) {
+      Alert.alert('Đã gửi lại mã', `Mã OTP mới đã được gửi đến email:\n${trimmedEmail}`);
+    } else {
+      Alert.alert('Thông báo', `Không thể gửi email. Mã OTP dự phòng của bạn là: ${newOtp}`);
+    }
   };
 
   // OTP verification
@@ -149,9 +194,14 @@ export default function RegisterScreen() {
       Alert.alert('Thông báo', 'Vui lòng nhập đủ 4 số mã xác nhận.');
       return;
     }
-    // Success -> proceed to Step 2
-    setShowOtpModal(false);
-    setCurrentStep(2);
+
+    // Xác nhận mã hợp lệ (hoặc mã 1234 dự phòng cho test offline)
+    if (codeStr === serverOtp || codeStr === '1234') {
+      setShowOtpModal(false);
+      setCurrentStep(2);
+    } else {
+      Alert.alert('Sai mã xác nhận', 'Mã OTP không chính xác. Vui lòng kiểm tra lại email của bạn!');
+    }
   };
 
   // Step 2: Submit Personal Info
@@ -296,11 +346,14 @@ export default function RegisterScreen() {
               </View>
 
               <TouchableOpacity
-                style={styles.primaryBtn}
+                style={[styles.primaryBtn, isSendingOtp && { opacity: 0.7 }]}
                 activeOpacity={0.85}
+                disabled={isSendingOtp}
                 onPress={handleStep1Submit}
               >
-                <Text style={styles.primaryBtnText}>Xác nhận</Text>
+                <Text style={styles.primaryBtnText}>
+                  {isSendingOtp ? 'Đang gửi mã OTP...' : 'Xác nhận'}
+                </Text>
               </TouchableOpacity>
 
               <View style={styles.footerLinkRow}>
@@ -562,9 +615,21 @@ export default function RegisterScreen() {
               ))}
             </View>
 
-            <Text style={styles.resendText}>
-              Gửi lại mã sau {timerSeconds} giây
-            </Text>
+            {timerSeconds > 0 ? (
+              <Text style={styles.resendText}>
+                Gửi lại mã sau {timerSeconds} giây
+              </Text>
+            ) : (
+              <TouchableOpacity
+                onPress={handleResendOtp}
+                disabled={isSendingOtp}
+                style={{ paddingVertical: 4, alignItems: 'center' }}
+              >
+                <Text style={[styles.resendText, { color: BRAND_RED, fontWeight: '700' }]}>
+                  {isSendingOtp ? 'Đang gửi mã...' : 'Gửi lại mã xác nhận'}
+                </Text>
+              </TouchableOpacity>
+            )}
 
             {/* Action Buttons: Hủy & Xác nhận */}
             <View style={styles.otpButtonsRow}>
