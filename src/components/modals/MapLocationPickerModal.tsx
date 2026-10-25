@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, User } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { triggerHaptic } from '../../utils/haptics';
+import { getCoordinatesForAddress, getAddressFromCoordinates } from '../../services/addressService';
 
 // Sử dụng WebView cho mobile (iOS / Android)
 let WebViewComponent: any = null;
@@ -57,8 +58,8 @@ const MAP_HTML = `
     <div id="map"></div>
     <script>
       var map = L.map('map', {
-        center: [10.0452, 105.7469], // Vĩnh Long / Cần Thơ như ảnh mẫu
-        zoom: 11,
+        center: [10.8428, 106.7285], // Mặc định tại Đường 48, TP. Thủ Đức, TP.HCM
+        zoom: 15,
         zoomControl: false,
         attributionControl: false
       });
@@ -115,39 +116,44 @@ export function MapLocationPickerModal({
 
   const webViewRef = useRef<any>(null);
   const [selectedAddress, setSelectedAddress] = useState(
-    initialAddress || 'XX5X+7G Vĩnh Xuân, Vĩnh Long, Việt Nam'
+    initialAddress || '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
   );
+  const hasUserMovedMap = useRef(false);
 
   useEffect(() => {
     if (visible) {
-      if (initialAddress && initialAddress.trim()) {
-        setSelectedAddress(initialAddress.trim());
-      } else {
-        setSelectedAddress('XX5X+7G Vĩnh Xuân, Vĩnh Long, Việt Nam');
-      }
+      hasUserMovedMap.current = false;
+      const addr =
+        (initialAddress && initialAddress.trim()) ||
+        '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
+      setSelectedAddress(addr);
+
+      // Định vị ngay tọa độ của địa chỉ người dùng vừa nhập
+      const targetCoords = getCoordinatesForAddress(addr);
+      setTimeout(() => {
+        if (webViewRef.current) {
+          webViewRef.current.injectJavaScript(`
+            if (window.map) {
+              window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 16, { animate: false });
+            }
+            true;
+          `);
+        }
+      }, 400);
     }
   }, [visible, initialAddress]);
-
-  // Danh mục địa chỉ thông minh theo vị trí kéo thả
-  const getSimulatedAddress = (lat: number, lng: number): string => {
-    if (lat < 10.4 && lat > 9.8) {
-      return 'XX5X+7G Vĩnh Xuân, Vĩnh Long, Việt Nam';
-    }
-    if (lat >= 10.4 && lat <= 10.6) {
-      return 'Khu đô thị Mỹ Tho, Tiền Giang, Việt Nam';
-    }
-    if (lat >= 10.8) {
-      return '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
-    }
-    return '29 Đường Lê Duẩn, Bến Nghé, Quận 1, TP. Hồ Chí Minh';
-  };
 
   const handleMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'location_changed') {
+        if (!hasUserMovedMap.current) {
+          // Bỏ qua sự kiện đầu tiên để giữ nguyên địa chỉ người dùng đã nhập
+          hasUserMovedMap.current = true;
+          return;
+        }
         const { lat, lng } = data;
-        setSelectedAddress(getSimulatedAddress(lat, lng));
+        setSelectedAddress(getAddressFromCoordinates(lat, lng, initialAddress));
       }
     } catch {
       // Bỏ qua lỗi
@@ -156,16 +162,20 @@ export function MapLocationPickerModal({
 
   const handleCenterUserLocation = () => {
     triggerHaptic('light');
+    const addr =
+      (initialAddress && initialAddress.trim()) ||
+      '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
+    const targetCoords = getCoordinatesForAddress(addr);
     const script = `
       if (window.map) {
-        window.map.setView([10.0452, 105.7469], 13, { animate: true });
+        window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 16, { animate: true });
       }
       true;
     `;
     if (webViewRef.current) {
       webViewRef.current.injectJavaScript(script);
     }
-    setSelectedAddress('XX5X+7G Vĩnh Xuân, Vĩnh Long, Việt Nam');
+    setSelectedAddress(addr);
   };
 
   const handleConfirm = () => {

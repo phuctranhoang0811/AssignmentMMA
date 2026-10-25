@@ -366,3 +366,61 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
 
   return localMatches.slice(0, 6);
 }
+
+/**
+ * Lấy tọa độ tương ứng với địa chỉ (giữ đúng vị trí không bị nhảy tỉnh khác)
+ */
+export function getCoordinatesForAddress(address: string): { lat: number; lng: number } {
+  const norm = removeVietnameseTones(address || '');
+  if (norm.includes('48')) {
+    return { lat: 10.8428, lng: 106.7285 }; // Đường 48, P. Hiệp Bình Chánh, TP. Thủ Đức
+  }
+  if (norm.includes('29')) {
+    return { lat: 10.858, lng: 106.758 }; // Đường 29, Tam Hà, TP. Thủ Đức
+  }
+  if (norm.includes('le duan') || norm.includes('quan 1') || norm.includes('ben nghe')) {
+    return { lat: 10.7797, lng: 106.699 }; // Quận 1, TP.HCM
+  }
+  if (norm.includes('duy tan') || norm.includes('cau giay') || norm.includes('ha noi')) {
+    return { lat: 21.0313, lng: 105.7834 }; // Duy Tân, Cầu Giấy, Hà Nội
+  }
+  if (norm.includes('vinh long')) {
+    return { lat: 10.0452, lng: 105.7469 }; // Vĩnh Long
+  }
+  // Mặc định khu vực TP. Thủ Đức, TP. Hồ Chí Minh
+  return { lat: 10.8428, lng: 106.7285 };
+}
+
+/**
+ * Trả về địa chỉ tương ứng theo vị trí kéo thả trên bản đồ
+ */
+export function getAddressFromCoordinates(
+  lat: number,
+  lng: number,
+  fallbackAddress?: string
+): string {
+  // Khu vực Đường 48, Hiệp Bình Chánh, TP. Thủ Đức (10.83 - 10.86)
+  if (lat >= 10.83 && lat <= 10.86 && lng >= 106.71 && lng <= 106.75) {
+    if (lat > 10.844) {
+      return '29 Hẻm 75, Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
+    }
+    return '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
+  }
+  // Khu vực Tam Hà, TP. Thủ Đức (10.85 - 10.87)
+  if (lat >= 10.85 && lat <= 10.87 && lng >= 106.75 && lng <= 106.78) {
+    return '48 Đường 29, Khu phố 6, P. Tam Hà, TP. Thủ Đức, TP. Hồ Chí Minh';
+  }
+  // Khu vực Quận 1, TP.HCM
+  if (lat >= 10.76 && lat <= 10.8 && lng >= 106.68 && lng <= 106.71) {
+    return '29 Đường Lê Duẩn, P. Bến Nghé, Quận 1, TP. Hồ Chí Minh';
+  }
+  // Khu vực miền Tây (Vĩnh Long, Cần Thơ)
+  if (lat < 10.4 && lat > 9.8) {
+    return 'XX5X+7G Vĩnh Xuân, Vĩnh Long, Việt Nam';
+  }
+  // Giữ nguyên địa chỉ người dùng đang gõ nếu có
+  return (
+    fallbackAddress ||
+    '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
+  );
+}
