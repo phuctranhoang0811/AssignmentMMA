@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -11,9 +11,10 @@ import {
   TextInput,
   Text,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   ArrowLeft,
@@ -30,11 +31,31 @@ import { useAuth } from '../../state/AuthContext';
 
 export default function LoginScreen() {
   const { loginDemo } = useAuth();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  const handleBack = () => {
+    if (returnTo === 'profile') {
+      router.replace('/(tabs)/profile');
+    } else {
+      router.back();
+    }
+  };
+
+  useEffect(() => {
+    if (returnTo === 'profile') {
+      const onBackPress = () => {
+        router.replace('/(tabs)/profile');
+        return true;
+      };
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => sub.remove();
+    }
+  }, [returnTo]);
 
   const handleLogin = async () => {
     setErrorMessage('');
@@ -84,7 +105,7 @@ export default function LoginScreen() {
         <View style={styles.topNav}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={handleBack}
             activeOpacity={0.7}
           >
             <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />

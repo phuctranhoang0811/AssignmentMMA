@@ -5,6 +5,7 @@ import { Home, User, ShoppingCart } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCart } from '../../state/CartContext';
+import { useAuth } from '../../state/AuthContext';
 import { triggerHaptic } from '../../utils/haptics';
 
 const BRAND_RED = '#CF4226';
@@ -33,6 +34,7 @@ const RewardBadgeIcon = ({ size = 22, color = '#6B7280' }: { size?: number; colo
 export default function TabsLayout() {
   const router = useRouter();
   const pathname = usePathname();
+  const { isAuthenticated } = useAuth();
   const { itemCount } = useCart();
   const insets = useSafeAreaInsets();
   const cartScaleAnim = useRef(new Animated.Value(itemCount > 0 ? 1 : 0)).current;
@@ -116,6 +118,17 @@ export default function TabsLayout() {
           options={{
             title: 'FPT Reward',
             tabBarIcon: ({ color, size }) => <RewardBadgeIcon size={size} color={color} />,
+          }}
+          listeners={{
+            tabPress: (e) => {
+              if (!isAuthenticated) {
+                e.preventDefault();
+                router.push({
+                  pathname: '/auth/login',
+                  params: { returnTo: 'profile' },
+                });
+              }
+            },
           }}
         />
         <Tabs.Screen

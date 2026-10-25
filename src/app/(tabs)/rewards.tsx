@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { useAuth } from '../../state/AuthContext';
 
 const BRAND_RED = '#CF4226';
 
@@ -75,8 +77,20 @@ const REWARD_ITEMS: RewardItem[] = [
 ];
 
 export default function RewardsScreen() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<'list' | 'my_gifts' | 'history'>('list');
   const [userPoints, setUserPoints] = useState(0);
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.replace({ pathname: '/auth/login', params: { returnTo: 'profile' } });
+    }
+  }, [isLoading, isAuthenticated]);
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   const handleRedeem = (item: RewardItem) => {
     if (userPoints < item.points) {

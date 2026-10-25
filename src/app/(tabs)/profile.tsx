@@ -191,7 +191,7 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={styles.menuRow}
                 activeOpacity={0.7}
-                onPress={() => router.push('/offers')}
+                onPress={() => router.push('/(tabs)/rewards')}
               >
                 <View style={styles.menuIconCol}>
                   <PizzaRewardIcon size={22} color="#1E2024" />
@@ -305,7 +305,12 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={styles.menuRow}
                 activeOpacity={0.7}
-                onPress={() => router.push('/offers')}
+                onPress={() =>
+                  router.push({
+                    pathname: '/auth/login',
+                    params: { returnTo: 'profile' },
+                  })
+                }
               >
                 <View style={styles.menuIconCol}>
                   <PizzaRewardIcon size={22} color="#1E2024" />
