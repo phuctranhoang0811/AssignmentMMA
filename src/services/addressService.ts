@@ -51,6 +51,20 @@ const VIETNAM_POPULAR_STREETS = [
     city: 'TP. Hồ Chí Minh',
   },
   {
+    street: 'Trường THPT Đào Sơn Tây',
+    subArea: 'Đường Số 11, Khu phố 3',
+    ward: 'Linh Xuân',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Nhà Văn Hóa Sinh Viên ĐHQG',
+    subArea: 'Quảng Trường Sáng Tạo, Làng Đại Học',
+    ward: 'Linh Trung',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
     street: 'Chợ Bến Thành',
     subArea: 'Đường Lê Lợi',
     ward: 'Bến Thành',
@@ -336,7 +350,9 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
         item.street.startsWith('Giga') ||
         item.street.startsWith('Đại') ||
         item.street.startsWith('Tòa') ||
-        item.street.startsWith('Chợ');
+        item.street.startsWith('Chợ') ||
+        item.street.startsWith('Trường') ||
+        item.street.startsWith('Nhà');
 
       if (item.street === 'Đường 48') {
         shortTitle = houseNumber ? `${houseNumber} Đường 48` : '29 Đường 48';
@@ -387,9 +403,20 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
     if (gRes.ok) {
       const gData = await gRes.json();
       if (Array.isArray(gData) && Array.isArray(gData[1])) {
-        for (const s of gData[1].slice(0, 4)) {
+        // Biểu thức lọc bỏ các từ hỏi, từ thừa trong câu hỏi tìm kiếm trên Google
+        const NOISE_WORDS_REGEX =
+          /\b(ở\s+đâu|nằm\s+ở\s+đâu|la\s+o\s+dau|la\s+gi|co\s+gi|o\s+dau|nam\s+o\s+dau|dia\s+chi|địa\s+chỉ|ảnh|hình\s+ảnh|review|đánh\s+giá|học\s+phí|tuyển\s+sinh|điểm\s+chuẩn|lịch\s+chiếu|lịch\s+thi|phim|cinestar|facebook|sđt|số\s+điện\s+thoại|bao\s+nhiêu|khi\s+nào|như\s+thế\s+nào)\b/gi;
+
+        for (const s of gData[1]) {
           if (!s || s.length < 3) continue;
-          const capitalized = s
+
+          // Loại bỏ sạch sẽ các từ hỏi như "ở đâu", "nằm ở đâu"
+          let cleanItem = s.replace(NOISE_WORDS_REGEX, '').replace(/\s+/g, ' ').trim();
+          cleanItem = cleanItem.replace(/[-–,:\?]+$/, '').trim();
+
+          if (!cleanItem || cleanItem.length < 3) continue;
+
+          const capitalized = cleanItem
             .split(' ')
             .filter(Boolean)
             .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -402,7 +429,7 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
 
           if (!alreadyExists) {
             localMatches.push({
-              id: `g-${s}`,
+              id: `g-${capitalized}`,
               title: capitalized,
               subtitle: `${capitalized}, TP. Hồ Chí Minh`,
               fullAddress: `${capitalized}, TP. Hồ Chí Minh`,
@@ -438,6 +465,12 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
  */
 export function getCoordinatesForAddress(address: string): { lat: number; lng: number } {
   const norm = removeVietnameseTones(address || '');
+  if (norm.includes('dao son tay')) {
+    return { lat: 10.8785, lng: 106.7788 }; // Trường THPT Đào Sơn Tây, Linh Xuân, TP. Thủ Đức
+  }
+  if (norm.includes('sinh vien') || norm.includes('lang dai hoc')) {
+    return { lat: 10.8804, lng: 106.8041 }; // Nhà Văn Hóa Sinh Viên ĐHQG
+  }
   if (norm.includes('ca sau') || norm.includes('ca xau') || norm.includes('hoa ca')) {
     return { lat: 10.8385, lng: 106.7262 }; // Sân Banh Cỏ Nhân Tạo Cá Sấu Hoa Cà, Hiệp Bình Chánh
   }
