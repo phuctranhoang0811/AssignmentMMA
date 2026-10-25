@@ -225,10 +225,23 @@ export default function RegisterScreen() {
     setCurrentStep(3);
   };
 
+  const isPasswordValid = (pwd: string) => {
+    if (!pwd || pwd.length < 8) return false;
+    if (/\s/.test(pwd)) return false;
+    const hasLower = /[a-z]/.test(pwd);
+    const hasUpper = /[A-Z]/.test(pwd);
+    const hasNumber = /[0-9]/.test(pwd);
+    const hasSpecial = /[^A-Za-z0-9]/.test(pwd);
+    return hasLower && hasUpper && hasNumber && hasSpecial;
+  };
+
   // Step 3: Register
   const handleStep3Submit = async () => {
-    if (!password || password.length < 8) {
-      Alert.alert('Thông báo', 'Mật khẩu phải có tối thiểu 8 ký tự.');
+    if (!isPasswordValid(password)) {
+      Alert.alert(
+        'Mật khẩu chưa đạt yêu cầu',
+        'Mật khẩu của bạn phải có tối thiểu 8 ký tự, gồm ít nhất 1 chữ thường, 1 chữ hoa, 1 số, 1 ký tự đặc biệt và không có khoảng trắng.'
+      );
       return;
     }
     if (password !== confirmPassword) {
@@ -491,9 +504,11 @@ export default function RegisterScreen() {
                     {showPassword ? <EyeOff size={18} color="#6B7280" /> : <Eye size={18} color="#6B7280" />}
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.passwordHintText}>
-                  Mật khẩu của bạn phải có tối thiểu 8 ký tự, phải chứa ít nhất một chữ thường, một chữ hoa, một số, một ký tự đặc biệt và không được có khoảng trắng.
-                </Text>
+                {password.length > 0 && !isPasswordValid(password) && (
+                  <Text style={styles.passwordHintText}>
+                    Mật khẩu của bạn phải có tối thiểu 8 ký tự, phải chứa ít nhất một chữ thường, một chữ hoa, một số, một ký tự đặc biệt và không được có khoảng trắng.
+                  </Text>
+                )}
               </View>
 
               {/* Xác nhận mật khẩu */}
@@ -514,6 +529,11 @@ export default function RegisterScreen() {
                     {showConfirmPassword ? <EyeOff size={18} color="#6B7280" /> : <Eye size={18} color="#6B7280" />}
                   </TouchableOpacity>
                 </View>
+                {confirmPassword.length > 0 && confirmPassword !== password && (
+                  <Text style={styles.passwordHintText}>
+                    Xác nhận mật khẩu không khớp.
+                  </Text>
+                )}
               </View>
 
               {/* Checkboxes */}
