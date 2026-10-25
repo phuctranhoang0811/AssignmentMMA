@@ -9,8 +9,9 @@ import {
   Modal,
   Alert,
   Platform,
+  StatusBar,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, MapPin, Map, XCircle } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { triggerHaptic } from '../../utils/haptics';
@@ -33,6 +34,10 @@ export function StoreLocationModal({
   onConfirmAddress,
   initialFulfillment = 'delivery',
 }: StoreLocationModalProps) {
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(insets.top, Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight || 24));
+  const bottomInset = Math.max(insets.bottom, Platform.OS === 'ios' ? 24 : 12);
+
   const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'takeaway'>(initialFulfillment);
   const [manualAddressInput, setManualAddressInput] = useState(currentAddress);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
@@ -108,7 +113,15 @@ export function StoreLocationModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.modalFullContainer} edges={['top', 'bottom']}>
+      <View
+        style={[
+          styles.modalFullContainer,
+          {
+            paddingTop: topInset,
+            paddingBottom: bottomInset,
+          },
+        ]}
+      >
         {/* Header */}
         <View style={styles.addressModalHeader}>
           <TouchableOpacity
@@ -117,10 +130,10 @@ export function StoreLocationModal({
             activeOpacity={0.7}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <ChevronLeft size={28} color="#111827" strokeWidth={2.2} />
+            <ChevronLeft size={28} color="#111827" strokeWidth={2.4} />
           </TouchableOpacity>
           <Text style={styles.addressModalTitle}>Tìm cửa hàng gần bạn nhất</Text>
-          <View style={{ width: 28 }} />
+          <View style={{ width: 36 }} />
         </View>
 
         <ScrollView
@@ -260,7 +273,7 @@ export function StoreLocationModal({
             <Text style={styles.confirmAddressBtnText}>Bắt đầu đặt hàng</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }
@@ -274,7 +287,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   addressModalHeader: {
-    height: 56,
+    height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -284,12 +297,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   addressModalBackBtn: {
-    padding: 2,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
   },
   addressModalTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
     color: '#111827',
+    textAlign: 'center',
+    flex: 1,
   },
   modalBodyScroll: {
     flex: 1,

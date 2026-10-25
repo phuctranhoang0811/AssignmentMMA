@@ -34,6 +34,7 @@ import { formatCurrency } from '../../utils/formatCurrency';
 import { getItemLineUnitPrice } from '../../utils/calculateTotals';
 import { triggerHaptic } from '../../utils/haptics';
 import { searchVietnamAddresses, AddressSuggestion } from '../../services/addressService';
+import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
 
 const BRAND_RED = '#CF4226';
 
@@ -742,169 +743,16 @@ export default function CheckoutScreen() {
       {/* ======================================================== */}
       {/* MODAL: TÌM CỬA HÀNG GẦN BẠN NHẤT / NHẬP TAY ĐỊA CHỈ       */}
       {/* ======================================================== */}
-      <Modal
+      <StoreLocationModal
         visible={addressModalVisible}
-        animationType="slide"
-        onRequestClose={() => setAddressModalVisible(false)}
-      >
-        <SafeAreaView style={styles.modalFullContainer} edges={['top', 'bottom']}>
-          {/* Header */}
-          <View style={styles.addressModalHeader}>
-            <TouchableOpacity
-              style={styles.addressModalBackBtn}
-              onPress={() => setAddressModalVisible(false)}
-              activeOpacity={0.7}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <ChevronLeft size={28} color="#111827" strokeWidth={2.2} />
-            </TouchableOpacity>
-            <Text style={styles.addressModalTitle}>Tìm cửa hàng gần bạn nhất</Text>
-            <View style={{ width: 28 }} />
-          </View>
-
-          <ScrollView
-            style={styles.modalBodyScroll}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* Subtitle */}
-            <Text style={styles.addressModalSubtitle}>
-              Nhập địa chỉ của bạn để xem các ưu đãi, phiếu giảm giá và khuyến mại tại địa phương.
-            </Text>
-
-            {/* Fulfillment Mode Radio */}
-            <View style={styles.fulfillmentRadioGroup}>
-              <TouchableOpacity
-                style={styles.fulfillmentRadioItem}
-                onPress={() => setFulfillmentType('delivery')}
-                activeOpacity={0.7}
-              >
-                <View
-                  style={[
-                    styles.radioCircle,
-                    fulfillmentType === 'delivery' && styles.radioCircleActive,
-                  ]}
-                >
-                  {fulfillmentType === 'delivery' && <View style={styles.radioDot} />}
-                </View>
-                <Text style={styles.fulfillmentText}>Giao hàng tới</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.fulfillmentRadioItem}
-                onPress={() => setFulfillmentType('takeaway')}
-                activeOpacity={0.7}
-              >
-                <View
-                  style={[
-                    styles.radioCircle,
-                    fulfillmentType === 'takeaway' && styles.radioCircleActive,
-                  ]}
-                >
-                  {fulfillmentType === 'takeaway' && <View style={styles.radioDot} />}
-                </View>
-                <Text style={styles.fulfillmentText}>Mua mang về</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Section: Vị trí của tôi */}
-            <Text style={styles.myLocationSectionTitle}>Vị trí của tôi</Text>
-
-            {/* Address Search Bar */}
-            <View style={styles.addressSearchBox}>
-              <View style={styles.crosshairBadge}>
-                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-                  <Circle cx="12" cy="12" r="7" stroke="#FFFFFF" strokeWidth={2} />
-                  <Circle cx="12" cy="12" r="2.5" fill="#FFFFFF" />
-                  <Path
-                    d="M12 2 L12 5 M12 19 L12 22 M2 12 L5 12 M19 12 L22 12"
-                    stroke="#FFFFFF"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                  />
-                </Svg>
-              </View>
-
-              <TextInput
-                style={styles.addressSearchInput}
-                value={manualAddressInput}
-                onChangeText={setManualAddressInput}
-                placeholder="Nhập địa chỉ của bạn"
-                placeholderTextColor="#9CA3AF"
-                returnKeyType="search"
-                autoCorrect={false}
-              />
-
-              {manualAddressInput.length > 0 && (
-                <TouchableOpacity
-                  onPress={() => {
-                    setManualAddressInput('');
-                    setAddressSuggestions([]);
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  style={styles.clearInputBtn}
-                >
-                  <XCircle size={20} color="#9CA3AF" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Autocomplete Suggestions Dropdown */}
-            {addressSuggestions.length > 0 && (
-              <View style={styles.suggestionsCard}>
-                {addressSuggestions.map((item, index) => (
-                  <TouchableOpacity
-                    key={item.id || index}
-                    style={[
-                      styles.suggestionRowItem,
-                      index === addressSuggestions.length - 1 && { borderBottomWidth: 0 },
-                    ]}
-                    activeOpacity={0.65}
-                    onPress={() => {
-                      triggerHaptic('light');
-                      setManualAddressInput(item.fullAddress);
-                      setAddressSuggestions([]);
-                    }}
-                  >
-                    <View style={styles.suggestionPinBox}>
-                      <MapPin size={22} color="#1E2024" strokeWidth={1.8} />
-                    </View>
-                    <View style={styles.suggestionTextCol}>
-                      <Text style={styles.suggestionTitleText} numberOfLines={1}>
-                        {item.title}
-                      </Text>
-                      <Text style={styles.suggestionSubText} numberOfLines={1}>
-                        {item.subtitle}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            {/* Action: Chọn từ bản đồ */}
-            <TouchableOpacity
-              style={styles.chooseFromMapBtn}
-              activeOpacity={0.7}
-              onPress={handleChooseFromMap}
-            >
-              <Map size={22} color={BRAND_RED} strokeWidth={2} />
-              <Text style={styles.chooseFromMapText}>Chọn từ bản đồ</Text>
-            </TouchableOpacity>
-          </ScrollView>
-
-          {/* Confirm Button */}
-          <View style={styles.modalBottomBar}>
-            <TouchableOpacity
-              style={styles.confirmAddressBtn}
-              onPress={handleSaveManualAddress}
-              activeOpacity={0.88}
-            >
-              <Text style={styles.confirmAddressBtnText}>Bắt đầu đặt hàng</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
+        onClose={() => setAddressModalVisible(false)}
+        currentAddress={address}
+        initialFulfillment={fulfillmentType}
+        onConfirmAddress={(addr, mode) => {
+          setAddress(addr);
+          setFulfillmentType(mode);
+        }}
+      />
 
       {/* ======================================================== */}
       {/* MODAL: PHƯƠNG THỨC THANH TOÁN                             */}
