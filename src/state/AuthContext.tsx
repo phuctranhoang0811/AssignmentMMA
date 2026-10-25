@@ -5,7 +5,7 @@ import { authService } from '../services';
 import { demoUser } from '../data/mockUsers';
 import { auth, db } from '../services/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 
 interface AuthContextType {
   user: DemoUser | null;
@@ -55,21 +55,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     })();
   }, []);
 
-  const loginDemo = async (email: string = 'demo@pizzatime.local', password?: string) => {
+  const loginDemo = async (identifier: string = 'demo@pizzatime.local', password?: string) => {
     setIsLoading(true);
     try {
-      const trimmedEmail = email.trim().toLowerCase();
+      const trimmed = identifier.trim();
+      let targetEmail = trimmed.toLowerCase();
+
+      // Nếu người dùng nhập Số điện thoại (chỉ chứa số hoặc không chứa ký tự '@')
+      if (!trimmed.includes('@')) {
+        try {
+          const cleanPhone = trimmed.replace(/[\s.-]/g, '');
+          const q = query(collection(db, 'users'), where('phone', '==', cleanPhone));
+          const querySnap = await getDocs(q);
+
+          if (!querySnap.empty) {
+            const matchedData = querySnap.docs[0].data();
+            if (matchedData.email) {
+              targetEmail = matchedData.email.toLowerCase();
+            }
+          } else {
+            // Thử truy vấn phone theo dạng chuỗi gốc
+            const qRaw = query(collection(db, 'users'), where('phone', '==', trimmed));
+            const querySnapRaw = await getDocs(qRaw);
+            if (!querySnapRaw.empty) {
+              const matchedData = querySnapRaw.docs[0].data();
+              if (matchedData.email) {
+                targetEmail = matchedData.email.toLowerCase();
+              }
+            } else {
+              throw new Error('Số điện thoại này chưa được đăng ký tài khoản.');
+            }
+          }
+        } catch (e: any) {
+          if (e.message && e.message.includes('chưa được đăng ký')) {
+            throw e;
+          }
+          console.warn('Tra cứu số điện thoại thất bại:', e.message);
+        }
+      }
+
       if (password) {
         try {
-          const res = await signInWithEmailAndPassword(auth, trimmedEmail, password);
+          const res = await signInWithEmailAndPassword(auth, targetEmail, password);
           const userDoc = await getDoc(doc(db, 'users', res.user.uid));
           if (userDoc.exists()) {
             const data = userDoc.data();
             const u: DemoUser = {
               id: res.user.uid,
               fullname: data.fullName || 'Khách hàng',
-              email: data.email || trimmedEmail,
-              phone: data.phone || '',
+              email: data.email || targetEmail,
+              phone: data.phone || (trimmed.includes('@') ? '' : trimmed),
               gender: data.gender,
               birthday: data.birthday,
               role: data.role || 'USER',
@@ -81,11 +116,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
           }
         } catch (e: any) {
-          console.warn('Firebase login failed:', e.message);
+          if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
+            throw new Error('Mật khẩu không chính xác.');
+          } else if (e.code === 'auth/user-not-found') {
+            throw new Error('Tài khoản không tồn tại.');
+          }
+          throw new Error(e.message || 'Đăng nhập không thành công.');
         }
       }
 
-      const u = await authService.login(trimmedEmail);
+      const u = await authService.login(targetEmail);
       setUser(u);
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
     } finally {

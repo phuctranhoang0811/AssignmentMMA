@@ -210,8 +210,16 @@ export default function RegisterScreen() {
       Alert.alert('Thông báo', 'Vui lòng nhập tên của bạn.');
       return;
     }
-    if (!phone.trim()) {
-      Alert.alert('Thông báo', 'Vui lòng nhập số điện thoại.');
+    const cleanPhone = phone.trim().replace(/[\s.-]/g, '');
+    if (!cleanPhone) {
+      Alert.alert('Thông báo', 'Vui lòng nhập số điện thoại (bắt buộc).');
+      return;
+    }
+    if (!/^0[0-9]{9}$/.test(cleanPhone)) {
+      Alert.alert(
+        'Thông báo',
+        'Số điện thoại không hợp lệ (phải gồm đúng 10 số và bắt đầu bằng số 0).'
+      );
       return;
     }
     setCurrentStep(3);
@@ -233,7 +241,8 @@ export default function RegisterScreen() {
     }
 
     try {
-      await registerDemo(fullname, email, phone, password, {
+      const cleanPhone = phone.trim().replace(/[\s.-]/g, '');
+      await registerDemo(fullname, email, cleanPhone, password, {
         gender,
         birthday: `${birthDay}/${birthMonth}/${birthYear}`,
       });

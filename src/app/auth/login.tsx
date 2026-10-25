@@ -49,7 +49,7 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      await loginDemo(identifier.includes('@') ? identifier : 'demo@pizzatime.local');
+      await loginDemo(identifier.trim(), password);
       router.back();
     } catch (e: any) {
       Alert.alert('Đăng nhập thất bại', e.message || 'Tài khoản hoặc mật khẩu không đúng');
