@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Heart, CheckCircle2 } from 'lucide-react-native';
+import { ArrowLeft, Heart } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { spacing, radius } from '../../theme/spacing';
 import { AppText } from '../../components/ui/AppText';
@@ -22,6 +22,8 @@ import { productService } from '../../services';
 import { Product, ProductVariant } from '../../types/product';
 import { useCart } from '../../state/CartContext';
 import { useFavorites } from '../../state/FavoritesContext';
+import { useToast } from '../../state/ToastContext';
+import { triggerHaptic } from '../../utils/haptics';
 
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -30,10 +32,10 @@ export default function ProductDetailScreen() {
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [quantity, setQuantity] = useState(1);
-  // toast removed
 
   const { addItem } = useCart();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (id) {
@@ -80,6 +82,7 @@ export default function ProductDetailScreen() {
     if (!product.isAvailable) return;
 
     if (product.variants && product.variants.length > 0 && !selectedVariant) {
+      triggerHaptic('warning');
       Alert.alert('Vui lòng chọn kích cỡ', 'Bạn cần chọn kích cỡ trước khi thêm vào giỏ hàng.');
       return;
     }
@@ -92,12 +95,23 @@ export default function ProductDetailScreen() {
       quantity,
     });
 
-    // Directly navigate back to previous screen (menu/home)
+    triggerHaptic('success');
+    showToast({
+      message: `Đã thêm ${quantity}x ${product.name} vào giỏ hàng`,
+      actionText: 'Xem giỏ',
+      onAction: () => router.push('/(tabs)/cart'),
+    });
+
     if (router.canGoBack()) {
       router.back();
     } else {
       router.replace('/(tabs)/menu');
     }
+  };
+
+  const handleToggleFavorite = () => {
+    triggerHaptic('medium');
+    toggleFavorite(product.id);
   };
 
   return (
@@ -119,7 +133,7 @@ export default function ProductDetailScreen() {
 
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={() => toggleFavorite(product.id)}
+              onPress={handleToggleFavorite}
               style={styles.circleButton}
             >
               <Heart

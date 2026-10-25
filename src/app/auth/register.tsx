@@ -14,8 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, ChevronDown, Check, CheckSquare, Square, Eye, EyeOff } from 'lucide-react-native';
-import Svg, { Path, Polygon, Circle, Rect, G } from 'react-native-svg';
+import { ChevronLeft, ChevronDown, Check, Eye, EyeOff } from 'lucide-react-native';
+import Svg, { Path, Polygon, Circle, G } from 'react-native-svg';
 import { useAuth } from '../../state/AuthContext';
 
 const BRAND_RED = '#CF4226';
@@ -27,7 +27,7 @@ const CelebrationPopper = () => (
     <Path d="M60 45 C65 25, 75 20, 85 22" stroke="#00B4D8" strokeWidth={5} strokeLinecap="round" />
     <Path d="M52 42 C45 28, 50 15, 60 12" stroke="#FFB703" strokeWidth={4} strokeLinecap="round" />
     <Path d="M68 48 C80 38, 92 40, 96 32" stroke="#E63946" strokeWidth={4} strokeLinecap="round" />
-    
+
     {/* Stars / Confetti dots */}
     <Circle cx="40" cy="30" r="3.5" fill="#E63946" />
     <Circle cx="72" cy="18" r="4" fill="#00B4D8" />
@@ -183,7 +183,10 @@ export default function RegisterScreen() {
     }
 
     try {
-      await registerDemo(fullname, email, phone);
+      await registerDemo(fullname, email, phone, password, {
+        gender,
+        birthday: `${birthDay}/${birthMonth}/${birthYear}`,
+      });
       setCurrentStep(4);
     } catch (e: any) {
       Alert.alert('Đăng ký thất bại', e.message || 'Có lỗi xảy ra.');

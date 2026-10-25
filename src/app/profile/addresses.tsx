@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MapPin, Plus, Trash2, CheckCircle2, Home, Briefcase } from 'lucide-react-native';
+import { Plus, Trash2, Home, Briefcase } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { spacing, radius } from '../../theme/spacing';
 import { AppText } from '../../components/ui/AppText';
@@ -111,6 +111,12 @@ export default function AddressesScreen() {
               placeholder="Nguyễn Văn A"
               value={newRecipient}
               onChangeText={setNewRecipient}
+            />
+            <AppInput
+              label="Nhãn địa chỉ (Nhà riêng, Văn phòng...)"
+              placeholder="Nhà riêng"
+              value={newLabel}
+              onChangeText={setNewLabel}
             />
             <AppInput
               label="Số điện thoại *"

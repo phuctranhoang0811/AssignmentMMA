@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   Image,
   RefreshControl,
-  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -16,35 +16,71 @@ import {
   MapPin,
   ChevronRight,
   Plus,
-  Flame,
-  Clock,
   ChevronUp,
 } from 'lucide-react-native';
-import { colors } from '../../theme/colors';
-import { spacing } from '../../theme/spacing';
 import { productService } from '../../services';
 import { Product, CategoryId } from '../../types/product';
 import { mockCategories } from '../../data/mockCategories';
 import { useCart } from '../../state/CartContext';
+import { useToast } from '../../state/ToastContext';
+import { triggerHaptic } from '../../utils/haptics';
 import { formatCurrency } from '../../utils/formatCurrency';
 
 const BRAND_RED = '#CF4226';
 
+const PROMO_BANNERS = [
+  {
+    id: 'b1',
+    tag: 'COMBO PIZZA KÉO',
+    price: 'MỚI CHỈ TỪ 389.000đ',
+    discount: 'GIẢM TỚI 40.000đ Cho Thành Viên',
+    image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1000&q=80',
+  },
+  {
+    id: 'b2',
+    tag: 'MUA 1 TẶNG 1',
+    price: 'THỨ 3 SIÊU HỘI',
+    discount: 'ÁP DỤNG PIZZA SIZE LỚN',
+    image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=1000&q=80',
+  },
+  {
+    id: 'b3',
+    tag: 'COMBO GIA ĐÌNH',
+    price: 'TRỌN VỊ CHỈ 499.000đ',
+    discount: 'TẶNG NGAY 02 NƯỚC NGỌT LỚN',
+    image: 'https://images.unsplash.com/photo-1590947132387-155cc02f3212?auto=format&fit=crop&w=1000&q=80',
+  },
+];
+
 export default function HomeScreen() {
   const router = useRouter();
   const { addItem } = useCart();
+  const { showToast } = useToast();
+  const { width: windowWidth } = useWindowDimensions();
+  const bannerWidth = Math.min(windowWidth - 32, 450);
+  const bannerScrollRef = useRef<ScrollView>(null);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
-  const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  // Carousel banner index
   const [bannerIndex, setBannerIndex] = useState(0);
 
   // Lunch Combo Countdown Timer
   const [hours, setHours] = useState(3);
   const [minutes, setMinutes] = useState(33);
   const [seconds, setSeconds] = useState(29);
+
+  // Auto scroll carousel every 4.5s
+  useEffect(() => {
+    const bannerTimer = setInterval(() => {
+      setBannerIndex((prev) => {
+        const next = (prev + 1) % PROMO_BANNERS.length;
+        bannerScrollRef.current?.scrollTo({ x: next * bannerWidth, animated: true });
+        return next;
+      });
+    }, 4500);
+    return () => clearInterval(bannerTimer);
+  }, [bannerWidth]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -61,21 +97,20 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  const loadData = async (cat: CategoryId = selectedCategory) => {
+  const loadData = useCallback(async (cat: CategoryId = selectedCategory) => {
     try {
       const list = await productService.list({
         categoryId: cat === 'all' ? undefined : cat,
       });
       setProducts(list);
     } finally {
-      setIsLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [selectedCategory]);
 
   useEffect(() => {
     loadData(selectedCategory);
-  }, [selectedCategory]);
+  }, [loadData, selectedCategory]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -131,36 +166,58 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* ======================================================== */}
-        {/* HERO PROMOTIONAL BANNER (Matches user screenshot 1 & 2)  */}
-        {/* ======================================================== */}
+        {/* HERO PROMOTIONAL BANNER */}
         <View style={styles.bannerContainer}>
-          <View style={styles.bannerCard}>
-            <Image
-              source={{
-                uri: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1000&q=80',
-              }}
-              style={styles.bannerImage}
-              resizeMode="cover"
-            />
-            <View style={styles.bannerOverlay}>
-              <View style={styles.bannerTagBox}>
-                <Text style={styles.bannerTagText}>COMBO PIZZA KÉO</Text>
+          <ScrollView
+            ref={bannerScrollRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={bannerWidth}
+            decelerationRate="fast"
+            contentContainerStyle={{ alignItems: 'center' }}
+            onMomentumScrollEnd={(e) => {
+              const idx = Math.round(e.nativeEvent.contentOffset.x / bannerWidth);
+              if (idx >= 0 && idx < PROMO_BANNERS.length) {
+                setBannerIndex(idx);
+              }
+            }}
+          >
+            {PROMO_BANNERS.map((banner) => (
+              <View key={banner.id} style={[styles.bannerCard, { width: bannerWidth }]}>
+                <Image
+                  source={{ uri: banner.image }}
+                  style={styles.bannerImage}
+                  resizeMode="cover"
+                />
+                <View style={styles.bannerOverlay}>
+                  <View style={styles.bannerTagBox}>
+                    <Text style={styles.bannerTagText}>{banner.tag}</Text>
+                  </View>
+                  <Text style={styles.bannerPriceTag}>{banner.price}</Text>
+                  <View style={styles.memberDiscountPill}>
+                    <Text style={styles.memberDiscountText}>{banner.discount}</Text>
+                  </View>
+                </View>
               </View>
-              <Text style={styles.bannerPriceTag}>MỚI CHỈ TỪ 389.000đ</Text>
-              <View style={styles.memberDiscountPill}>
-                <Text style={styles.memberDiscountText}>GIẢM TỚI 40.000đ Cho Thành Viên</Text>
-              </View>
-            </View>
-          </View>
+            ))}
+          </ScrollView>
 
           {/* Dots Indicator */}
           <View style={styles.dotsRow}>
-            {[0, 1, 2, 3, 4].map((i) => (
-              <View
+            {PROMO_BANNERS.map((_, i) => (
+              <TouchableOpacity
                 key={i}
-                style={[styles.dot, i === bannerIndex && styles.dotActive]}
-              />
+                onPress={() => {
+                  setBannerIndex(i);
+                  bannerScrollRef.current?.scrollTo({ x: i * bannerWidth, animated: true });
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              >
+                <View
+                  style={[styles.dot, i === bannerIndex && styles.dotActive]}
+                />
+              </TouchableOpacity>
             ))}
           </View>
         </View>
@@ -207,7 +264,7 @@ export default function HomeScreen() {
           {favoritePizzas.map((item) => (
             <View key={item.id} style={styles.pizzaCard}>
               <Image
-                source={{ uri: item.imageUrl }}
+                source={{ uri: item.image }}
                 style={styles.pizzaCardImg}
                 resizeMode="cover"
               />
@@ -224,10 +281,17 @@ export default function HomeScreen() {
                     style={styles.addBtn}
                     activeOpacity={0.8}
                     onPress={() => {
-                      addItem(item);
-                      if (Platform.OS === 'web') {
-                        // feedback
-                      }
+                      addItem({
+                        productId: item.id,
+                        addonIds: [],
+                        quantity: 1,
+                      });
+                      triggerHaptic('success');
+                      showToast({
+                        message: `Đã thêm ${item.name} vào giỏ hàng`,
+                        actionText: 'Xem giỏ',
+                        onAction: () => router.push('/(tabs)/cart'),
+                      });
                     }}
                   >
                     <Plus size={18} color="#FFFFFF" strokeWidth={2.5} />

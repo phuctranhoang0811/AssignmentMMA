@@ -15,12 +15,11 @@ import { AppText } from '../../components/ui/AppText';
 import { OrderCard } from '../../components/order/OrderCard';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useOrders } from '../../state/OrderContext';
-import { Order } from '../../types/order';
 
 type TabSegment = 'active' | 'history';
 
 export default function OrdersScreen() {
-  const { orders, isLoading, refreshOrders } = useOrders();
+  const { orders, refreshOrders } = useOrders();
   const [activeTab, setActiveTab] = useState<TabSegment>('active');
   const [refreshing, setRefreshing] = useState(false);
 

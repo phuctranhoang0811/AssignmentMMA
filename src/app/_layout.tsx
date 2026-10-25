@@ -1,17 +1,34 @@
-﻿import React, { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  useFonts,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  PlusJakartaSans_800ExtraBold,
+} from '@expo-google-fonts/plus-jakarta-sans';
 import { AuthProvider } from '../state/AuthContext';
 import { CartProvider } from '../state/CartContext';
 import { OrderProvider } from '../state/OrderContext';
 import { FavoritesProvider } from '../state/FavoritesContext';
+import { ToastProvider } from '../state/ToastContext';
 import { colors } from '../theme/colors';
 
 export default function RootLayout() {
   const { width } = useWindowDimensions();
   const isDesktopWeb = Platform.OS === 'web' && width > 600;
+
+  const [fontsLoaded] = useFonts({
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+    PlusJakartaSans_800ExtraBold,
+  });
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -26,6 +43,10 @@ export default function RootLayout() {
       }
     }
   }, []);
+
+  if (!fontsLoaded && Platform.OS !== 'web') {
+    return null;
+  }
 
   const stackContent = (
     <Stack
@@ -61,19 +82,21 @@ export default function RootLayout() {
         <CartProvider>
           <OrderProvider>
             <FavoritesProvider>
-              <StatusBar style="dark" />
-              {isDesktopWeb ? (
-                <View style={styles.desktopCanvas}>
-                  <View style={styles.phoneFrame}>
-                    <View style={styles.notchContainer}>
-                      <View style={styles.dynamicIsland} />
+              <ToastProvider>
+                <StatusBar style="dark" />
+                {isDesktopWeb ? (
+                  <View style={styles.desktopCanvas}>
+                    <View style={styles.phoneFrame}>
+                      <View style={styles.notchContainer}>
+                        <View style={styles.dynamicIsland} />
+                      </View>
+                      {stackContent}
                     </View>
-                    {stackContent}
                   </View>
-                </View>
-              ) : (
-                <View style={styles.mobileContainer}>{stackContent}</View>
-              )}
+                ) : (
+                  <View style={styles.mobileContainer}>{stackContent}</View>
+                )}
+              </ToastProvider>
             </FavoritesProvider>
           </OrderProvider>
         </CartProvider>
