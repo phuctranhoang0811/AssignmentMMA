@@ -151,9 +151,7 @@ export default function CartScreen() {
 
   // Address selection modal flow
   const [showAddressModal, setShowAddressModal] = useState(false);
-  const [deliveryAddress, setDeliveryAddress] = useState(
-    '29 Đường 48, Khu phố 6, Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
-  );
+  const [deliveryAddress, setDeliveryAddress] = useState('');
 
   useEffect(() => {
     getSavedDeliveryAddress().then((saved) => {

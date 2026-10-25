@@ -94,7 +94,7 @@ export default function CheckoutScreen() {
   const { user } = useAuth();
 
   // Address & Notes
-  const [address, setAddress] = useState('29 Đường Lê Duẩn, Sai Gon, Ho Chi Minh, Vietnam');
+  const [address, setAddress] = useState('');
   const [deliveryNote, setDeliveryNote] = useState('');
   const [deliveryTime] = useState('10:30');
 
@@ -489,8 +489,14 @@ export default function CheckoutScreen() {
           >
             <View style={styles.fieldLeftWrap}>
               <Text style={styles.sectionHeaderTitle}>Giao đến</Text>
-              <Text style={styles.addressSubtext} numberOfLines={2}>
-                {address}
+              <Text
+                style={[
+                  styles.addressSubtext,
+                  !address && { color: '#CF4226', fontStyle: 'italic' },
+                ]}
+                numberOfLines={2}
+              >
+                {address || 'Vui lòng chọn địa chỉ nhận hàng'}
               </Text>
             </View>
             <ChevronRight size={20} color="#9CA3AF" />

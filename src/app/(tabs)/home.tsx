@@ -75,9 +75,7 @@ export default function HomeScreen() {
 
   // Store Location / Address Autocomplete Modal
   const [showStoreLocationModal, setShowStoreLocationModal] = useState(false);
-  const [currentAddress, setCurrentAddress] = useState(
-    '29 Đường 48, Khu phố 6, Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
-  );
+  const [currentAddress, setCurrentAddress] = useState('');
   const [fulfillmentMode, setFulfillmentMode] = useState<'delivery' | 'takeaway'>('delivery');
 
   useEffect(() => {
@@ -283,8 +281,14 @@ export default function HomeScreen() {
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={styles.locationLabel}>Địa chỉ nhận hàng</Text>
-              <Text style={styles.locationDetail} numberOfLines={1}>
-                {currentAddress}
+              <Text
+                style={[
+                  styles.locationDetail,
+                  !currentAddress && { color: '#9CA3AF', fontStyle: 'italic' },
+                ]}
+                numberOfLines={1}
+              >
+                {currentAddress || 'Bấm để chọn địa chỉ nhận hàng...'}
               </Text>
             </View>
             <ChevronRight size={20} color="#9CA3AF" />
