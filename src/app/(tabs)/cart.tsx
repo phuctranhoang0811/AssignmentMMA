@@ -174,7 +174,6 @@ export default function CartScreen() {
       productId: rec.id,
       addonIds: [],
       quantity: 1,
-      addonIds: [],
     });
     triggerHaptic('success');
     showToast({ message: `Đã thêm ${rec.name} vào giỏ hàng`, type: 'success' });

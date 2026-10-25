@@ -60,11 +60,12 @@ const PROMO_BANNERS = [
 ];
 
 export default function HomeScreen() {
+  const router = useRouter();
   const { addItem, itemCount, subtotal } = useCart();
   const { showToast } = useToast();
   const { width: windowWidth } = useWindowDimensions();
   const bannerWidth = Math.min(windowWidth - 32, 450);
-  const bannerScrollRef = useRef<ScrollView>(null);
+  const bannerScrollRef = useRef<any>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
