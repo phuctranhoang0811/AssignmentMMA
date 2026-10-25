@@ -219,7 +219,7 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={styles.menuRow}
                 activeOpacity={0.7}
-                onPress={handleChangePassword}
+                onPress={() => router.push('/profile/change-password')}
               >
                 <View style={styles.menuIconCol}>
                   <Lock size={22} color="#1E2024" strokeWidth={1.8} />

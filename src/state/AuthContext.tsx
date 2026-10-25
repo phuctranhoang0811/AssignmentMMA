@@ -4,7 +4,7 @@ import { DemoUser } from '../types/user';
 import { authService } from '../services';
 import { demoUser } from '../data/mockUsers';
 import { auth, db } from '../services/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updatePassword } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 
 interface AuthContextType {
@@ -20,6 +20,7 @@ interface AuthContextType {
     extra?: { gender?: string; birthday?: string }
   ) => Promise<void>;
   resetPassword: (email: string, newPassword: string) => Promise<void>;
+  changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (name: string, phone: string, birthday?: string, gender?: string, email?: string) => Promise<void>;
 }
@@ -257,6 +258,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const changePassword = async (oldPassword: string, newPassword: string) => {
+    if (!user || !user.email) {
+      throw new Error('Vui lòng đăng nhập để thực hiện đổi mật khẩu.');
+    }
+    setIsLoading(true);
+    try {
+      const trimmedEmail = user.email.trim().toLowerCase();
+      const q = query(collection(db, 'users'), where('email', '==', trimmedEmail));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        throw new Error('Không tìm thấy thông tin tài khoản trên hệ thống.');
+      }
+      const userDoc = snap.docs[0];
+      const data = userDoc.data();
+
+      // Kiểm tra mật khẩu hiện tại
+      if (data.password && data.password !== oldPassword) {
+        throw new Error('Mật khẩu hiện tại không chính xác.');
+      }
+
+      if (!data.password) {
+        try {
+          await signInWithEmailAndPassword(auth, trimmedEmail, oldPassword);
+        } catch {
+          throw new Error('Mật khẩu hiện tại không chính xác.');
+        }
+      }
+
+      // Cập nhật mật khẩu mới lên Firestore
+      await updateDoc(doc(db, 'users', userDoc.id), {
+        password: newPassword,
+        updatedAt: serverTimestamp(),
+      });
+
+      // Cập nhật Firebase Auth nếu session đang tồn tại
+      if (auth.currentUser) {
+        try {
+          await updatePassword(auth.currentUser, newPassword);
+        } catch {}
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const logout = async () => {
     try {
       await signOut(auth);
@@ -308,6 +354,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginDemo,
         registerDemo,
         resetPassword,
+        changePassword,
         logout,
         updateProfile,
       }}
