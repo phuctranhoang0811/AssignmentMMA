@@ -372,10 +372,16 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1200);
 
-    const gUrl = `https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&q=${encodeURIComponent(
+    const gUrl = `https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&ie=utf-8&oe=utf-8&q=${encodeURIComponent(
       cleanQuery
     )}`;
-    const gRes = await fetch(gUrl, { signal: controller.signal });
+    const gRes = await fetch(gUrl, {
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+        'Accept-Charset': 'utf-8',
+      },
+    });
     clearTimeout(timeoutId);
 
     if (gRes.ok) {
@@ -385,6 +391,7 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
           if (!s || s.length < 3) continue;
           const capitalized = s
             .split(' ')
+            .filter(Boolean)
             .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
             .join(' ');
 
@@ -412,6 +419,7 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
   if (localMatches.length === 0 && cleanQuery.length >= 2) {
     const formattedTitle = cleanQuery
       .split(' ')
+      .filter(Boolean)
       .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
       .join(' ');
     localMatches.push({
