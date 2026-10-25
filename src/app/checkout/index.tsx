@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -93,10 +93,26 @@ export default function CheckoutScreen() {
   const [deliveryNote, setDeliveryNote] = useState('');
   const [deliveryTime] = useState('10:30');
 
-  // Customer Information
-  const [fullname, setFullname] = useState(user?.fullname || 'anh hùng');
-  const [phone, setPhone] = useState(user?.phone || '84934853146');
-  const [email, setEmail] = useState(user?.email || 'anh123@gmail.com');
+  // Customer Information (Tự động điền nếu đã đăng nhập, để trống cho khách tự nhập tay)
+  const [fullname, setFullname] = useState(user?.fullname || '');
+  const [phone, setPhone] = useState(
+    user?.phone ? (user.phone.startsWith('0') ? user.phone.slice(1) : user.phone) : ''
+  );
+  const [email, setEmail] = useState(user?.email || '');
+
+  useEffect(() => {
+    if (user) {
+      setFullname(user.fullname || '');
+      setPhone(
+        user.phone ? (user.phone.startsWith('0') ? user.phone.slice(1) : user.phone) : ''
+      );
+      setEmail(user.email || '');
+    } else {
+      setFullname('');
+      setPhone('');
+      setEmail('');
+    }
+  }, [user]);
 
   // Payment Method Modal & Selection
   const [selectedPaymentId, setSelectedPaymentId] = useState('cash');
