@@ -63,8 +63,10 @@ const MAP_HTML = `
         attributionControl: false
       });
 
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
+      // Lớp bản đồ Google Maps hiện đại sắc nét với tiếng Việt đầy đủ
+      L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=vi&x={x}&y={y}&z={z}', {
+        maxZoom: 20,
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
       }).addTo(map);
 
       window.map = map;
