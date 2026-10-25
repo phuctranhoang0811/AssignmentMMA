@@ -50,7 +50,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await loginDemo(identifier.trim(), password);
-      router.back();
+      router.replace('/(tabs)/home');
     } catch (e: any) {
       Alert.alert('Đăng nhập thất bại', e.message || 'Tài khoản hoặc mật khẩu không đúng');
     } finally {
@@ -62,7 +62,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await loginDemo('demo@pizzatime.local');
-      router.back();
+      router.replace('/(tabs)/home');
     } finally {
       setIsLoading(false);
     }
