@@ -11,7 +11,10 @@ import {
   Modal,
   Pressable,
   useWindowDimensions,
+  Alert,
+  Linking,
 } from 'react-native';
+import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
@@ -60,6 +63,84 @@ const PROMO_BANNERS = [
     image: 'https://images.unsplash.com/photo-1590947132387-155cc02f3212?auto=format&fit=crop&w=1000&q=80',
   },
 ];
+
+/* SVG Icons for Bottom Section replicating reference design */
+const TrackingOrderSvg = () => (
+  <Svg width={42} height={42} viewBox="0 0 42 42" fill="none">
+    {/* Back Bag */}
+    <Path
+      d="M10 14H24V31C24 32.1 23.1 33 22 33H12C10.9 33 10 32.1 10 31V14Z"
+      stroke="#E53935"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M13.5 14V10.5C13.5 8.6 15.1 7 17 7C18.9 7 20.5 8.6 20.5 10.5V14"
+      stroke="#E53935"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+    />
+    {/* Front Bag */}
+    <Path
+      d="M16 17H30V34C30 35.1 29.1 36 28 36H18C16.9 36 16 35.1 16 34V17Z"
+      stroke="#E53935"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="#FFFFFF"
+    />
+    <Path
+      d="M19.5 17V13.5C19.5 11.6 21.1 10 23 10C24.9 10 26.5 11.6 26.5 13.5V17"
+      stroke="#E53935"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+    />
+  </Svg>
+);
+
+const StoreLocationSvg = () => (
+  <Svg width={42} height={42} viewBox="0 0 42 42" fill="none">
+    <Path
+      d="M21 5C14.9 5 10 9.9 10 16C10 24.5 21 35 21 35C21 35 32 24.5 32 16C32 9.9 27.1 5 21 5Z"
+      stroke="#E53935"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Circle cx="21" cy="16" r="4.5" stroke="#E53935" strokeWidth={2} />
+    <Path
+      d="M15 36C17 37.2 19 37.8 21 37.8C23 37.8 25 37.2 27 36"
+      stroke="#E53935"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+    />
+  </Svg>
+);
+
+const HelpPhoneSvg = () => (
+  <Svg width={42} height={42} viewBox="0 0 42 42" fill="none">
+    <Path
+      d="M9.5 11C9.5 24 17 31.5 30 31.5L32 26.5L26.5 24L24 26.5C19.8 24.5 16.5 21.2 14.5 17L17 14.5L14.5 9L9.5 11Z"
+      stroke="#E53935"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Rect x="21" y="7" width="16" height="12" rx="6" stroke="#E53935" strokeWidth={1.8} fill="#FFFFFF" />
+    <Circle cx="25.5" cy="13" r="1.3" fill="#E53935" />
+    <Circle cx="29" cy="13" r="1.3" fill="#E53935" />
+    <Circle cx="32.5" cy="13" r="1.3" fill="#E53935" />
+  </Svg>
+);
+
+const TermsDocsSvg = () => (
+  <Svg width={42} height={42} viewBox="0 0 42 42" fill="none">
+    <Rect x="13" y="6" width="20" height="26" rx="3" stroke="#E53935" strokeWidth={1.9} fill="#FFFFFF" />
+    <Rect x="9" y="10" width="20" height="26" rx="3" stroke="#E53935" strokeWidth={1.9} fill="#FFFFFF" />
+    <Path d="M13 16H23M13 21H23M13 26H19M13 31H17" stroke="#E53935" strokeWidth={1.7} strokeLinecap="round" />
+  </Svg>
+);
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -349,7 +430,7 @@ export default function HomeScreen() {
         </ScrollView>
 
         {/* ======================================================== */}
-        {/* SECTION: MENU CATEGORIES                                 */}
+        {/* SECTION: MENU (Cards Carousel matching Screenshot 2)     */}
         {/* ======================================================== */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Menu</Text>
@@ -361,66 +442,169 @@ export default function HomeScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoriesScroll}
+          contentContainerStyle={styles.menuPromoScroll}
         >
-          {mockCategories.map((cat) => (
-            <TouchableOpacity
-              key={cat.id}
-              style={[
-                styles.categoryChip,
-                selectedCategory === cat.id && styles.categoryChipActive,
-              ]}
-              onPress={() => setSelectedCategory(cat.id)}
-            >
-              <Text
-                style={[
-                  styles.categoryChipText,
-                  selectedCategory === cat.id && styles.categoryChipTextActive,
-                ]}
-              >
-                {cat.name}
+          {/* Card 1: KIDS MENU */}
+          <TouchableOpacity
+            style={styles.menuPromoCard}
+            activeOpacity={0.85}
+            onPress={() => router.push('/(tabs)/menu')}
+          >
+            <Image
+              source={{
+                uri: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=400&q=80',
+              }}
+              style={styles.menuPromoImg}
+              resizeMode="cover"
+            />
+            <View style={styles.menuPromoLabelBox}>
+              <Text style={styles.menuPromoLabelText} numberOfLines={1}>
+                KIDS MENU
               </Text>
-            </TouchableOpacity>
-          ))}
+            </View>
+          </TouchableOpacity>
+
+          {/* Card 2: GIÁ ƯU ĐÃI THÀNH VIÊN */}
+          <TouchableOpacity
+            style={styles.menuPromoCard}
+            activeOpacity={0.85}
+            onPress={() => router.push('/offers')}
+          >
+            <View style={styles.memberDealGraphic}>
+              <Text style={styles.memberDealTopText}>
+                GIẢM THÊM CHO{'\n'}THÀNH VIÊN
+              </Text>
+              <View style={styles.memberDealTicket}>
+                <Text style={styles.memberDealTicketText}>TỚI 70.000 VNĐ</Text>
+              </View>
+            </View>
+            <View style={styles.menuPromoLabelBox}>
+              <Text style={styles.menuPromoLabelText} numberOfLines={1}>
+                GIÁ ƯU ĐÃI THÀN...
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Card 3: MY BOX */}
+          <TouchableOpacity
+            style={styles.menuPromoCard}
+            activeOpacity={0.85}
+            onPress={() => router.push('/(tabs)/menu')}
+          >
+            <View style={styles.myBoxGraphic}>
+              <Text style={styles.myBoxTitle}>MY BOX</Text>
+              <Text style={styles.myBoxSub}>COMBO 1 NGƯỜI</Text>
+            </View>
+            <View style={styles.menuPromoLabelBox}>
+              <Text style={styles.menuPromoLabelText} numberOfLines={1}>
+                MY BOX
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Card 4: COMBO NHÓM */}
+          <TouchableOpacity
+            style={styles.menuPromoCard}
+            activeOpacity={0.85}
+            onPress={() => router.push('/(tabs)/menu')}
+          >
+            <Image
+              source={{
+                uri: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=400&q=80',
+              }}
+              style={styles.menuPromoImg}
+              resizeMode="cover"
+            />
+            <View style={styles.menuPromoLabelBox}>
+              <Text style={styles.menuPromoLabelText} numberOfLines={1}>
+                COMBO NHÓM
+              </Text>
+            </View>
+          </TouchableOpacity>
         </ScrollView>
+
+        {/* ======================================================== */}
+        {/* SECTION: TRACK ORDER & STORE LOCATION                    */}
+        {/* ======================================================== */}
+        <View style={styles.actionCardsSection}>
+          {/* Card 1: Theo dõi đơn hàng */}
+          <TouchableOpacity
+            style={styles.actionCard}
+            activeOpacity={0.72}
+            onPress={() => router.push('/(tabs)/orders')}
+          >
+            <View style={styles.actionIconBox}>
+              <TrackingOrderSvg />
+            </View>
+            <View style={styles.actionTextBox}>
+              <Text style={styles.actionTitle}>Theo dõi đơn hàng</Text>
+              <Text style={styles.actionSubtitle}>
+                Dễ dàng theo dõi trạng thái đơn hàng của bạn
+              </Text>
+            </View>
+            <ChevronRight size={22} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          {/* Card 2: Cửa hàng của chúng tôi */}
+          <TouchableOpacity
+            style={styles.actionCard}
+            activeOpacity={0.72}
+            onPress={() => setShowStoreLocationModal(true)}
+          >
+            <View style={styles.actionIconBox}>
+              <StoreLocationSvg />
+            </View>
+            <View style={styles.actionTextBox}>
+              <Text style={styles.actionTitle}>Cửa hàng của chúng tôi</Text>
+            </View>
+            <ChevronRight size={22} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          {/* ======================================================== */}
+          {/* SECTION: KẾT NỐI VỚI PIZZA FPT                           */}
+          {/* ======================================================== */}
+          <Text style={styles.connectSectionTitle}>Kết nối với Pizza FPT</Text>
+
+          {/* Card 3: Cần trợ giúp? */}
+          <TouchableOpacity
+            style={styles.actionCard}
+            activeOpacity={0.72}
+            onPress={() => Linking.openURL('tel:19001822')}
+          >
+            <View style={styles.actionIconBox}>
+              <HelpPhoneSvg />
+            </View>
+            <View style={styles.actionTextBox}>
+              <Text style={styles.actionTitle}>Cần trợ giúp?</Text>
+              <Text style={styles.actionSubtitle}>Gọi 1900 1822</Text>
+            </View>
+            <ChevronRight size={22} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          {/* Card 4: Điều khoản và Điều kiện */}
+          <TouchableOpacity
+            style={styles.actionCard}
+            activeOpacity={0.72}
+            onPress={() => {
+              Alert.alert(
+                'Điều khoản và Điều kiện',
+                'Chào mừng bạn đến với Pizza FPT!\n\n1. Quy định đặt hàng & thanh toán.\n2. Chính sách bảo mật thông tin khách hàng.\n3. Chính sách giao hàng nhanh và hoàn tiền.\n\nTổng đài hỗ trợ 24/7: 1900 1822',
+                [{ text: 'Đồng ý' }]
+              );
+            }}
+          >
+            <View style={styles.actionIconBox}>
+              <TermsDocsSvg />
+            </View>
+            <View style={styles.actionTextBox}>
+              <Text style={styles.actionTitle}>Điều khoản và Điều kiện</Text>
+            </View>
+            <ChevronRight size={22} color="#9CA3AF" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ height: 32 }} />
       </ScrollView>
-
-      {/* ======================================================== */}
-      {/* COMBO TRƯA COUNTDOWN BANNER (Dính trực tiếp vào Navbar)   */}
-      {/* ======================================================== */}
-      {/* ======================================================== */}
-      {/* COMBO TRƯA COUNTDOWN BANNER (Dính trực tiếp vào Navbar)   */}
-      {/* ======================================================== */}
-      <View style={styles.stickyComboWrapper}>
-        <TouchableOpacity
-          style={styles.lunchComboBanner}
-          activeOpacity={0.9}
-          onPress={() => setShowLunchSheet(true)}
-        >
-          <View style={styles.lunchLeft}>
-            <Text style={styles.lunchTitle}>COMBO TRƯA</Text>
-            <Text style={styles.lunchSub}>kết thúc sau</Text>
-          </View>
-
-          <View style={styles.timerRow}>
-            <View style={styles.timerBox}>
-              <Text style={styles.timerNum}>{hours}</Text>
-            </View>
-            <Text style={styles.timerColon}>:</Text>
-            <View style={styles.timerBox}>
-              <Text style={styles.timerNum}>{String(minutes).padStart(2, '0')}</Text>
-            </View>
-            <Text style={styles.timerColon}>:</Text>
-            <View style={styles.timerBox}>
-              <Text style={styles.timerNum}>{String(seconds).padStart(2, '0')}</Text>
-            </View>
-          </View>
-
-          <View style={styles.lunchArrow}>
-            <ChevronUp size={22} color="#FFFFFF" />
-          </View>
-        </TouchableOpacity>
-      </View>
 
       {/* ======================================================== */}
       {/* 3/4 LUNCH COMBO BOTTOM SHEET MODAL                       */}
@@ -836,6 +1020,146 @@ const styles = StyleSheet.create({
   },
   categoryChipTextActive: {
     color: '#FFFFFF',
+  },
+
+  /* Menu Promo Cards Carousel */
+  menuPromoScroll: {
+    paddingLeft: 16,
+    paddingRight: 8,
+    marginBottom: 20,
+  },
+  menuPromoCard: {
+    width: 132,
+    height: 144,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E8ECF2',
+    backgroundColor: '#FFFFFF',
+    marginRight: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  menuPromoImg: {
+    width: '100%',
+    height: 104,
+    backgroundColor: '#F3F4F6',
+  },
+  menuPromoLabelBox: {
+    height: 38,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    backgroundColor: '#FFFFFF',
+  },
+  menuPromoLabelText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1A1D20',
+    textAlign: 'center',
+  },
+  memberDealGraphic: {
+    width: '100%',
+    height: 104,
+    backgroundColor: '#DE3B2B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  memberDealTopText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '900',
+    textAlign: 'center',
+    lineHeight: 14,
+    marginBottom: 5,
+  },
+  memberDealTicket: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FFC8C8',
+    borderStyle: 'dashed',
+  },
+  memberDealTicketText: {
+    color: '#DE3B2B',
+    fontSize: 10.5,
+    fontWeight: '900',
+  },
+  myBoxGraphic: {
+    width: '100%',
+    height: 104,
+    backgroundColor: '#921A12',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  myBoxTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  myBoxSub: {
+    color: '#FFBABA',
+    fontSize: 10.5,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+
+  /* Action Cards & Connect Section */
+  actionCardsSection: {
+    paddingHorizontal: 16,
+    marginTop: 4,
+  },
+  actionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#ECEEF2',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  actionIconBox: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  actionTextBox: {
+    flex: 1,
+  },
+  actionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F242D',
+  },
+  actionSubtitle: {
+    fontSize: 12.5,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  connectSectionTitle: {
+    fontSize: 16.5,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 14,
+    marginBottom: 14,
   },
 
   /* Lunch Combo Banner */
