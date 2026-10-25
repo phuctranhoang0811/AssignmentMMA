@@ -8,7 +8,7 @@ import { useCart } from '../../state/CartContext';
 const BRAND_RED = '#CF4226';
 
 // Custom Pizza Slice Icon for Menu Tab (matches user screenshot)
-const MenuPizzaIcon = ({ size = 22, color = '#6B7280' }: { size?: number; color?: string }) => (
+const MenuPizzaIcon = ({ size = 22, color = '#6B7280' }: { size?: number; color?: any }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
     <Path d="M12 2L2 21c2 1 6 1 10 1s8 0 10-1L12 2z" />
     <Circle cx="12" cy="11" r="1.2" fill={color} />
@@ -18,7 +18,7 @@ const MenuPizzaIcon = ({ size = 22, color = '#6B7280' }: { size?: number; color?
 );
 
 // Custom Pizza Reward Slice Badge Icon for FPT Reward Tab (matches user screenshot)
-const RewardBadgeIcon = ({ size = 22, color = '#6B7280' }: { size?: number; color?: string }) => (
+const RewardBadgeIcon = ({ size = 22, color = '#6B7280' }: { size?: number; color?: any }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
     <Path d="M12 22L3 6a18 18 0 0 1 18 0L12 22z" />
     <Path d="M4.5 7.5a16 16 0 0 1 15 0" />
@@ -34,6 +34,7 @@ export default function TabsLayout() {
   const { itemCount } = useCart();
 
   const showFloatingCart = itemCount > 0 && !pathname.includes('cart');
+  const isHome = pathname === '/' || pathname === '/(tabs)/home' || pathname === '/home' || pathname.endsWith('home');
 
   return (
     <View style={styles.container}>
@@ -84,25 +85,28 @@ export default function TabsLayout() {
             tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
           }}
         />
-        {/* Hidden from Tab Bar but route accessible */}
+        {/* Hidden from Tab Bar but route accessible without href: null */}
         <Tabs.Screen
           name="cart"
           options={{
-            href: null,
+            tabBarItemStyle: { display: 'none' },
+            tabBarButton: () => null,
+            tabBarStyle: { display: 'none' },
           }}
         />
         <Tabs.Screen
           name="orders"
           options={{
-            href: null,
+            tabBarItemStyle: { display: 'none' },
+            tabBarButton: () => null,
           }}
         />
       </Tabs>
 
-      {/* Floating Red Cart Button with Badge (matches user screenshot 2) */}
+      {/* Floating Red Cart Button with Badge */}
       {showFloatingCart && (
         <TouchableOpacity
-          style={styles.floatingCartBtn}
+          style={[styles.floatingCartBtn, isHome && { bottom: 130 }]}
           activeOpacity={0.88}
           onPress={() => router.push('/(tabs)/cart')}
         >

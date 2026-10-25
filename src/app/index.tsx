@@ -1,12 +1,12 @@
-﻿import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Image,
   StyleSheet,
   Animated,
-  StatusBar,
   Pressable,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 
 export default function SplashScreen() {
@@ -50,7 +50,7 @@ export default function SplashScreen() {
 
   return (
     <Pressable style={styles.container} onPress={handleNavigateNext}>
-      <StatusBar barStyle="light-content" backgroundColor="#D74924" />
+      <StatusBar style="light" />
       <Animated.View
         style={[
           styles.imageWrapper,

@@ -84,10 +84,10 @@ export default function RegisterScreen() {
 
   // Refs for OTP inputs
   const otpInputRefs = [
-    useRef<TextInput>(null),
-    useRef<TextInput>(null),
-    useRef<TextInput>(null),
-    useRef<TextInput>(null),
+    useRef<any>(null),
+    useRef<any>(null),
+    useRef<any>(null),
+    useRef<any>(null),
   ];
 
   // OTP Countdown Timer

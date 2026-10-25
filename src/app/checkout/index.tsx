@@ -324,10 +324,10 @@ export default function CheckoutScreen() {
                     <Text style={styles.orderItemPrice}>{formatCurrency(lineTotal)}</Text>
                   </View>
                   <Text style={styles.orderItemOptions}>
-                    {item.size === 'small' ? 'Nhỏ' : item.size === 'medium' ? 'Vừa' : 'Lớn'},{' '}
-                    {item.crust === 'thin'
+                    {(item as any).size === 'small' ? 'Nhỏ' : (item as any).size === 'medium' ? 'Vừa' : 'Lớn'},{' '}
+                    {(item as any).crust === 'thin'
                       ? 'Đế Mỏng Giòn'
-                      : item.crust === 'pan'
+                      : (item as any).crust === 'pan'
                       ? 'Đế Giòn Xốp(Nhỏ)'
                       : 'Đế Truyền Thống'}
                   </Text>

@@ -171,6 +171,7 @@ export default function CartScreen() {
     addItem({
       productId: rec.id,
       quantity: 1,
+      addonIds: [],
     });
   };
 
@@ -282,7 +283,7 @@ export default function CartScreen() {
             const product = productsMap[item.productId];
             const variant = product?.variants?.find((v) => v.id === item.variantId);
 
-            const unitPrice = getItemLineUnitPrice(item, product) || 0;
+            const unitPrice = getItemLineUnitPrice(item, product) || (item as any).basePrice || 0;
             const lineTotal = unitPrice * (Number(item.quantity) || 1);
 
             const variantName = variant?.name || 'Đế Kéo Tay Truyền Thống(Nhỏ)';
@@ -296,7 +297,12 @@ export default function CartScreen() {
                 {/* Product Thumbnail with badge */}
                 <View style={styles.itemImageContainer}>
                   <Image
-                    source={{ uri: product?.image }}
+                    source={{
+                      uri:
+                        product?.image ||
+                        (item as any).image ||
+                        'https://images.unsplash.com/photo-1604382355076-af4b0eb60143?auto=format&fit=crop&w=400&q=80',
+                    }}
                     style={styles.itemImage}
                     resizeMode="cover"
                   />
@@ -310,13 +316,13 @@ export default function CartScreen() {
                 <View style={styles.itemDetails}>
                   <View style={styles.itemTopLine}>
                     <Text style={styles.itemName} numberOfLines={1}>
-                      {product?.name || 'Pizza Phô Mai Cao Cấp'}
+                      {product?.name || (item as any).name || 'Sản phẩm'}
                     </Text>
                     <Text style={styles.itemQuantity}>{item.quantity}</Text>
                   </View>
 
                   <Text style={styles.itemSubName} numberOfLines={1}>
-                    {product?.name || 'Pizza Phô Mai Cao Cấp'}
+                    {product?.name || (item as any).name || 'Sản phẩm'}
                   </Text>
 
                   <Text style={styles.itemOptions} numberOfLines={1}>
@@ -327,7 +333,7 @@ export default function CartScreen() {
                   <View style={styles.itemBottomLine}>
                     <View style={styles.actionLinksRow}>
                       <TouchableOpacity
-                        onPress={() => handleEditItem(item.productId)}
+                        onPress={() => item.productId && handleEditItem(item.productId)}
                         activeOpacity={0.7}
                       >
                         <Text style={styles.editActionText}>Sửa</Text>

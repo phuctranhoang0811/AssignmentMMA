@@ -5,9 +5,9 @@ import {
   Image,
   StyleSheet,
   TouchableOpacity,
-  StatusBar,
   Platform,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -25,11 +25,7 @@ export default function WelcomeScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar
-        barStyle="light-content"
-        translucent
-        backgroundColor="transparent"
-      />
+      <StatusBar style="light" />
 
       {/* Top Section: Pizza FPT Dining Hero Image */}
       <View style={styles.heroContainer}>

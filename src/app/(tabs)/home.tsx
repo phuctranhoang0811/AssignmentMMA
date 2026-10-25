@@ -8,6 +8,8 @@ import {
   Image,
   RefreshControl,
   Platform,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -19,12 +21,16 @@ import {
   Flame,
   Clock,
   ChevronUp,
+  ChevronDown,
+  ShoppingBag,
+  Check,
 } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { productService } from '../../services';
 import { Product, CategoryId } from '../../types/product';
 import { mockCategories } from '../../data/mockCategories';
+import { mockProducts } from '../../data/mockProducts';
 import { useCart } from '../../state/CartContext';
 import { formatCurrency } from '../../utils/formatCurrency';
 
@@ -32,11 +38,15 @@ const BRAND_RED = '#CF4226';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { addItem } = useCart();
+  const { addItem, itemCount, subtotal } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Lunch Combo 3/4 Sheet State
+  const [showLunchSheet, setShowLunchSheet] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Carousel banner index
   const [bannerIndex, setBannerIndex] = useState(0);
@@ -83,6 +93,20 @@ export default function HomeScreen() {
   };
 
   const favoritePizzas = products.slice(0, 4);
+
+  const lunchCombos = mockProducts.filter(
+    (p) => p.tags?.includes('Combo Trưa') || p.id.startsWith('CB')
+  );
+
+  const handleAddCombo = (combo: Product) => {
+    addItem({
+      productId: combo.id,
+      quantity: 1,
+      addonIds: [],
+    });
+    setShowLunchSheet(false);
+    router.push('/(tabs)/cart');
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -207,7 +231,7 @@ export default function HomeScreen() {
           {favoritePizzas.map((item) => (
             <View key={item.id} style={styles.pizzaCard}>
               <Image
-                source={{ uri: item.imageUrl }}
+                source={{ uri: item.image || (item as any).imageUrl }}
                 style={styles.pizzaCardImg}
                 resizeMode="cover"
               />
@@ -224,10 +248,11 @@ export default function HomeScreen() {
                     style={styles.addBtn}
                     activeOpacity={0.8}
                     onPress={() => {
-                      addItem(item);
-                      if (Platform.OS === 'web') {
-                        // feedback
-                      }
+                      addItem({
+                        productId: item.id,
+                        quantity: 1,
+                        addonIds: [],
+                      });
                     }}
                   >
                     <Plus size={18} color="#FFFFFF" strokeWidth={2.5} />
@@ -273,11 +298,20 @@ export default function HomeScreen() {
             </TouchableOpacity>
           ))}
         </ScrollView>
+      </ScrollView>
 
-        {/* ======================================================== */}
-        {/* COMBO TRƯA COUNTDOWN BANNER (Matches user screenshot 1)   */}
-        {/* ======================================================== */}
-        <View style={styles.lunchComboBanner}>
+      {/* ======================================================== */}
+      {/* COMBO TRƯA COUNTDOWN BANNER (Dính trực tiếp vào Navbar)   */}
+      {/* ======================================================== */}
+      {/* ======================================================== */}
+      {/* COMBO TRƯA COUNTDOWN BANNER (Dính trực tiếp vào Navbar)   */}
+      {/* ======================================================== */}
+      <View style={styles.stickyComboWrapper}>
+        <TouchableOpacity
+          style={styles.lunchComboBanner}
+          activeOpacity={0.9}
+          onPress={() => setShowLunchSheet(true)}
+        >
           <View style={styles.lunchLeft}>
             <Text style={styles.lunchTitle}>COMBO TRƯA</Text>
             <Text style={styles.lunchSub}>kết thúc sau</Text>
@@ -297,11 +331,114 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.lunchArrow}>
+          <View style={styles.lunchArrow}>
             <ChevronUp size={22} color="#FFFFFF" />
-          </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* ======================================================== */}
+      {/* 3/4 LUNCH COMBO BOTTOM SHEET MODAL                       */}
+      {/* ======================================================== */}
+      <Modal
+        visible={showLunchSheet}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowLunchSheet(false)}
+      >
+        <View style={styles.sheetOverlay}>
+          {/* Backdrop tap to close */}
+          <Pressable style={styles.sheetBackdrop} onPress={() => setShowLunchSheet(false)} />
+
+          <View style={styles.sheetContainer}>
+            {/* Grabber handle */}
+            <View style={styles.sheetHandleBar} />
+
+            {/* Header: Thanh COMBO TRƯA nguyên bản với mũi tên hướng xuống để đóng */}
+            <View style={styles.sheetBannerWrapper}>
+              <TouchableOpacity
+                style={styles.lunchComboBanner}
+                activeOpacity={0.9}
+                onPress={() => setShowLunchSheet(false)}
+              >
+                <View style={styles.lunchLeft}>
+                  <Text style={styles.lunchTitle}>COMBO TRƯA</Text>
+                  <Text style={styles.lunchSub}>kết thúc sau</Text>
+                </View>
+
+                <View style={styles.timerRow}>
+                  <View style={styles.timerBox}>
+                    <Text style={styles.timerNum}>{hours}</Text>
+                  </View>
+                  <Text style={styles.timerColon}>:</Text>
+                  <View style={styles.timerBox}>
+                    <Text style={styles.timerNum}>{String(minutes).padStart(2, '0')}</Text>
+                  </View>
+                  <Text style={styles.timerColon}>:</Text>
+                  <View style={styles.timerBox}>
+                    <Text style={styles.timerNum}>{String(seconds).padStart(2, '0')}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.lunchArrow}>
+                  <ChevronDown size={22} color="#FFFFFF" />
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* Danh sách các món ăn giảm giá trong Combo Trưa */}
+            <ScrollView
+              style={styles.sheetScroll}
+              contentContainerStyle={styles.sheetScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {lunchCombos.map((combo) => {
+                const originalPrice = Math.round(
+                  combo.basePrice / (1 - (combo.discountPercent || 35) / 100)
+                );
+
+                return (
+                  <View key={combo.id} style={styles.simpleMenuItem}>
+                    <Image
+                      source={{ uri: combo.image }}
+                      style={styles.simpleMenuImg}
+                      resizeMode="cover"
+                    />
+
+                    <View style={styles.simpleMenuInfo}>
+                      <Text style={styles.simpleMenuName} numberOfLines={1}>
+                        {combo.name}
+                      </Text>
+                      <Text style={styles.simpleMenuDesc} numberOfLines={2}>
+                        {combo.description}
+                      </Text>
+
+                      <View style={styles.simpleMenuPriceRow}>
+                        <View style={styles.priceWrap}>
+                          <Text style={styles.simpleNewPrice}>
+                            {formatCurrency(combo.basePrice)}
+                          </Text>
+                          <Text style={styles.simpleOldPrice}>
+                            {formatCurrency(originalPrice)}
+                          </Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.simpleAddBtn}
+                          activeOpacity={0.8}
+                          onPress={() => handleAddCombo(combo)}
+                        >
+                          <Plus size={18} color="#FFFFFF" strokeWidth={2.6} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
         </View>
-      </ScrollView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -312,7 +449,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   scrollContent: {
-    paddingBottom: 90,
+    paddingBottom: 24,
   },
 
   /* Header */
@@ -600,12 +737,19 @@ const styles = StyleSheet.create({
   },
 
   /* Lunch Combo Banner */
+  stickyComboWrapper: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F5F5F5',
+  },
   lunchComboBanner: {
-    backgroundColor: '#C82318',
-    marginHorizontal: 16,
+    backgroundColor: BRAND_RED,
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 11,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -635,7 +779,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   timerNum: {
-    color: '#C82318',
+    color: BRAND_RED,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -646,5 +790,110 @@ const styles = StyleSheet.create({
   },
   lunchArrow: {
     padding: 4,
+  },
+
+  /* ========================================================== */
+  /* 3/4 LUNCH COMBO BOTTOM SHEET STYLES                        */
+  /* ========================================================== */
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  sheetBackdrop: {
+    flex: 1,
+  },
+  sheetContainer: {
+    height: '75%',
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 20,
+  },
+  sheetHandleBar: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#E5E7EB',
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  sheetBannerWrapper: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 8,
+  },
+  sheetScroll: {
+    flex: 1,
+  },
+  sheetScrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 28,
+  },
+  simpleMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  simpleMenuImg: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+  },
+  simpleMenuInfo: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: 'space-between',
+    minHeight: 78,
+  },
+  simpleMenuName: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  simpleMenuDesc: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  simpleMenuPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  priceWrap: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  simpleNewPrice: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: BRAND_RED,
+  },
+  simpleOldPrice: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textDecorationLine: 'line-through',
+  },
+  simpleAddBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: BRAND_RED,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
