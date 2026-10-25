@@ -528,23 +528,6 @@ export default function CartScreen() {
         >
           <Text style={styles.checkoutBtnText}>Thanh toán</Text>
         </TouchableOpacity>
-
-        {/* COMBO TRƯA COUNTDOWN BANNER */}
-        <View style={styles.comboBanner}>
-          <Text style={styles.comboBannerText}>COMBO TRƯA</Text>
-          <Text style={styles.comboBannerSub}>kết thúc sau</Text>
-          <View style={styles.timerBadge}>
-            <Text style={styles.timerDigit}>0</Text>
-          </View>
-          <Text style={styles.timerColon}>:</Text>
-          <View style={styles.timerBadge}>
-            <Text style={styles.timerDigit}>37</Text>
-          </View>
-          <Text style={styles.timerColon}>:</Text>
-          <View style={styles.timerBadge}>
-            <Text style={styles.timerDigit}>14</Text>
-          </View>
-        </View>
       </View>
 
       {/* ======================================================== */}
@@ -1064,7 +1047,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 14,
   },
   checkoutBtnText: {
     color: '#FFFFFF',
