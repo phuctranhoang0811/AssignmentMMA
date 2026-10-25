@@ -17,6 +17,7 @@ import { ChevronLeft, MapPin, Map, XCircle } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { triggerHaptic } from '../../utils/haptics';
 import { searchVietnamAddresses, AddressSuggestion } from '../../services/addressService';
+import { MapLocationPickerModal } from './MapLocationPickerModal';
 
 const BRAND_RED = '#CF4226';
 
@@ -46,6 +47,7 @@ export function StoreLocationModal({
   const [manualAddressInput, setManualAddressInput] = useState(currentAddress);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [showMapModal, setShowMapModal] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -90,22 +92,7 @@ export function StoreLocationModal({
 
   const handleChooseFromMap = () => {
     triggerHaptic('light');
-    Alert.alert(
-      'Chọn từ bản đồ',
-      'Đã định vị thành công vị trí hiện tại của bạn tại TP. Hồ Chí Minh.',
-      [
-        {
-          text: 'Xác nhận vị trí này',
-          onPress: () => {
-            setManualAddressInput(
-              '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
-            );
-            setAddressSuggestions([]);
-          },
-        },
-        { text: 'Đóng', style: 'cancel' },
-      ]
-    );
+    setShowMapModal(true);
   };
 
   const handleConfirm = () => {
@@ -240,6 +227,18 @@ export function StoreLocationModal({
             <Text style={styles.confirmAddressBtnText}>Bắt đầu đặt hàng</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Interactive Map Picker Modal (Bản đồ chọn vị trí) */}
+        <MapLocationPickerModal
+          visible={showMapModal}
+          onClose={() => setShowMapModal(false)}
+          initialAddress={manualAddressInput}
+          onConfirmLocation={(addr) => {
+            setManualAddressInput(addr);
+            setAddressSuggestions([]);
+            setShowMapModal(false);
+          }}
+        />
       </View>
     </Modal>
   );
