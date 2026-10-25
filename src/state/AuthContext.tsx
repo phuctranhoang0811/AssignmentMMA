@@ -96,6 +96,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (password) {
+        // 1. Kiểm tra trong Firestore xem tài khoản đã cập nhật mật khẩu mới chưa
+        try {
+          const q = query(collection(db, 'users'), where('email', '==', targetEmail));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            const userDoc = snap.docs[0];
+            const userData = userDoc.data();
+
+            if (userData.password) {
+              if (userData.password !== password) {
+                throw new Error('Mật khẩu không chính xác.');
+              }
+
+              // Mật khẩu khớp chính xác với mật khẩu mới trong Database!
+              const u: DemoUser = {
+                id: userDoc.id,
+                fullname: userData.fullName || 'Khách hàng',
+                email: userData.email || targetEmail,
+                phone: userData.phone || (trimmed.includes('@') ? '' : trimmed),
+                gender: userData.gender,
+                birthday: userData.birthday,
+                role: userData.role || 'USER',
+                rewardPoints: userData.rewardPoints || 0,
+                isDemo: false,
+              };
+
+              setUser(u);
+              await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
+              return;
+            }
+          }
+        } catch (dbErr: any) {
+          if (dbErr.message === 'Mật khẩu không chính xác.') {
+            throw dbErr;
+          }
+          console.warn('Lỗi kiểm tra mật khẩu Firestore:', dbErr.message);
+        }
+
+        // 2. Fallback kiểm tra qua Firebase Auth (cho tài khoản chưa có trường password trong Firestore)
         try {
           const res = await signInWithEmailAndPassword(auth, targetEmail, password);
           const userDoc = await getDoc(doc(db, 'users', res.user.uid));
