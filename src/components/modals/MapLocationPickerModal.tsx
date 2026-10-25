@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,14 +7,13 @@ import {
   Modal,
   Platform,
   StatusBar,
-  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, User } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { triggerHaptic } from '../../utils/haptics';
 
-// Sử dụng WebView cho mobile (iOS / Android) và iframe cho Web
+// Sử dụng WebView cho mobile (iOS / Android)
 let WebViewComponent: any = null;
 if (Platform.OS !== 'web') {
   try {
@@ -40,12 +39,60 @@ const RedCrosshairIcon = () => (
   </Svg>
 );
 
-/* Google Logo Text SVG matching user screenshot */
-const GoogleLogoSvg = () => (
-  <Svg width={62} height={22} viewBox="0 0 74 24" fill="none">
-    <Text style={styles.googleWatermarkText}>Google</Text>
-  </Svg>
-);
+// HTML cố định bên ngoài component để WebView KHÔNG BỊ reload lại liên tục
+const MAP_HTML = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #cce0e8; }
+      .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      var map = L.map('map', {
+        center: [10.0452, 105.7469], // Vĩnh Long / Cần Thơ như ảnh mẫu
+        zoom: 11,
+        zoomControl: false,
+        attributionControl: false
+      });
+
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
+      }).addTo(map);
+
+      window.map = map;
+
+      var debounceTimer = null;
+      function notifyPosition() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function() {
+          var center = map.getCenter();
+          var message = JSON.stringify({
+            type: 'location_changed',
+            lat: Number(center.lat.toFixed(5)),
+            lng: Number(center.lng.toFixed(5))
+          });
+          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(message);
+          }
+        }, 300);
+      }
+
+      map.on('moveend', notifyPosition);
+    </script>
+  </body>
+  </html>
+`;
+
+// Constant source reference để ngăn webview re-render
+const MAP_SOURCE = { html: MAP_HTML };
 
 interface MapLocationPickerModalProps {
   visible: boolean;
@@ -66,66 +113,42 @@ export function MapLocationPickerModal({
 
   const webViewRef = useRef<any>(null);
   const [selectedAddress, setSelectedAddress] = useState(
-    initialAddress || '29 Đường 48, Khu phố 6, Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
+    initialAddress || 'XX5X+7G Vĩnh Xuân, Vĩnh Long, Việt Nam'
   );
-  const [isLoadingAddress, setIsLoadingAddress] = useState(false);
 
   useEffect(() => {
-    if (visible && initialAddress) {
-      setSelectedAddress(initialAddress);
+    if (visible) {
+      if (initialAddress && initialAddress.trim()) {
+        setSelectedAddress(initialAddress.trim());
+      } else {
+        setSelectedAddress('XX5X+7G Vĩnh Xuân, Vĩnh Long, Việt Nam');
+      }
     }
   }, [visible, initialAddress]);
 
-  // Danh mục địa chỉ mẫu theo tọa độ khu vực TP.HCM và miền Tây
+  // Danh mục địa chỉ thông minh theo vị trí kéo thả
   const getSimulatedAddress = (lat: number, lng: number): string => {
-    // Khu vực miền Tây / Vĩnh Long / Cần Thơ (khớp ảnh mẫu của người dùng)
     if (lat < 10.4 && lat > 9.8) {
       return 'XX5X+7G Vĩnh Xuân, Vĩnh Long, Việt Nam';
     }
     if (lat >= 10.4 && lat <= 10.6) {
       return 'Khu đô thị Mỹ Tho, Tiền Giang, Việt Nam';
     }
-    // Khu vực TP.HCM
     if (lat >= 10.8) {
       return '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
     }
     return '29 Đường Lê Duẩn, Bến Nghé, Quận 1, TP. Hồ Chí Minh';
   };
 
-  const handleMessage = async (event: any) => {
+  const handleMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'location_changed') {
         const { lat, lng } = data;
-        setIsLoadingAddress(true);
-
-        // Thử reverse geocode từ OpenStreetMap nếu có mạng
-        try {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 1200);
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=vi`,
-            { signal: controller.signal, headers: { 'User-Agent': 'PizzaFPTApp/1.0' } }
-          );
-          clearTimeout(timer);
-          if (res.ok) {
-            const json = await res.json();
-            if (json && json.display_name) {
-              setSelectedAddress(json.display_name);
-              setIsLoadingAddress(false);
-              return;
-            }
-          }
-        } catch {
-          // Bỏ qua lỗi mạng
-        }
-
-        // Dùng địa chỉ thông minh tương ứng
         setSelectedAddress(getSimulatedAddress(lat, lng));
-        setIsLoadingAddress(false);
       }
     } catch {
-      // Bỏ qua lỗi parse
+      // Bỏ qua lỗi
     }
   };
 
@@ -133,14 +156,14 @@ export function MapLocationPickerModal({
     triggerHaptic('light');
     const script = `
       if (window.map) {
-        window.map.setView([10.8231, 106.6297], 15, { animate: true });
+        window.map.setView([10.0452, 105.7469], 13, { animate: true });
       }
       true;
     `;
     if (webViewRef.current) {
       webViewRef.current.injectJavaScript(script);
     }
-    setSelectedAddress('29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh');
+    setSelectedAddress('XX5X+7G Vĩnh Xuân, Vĩnh Long, Việt Nam');
   };
 
   const handleConfirm = () => {
@@ -148,52 +171,6 @@ export function MapLocationPickerModal({
     onConfirmLocation(selectedAddress);
     onClose();
   };
-
-  // HTML bản đồ Leaflet OpenStreetMap với màu sắc chuẩn Google Maps
-  const mapHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-      <style>
-        * { box-sizing: border-box; }
-        body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #aad3df; }
-        .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
-      </style>
-    </head>
-    <body>
-      <div id="map"></div>
-      <script>
-        var map = L.map('map', {
-          center: [10.0452, 105.7469], // Tọa độ Cần Thơ / Vĩnh Long giống ảnh mẫu của user
-          zoom: 11,
-          zoomControl: false,
-          attributionControl: false
-        });
-
-        // Bản đồ ngói OpenStreetMap rõ nét
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19
-        }).addTo(map);
-
-        window.map = map;
-
-        function notifyPosition() {
-          var center = map.getCenter();
-          var message = JSON.stringify({ type: 'location_changed', lat: center.lat, lng: center.lng });
-          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-            window.ReactNativeWebView.postMessage(message);
-          }
-        }
-
-        map.on('moveend', notifyPosition);
-        setTimeout(notifyPosition, 600);
-      </script>
-    </body>
-    </html>
-  `;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -216,7 +193,7 @@ export function MapLocationPickerModal({
           >
             <ChevronLeft size={28} color="#111827" strokeWidth={2.4} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Chọn từ bản đồ</Text>
+          <Text style={styles.headerTitle}>Tìm cửa hàng gần bạn nhất</Text>
           <View style={{ width: 36 }} />
         </View>
 
@@ -225,16 +202,17 @@ export function MapLocationPickerModal({
           {WebViewComponent ? (
             <WebViewComponent
               ref={webViewRef}
-              source={{ html: mapHtml }}
+              source={MAP_SOURCE}
               style={styles.webView}
               onMessage={handleMessage}
               javaScriptEnabled
               domStorageEnabled
+              startInLoadingState={false}
             />
           ) : (
             <View style={styles.webFallbackMap}>
               <Text style={{ color: '#4B5563', fontSize: 14 }}>
-                Bản đồ vị trí tương tác (TP. Hồ Chí Minh & Tây Nam Bộ)
+                Bản đồ vị trí tương tác
               </Text>
             </View>
           )}
@@ -271,13 +249,9 @@ export function MapLocationPickerModal({
           <Text style={styles.bottomCardSubtitle}>Kéo và thả để chọn vị trí chính xác</Text>
 
           <View style={styles.addressBox}>
-            {isLoadingAddress ? (
-              <ActivityIndicator size="small" color={BRAND_RED} />
-            ) : (
-              <Text style={styles.addressBoxText} numberOfLines={2}>
-                {selectedAddress}
-              </Text>
-            )}
+            <Text style={styles.addressBoxText} numberOfLines={2}>
+              {selectedAddress}
+            </Text>
           </View>
 
           <TouchableOpacity
@@ -327,11 +301,11 @@ const styles = StyleSheet.create({
   mapArea: {
     flex: 1,
     position: 'relative',
-    backgroundColor: '#aad3df',
+    backgroundColor: '#cce0e8',
   },
   webView: {
     flex: 1,
-    backgroundColor: '#aad3df',
+    backgroundColor: '#cce0e8',
   },
   webFallbackMap: {
     flex: 1,
