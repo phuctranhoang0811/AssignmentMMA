@@ -14,6 +14,49 @@ export interface AddressSuggestion {
 
 // Danh mục đường phố, khu phố và quận huyện phổ biến
 const VIETNAM_POPULAR_STREETS = [
+  // Địa điểm, sân bóng và khu thể thao nổi tiếng
+  {
+    street: 'Sân Banh Cỏ Nhân Tạo Cá Sấu Hoa Cà',
+    subArea: 'Đường Kha Vạn Cân / Bến Đò',
+    ward: 'Hiệp Bình Chánh',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Làng Cá Sấu Sài Gòn (Hoa Cà)',
+    subArea: '96/9/4 Đường 48, Nhánh Kha Vạn Cân',
+    ward: 'Hiệp Bình Chánh',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'GigaMall Phạm Văn Đồng',
+    subArea: '240-242 Phạm Văn Đồng',
+    ward: 'Hiệp Bình Chánh',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Đại Học FPT TP.HCM',
+    subArea: 'Khu Công Nghệ Cao, Lô E2a-7, Đường D1',
+    ward: 'Long Thạnh Mỹ',
+    district: 'TP. Thủ Đức',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Tòa Nhà Landmark 81',
+    subArea: 'Vinhomes Central Park, 720A Điện Biên Phủ',
+    ward: 'Phường 22',
+    district: 'Quận Bình Thạnh',
+    city: 'TP. Hồ Chí Minh',
+  },
+  {
+    street: 'Chợ Bến Thành',
+    subArea: 'Đường Lê Lợi',
+    ward: 'Bến Thành',
+    district: 'Quận 1',
+    city: 'TP. Hồ Chí Minh',
+  },
   // TP. Thủ Đức & Khu vực Hiệp Bình, Tam Hà (Khớp với dữ liệu thực tế trong app mẫu)
   {
     street: 'Đường 48',
@@ -239,26 +282,30 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
-  const normalizedQuery = removeVietnameseTones(cleanQuery);
+  // Chuẩn hóa và sửa các lỗi chính tả phổ biến (ví dụ: cá xấu -> cá sấu)
+  let normalizedQuery = removeVietnameseTones(cleanQuery).toLowerCase();
+  normalizedQuery = normalizedQuery.replace(/ca\s+xau/g, 'ca sau');
 
   // Tách số nhà nếu có ở đầu chuỗi (ví dụ: "29 Đường 48" -> số "29", phần còn lại "Đường 48")
   const matchNumber = cleanQuery.match(/^(\d+[\w\/\-]*)\s*(.*)$/);
   const houseNumber = matchNumber ? matchNumber[1] : '';
   const streetPart = matchNumber ? matchNumber[2].trim() : cleanQuery;
-  const normalizedStreetPart = removeVietnameseTones(streetPart);
+  let normalizedStreetPart = removeVietnameseTones(streetPart).toLowerCase();
+  normalizedStreetPart = normalizedStreetPart.replace(/ca\s+xau/g, 'ca sau');
 
   // 1. Tìm trong bộ dữ liệu cục bộ trước (Siêu nhanh 0ms, không phụ thuộc mạng)
   const localMatches: AddressSuggestion[] = [];
 
   // Tách tất cả các từ khóa và số trong query
   const queryTokens = normalizedQuery.split(/[\s,]+/).filter(Boolean);
+  const significantTokens = queryTokens.filter((t) => t.length >= 3);
   const has48 = queryTokens.includes('48');
   const has29 = queryTokens.includes('29');
 
   for (let i = 0; i < VIETNAM_POPULAR_STREETS.length; i++) {
     const item = VIETNAM_POPULAR_STREETS[i];
     const fullStreetStr = `${item.street} ${item.subArea} ${item.ward} ${item.district} ${item.city}`;
-    const normFull = removeVietnameseTones(fullStreetStr);
+    const normFull = removeVietnameseTones(fullStreetStr).toLowerCase();
 
     let isMatch = false;
 
@@ -267,26 +314,38 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
       if (item.street.includes('48') || item.subArea.includes('48') || item.street.includes('29')) {
         isMatch = true;
       }
-    } else {
-      const matchOverall = normFull.includes(normalizedQuery);
-      const matchStreet = normalizedStreetPart && normFull.includes(normalizedStreetPart);
-      const matchAnyToken = queryTokens.some(
-        (token) => token.length >= 2 && normFull.includes(token)
-      );
-      isMatch = matchOverall || matchStreet || matchAnyToken;
+    } else if (
+      normFull.includes(normalizedQuery) ||
+      (normalizedStreetPart && normFull.includes(normalizedStreetPart))
+    ) {
+      isMatch = true;
+    } else if (significantTokens.length >= 2) {
+      // Khớp tất cả các từ quan trọng (ví dụ "san", "banh", "ca", "sau", "hoa", "ca")
+      const allMatch = significantTokens.every((token) => normFull.includes(token));
+      if (allMatch) {
+        isMatch = true;
+      }
     }
 
     if (isMatch) {
-      // Tiêu đề ngắn gọn: chỉ gồm Số nhà + Tên đường / Hẻm
+      // Tiêu đề ngắn gọn: chỉ gồm Số nhà + Tên đường / Hẻm / Tên địa điểm
       let shortTitle = item.street;
+      const isPOI =
+        item.street.startsWith('Sân') ||
+        item.street.startsWith('Làng') ||
+        item.street.startsWith('Giga') ||
+        item.street.startsWith('Đại') ||
+        item.street.startsWith('Tòa') ||
+        item.street.startsWith('Chợ');
+
       if (item.street === 'Đường 48') {
         shortTitle = houseNumber ? `${houseNumber} Đường 48` : '29 Đường 48';
       } else if (item.street === 'Hẻm 75') {
         shortTitle = houseNumber ? `${houseNumber} Hẻm 75` : '29 Hẻm 75';
       } else if (item.street === 'Đường 29') {
         shortTitle = has48 ? '48 Đường 29' : `${houseNumber || '29'} Đường 29`;
-      } else {
-        shortTitle = houseNumber ? `${houseNumber} ${item.street}` : item.street;
+      } else if (houseNumber && !isPOI) {
+        shortTitle = `${houseNumber} ${item.street}`;
       }
 
       // Cắt gọn nếu có dấu phẩy
@@ -294,75 +353,72 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
         shortTitle = shortTitle.split(',')[0].trim();
       }
 
-      const displaySubtitle = `${item.subArea ? item.subArea + ', ' : ''}${item.ward}, ${item.district}, ${item.city}`;
-      const fullAddr = `${shortTitle}, ${displaySubtitle}`;
+      const displaySubtitle = isPOI
+        ? `${item.street}, ${item.subArea ? item.subArea + ', ' : ''}${item.ward}, ${item.district}, ${item.city}`
+        : `${item.subArea ? item.subArea + ', ' : ''}${item.ward}, ${item.district}, ${item.city}`;
+      const fullAddr = `${shortTitle}, ${item.subArea ? item.subArea + ', ' : ''}${item.ward}, ${item.district}, ${item.city}`;
 
       localMatches.push({
         id: `local-${i}`,
         title: shortTitle,
-        subtitle: fullAddr,
+        subtitle: displaySubtitle,
         fullAddress: fullAddr,
       });
     }
   }
 
-  // 2. Thử gọi API OpenStreetMap (Nominatim) nếu máy có kết nối mạng
+  // 2. Tra cứu thông minh qua Google Autocomplete API cho mọi địa điểm, quán xá, sân bóng toàn quốc
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1800);
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
 
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+    const gUrl = `https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&q=${encodeURIComponent(
       cleanQuery
-    )}&format=json&countrycodes=vn&addressdetails=1&limit=5`;
-
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'PizzaFPTApp/1.0 (contact@pizzafpt.vn)',
-        'Accept-Language': 'vi,en',
-      },
-    });
+    )}`;
+    const gRes = await fetch(gUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
 
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        const apiSuggestions: AddressSuggestion[] = data.map((item: any, idx: number) => {
-          let rawName = item.name || item.address?.road || cleanQuery;
-          if (rawName.includes(',')) {
-            rawName = rawName.split(',')[0].trim();
-          }
-          return {
-            id: `osm-${item.place_id || idx}`,
-            title: rawName,
-            subtitle: item.display_name,
-            fullAddress: item.display_name,
-          };
-        });
+    if (gRes.ok) {
+      const gData = await gRes.json();
+      if (Array.isArray(gData) && Array.isArray(gData[1])) {
+        for (const s of gData[1].slice(0, 4)) {
+          if (!s || s.length < 3) continue;
+          const capitalized = s
+            .split(' ')
+            .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ');
 
-        // Đưa local matches lên đầu để đảm bảo chuẩn xác và giao diện đẹp nhất
-        const combined = [...localMatches, ...apiSuggestions];
-        const unique = combined.filter(
-          (v, index, self) => index === self.findIndex((t) => t.title === v.title)
-        );
-        return unique.slice(0, 6);
+          const normCap = removeVietnameseTones(capitalized).toLowerCase();
+          const alreadyExists = localMatches.some(
+            (m) => removeVietnameseTones(m.title).toLowerCase() === normCap
+          );
+
+          if (!alreadyExists) {
+            localMatches.push({
+              id: `g-${s}`,
+              title: capitalized,
+              subtitle: `${capitalized}, TP. Hồ Chí Minh`,
+              fullAddress: `${capitalized}, TP. Hồ Chí Minh`,
+            });
+          }
+        }
       }
     }
   } catch {
-    // Nếu offline hoặc lỗi kết nối, dùng local
+    // Bỏ qua nếu lỗi mạng
   }
 
-  // Nếu local chưa có, tạo gợi ý ngắn gọn
-  if (localMatches.length === 0 && cleanQuery.length >= 3) {
-    let shortName = cleanQuery;
-    if (shortName.includes(',')) {
-      shortName = shortName.split(',')[0].trim();
-    }
+  // 3. Nếu local chưa có, tạo gợi ý chuẩn xác từ từ khóa bạn đã gõ
+  if (localMatches.length === 0 && cleanQuery.length >= 2) {
+    const formattedTitle = cleanQuery
+      .split(' ')
+      .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
     localMatches.push({
       id: 'custom-input',
-      title: shortName,
-      subtitle: `${cleanQuery}, TP. Hồ Chí Minh`,
-      fullAddress: `${cleanQuery}, TP. Hồ Chí Minh`,
+      title: formattedTitle,
+      subtitle: `${formattedTitle}, TP. Hồ Chí Minh`,
+      fullAddress: `${formattedTitle}, TP. Hồ Chí Minh`,
     });
   }
 
@@ -374,6 +430,9 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
  */
 export function getCoordinatesForAddress(address: string): { lat: number; lng: number } {
   const norm = removeVietnameseTones(address || '');
+  if (norm.includes('ca sau') || norm.includes('ca xau') || norm.includes('hoa ca')) {
+    return { lat: 10.8385, lng: 106.7262 }; // Sân Banh Cỏ Nhân Tạo Cá Sấu Hoa Cà, Hiệp Bình Chánh
+  }
   if (norm.includes('48')) {
     return { lat: 10.8428, lng: 106.7285 }; // Đường 48, P. Hiệp Bình Chánh, TP. Thủ Đức
   }
