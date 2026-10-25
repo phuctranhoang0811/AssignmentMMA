@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Eye, EyeOff, ShieldCheck } from 'lucide-react-native';
+import { ChevronLeft, Eye, EyeOff } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 
 const BRAND_RED = '#CF4226';
@@ -103,16 +103,6 @@ export default function ChangePasswordScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Security Banner Card */}
-          <View style={styles.securityBanner}>
-            <ShieldCheck size={28} color={BRAND_RED} />
-            <View style={{ marginLeft: 12, flex: 1 }}>
-              <Text style={styles.securityBannerTitle}>Bảo mật tài khoản</Text>
-              <Text style={styles.securityBannerDesc}>
-                Để bảo vệ tài khoản, hãy sử dụng mật khẩu mạnh và không chia sẻ cho người khác.
-              </Text>
-            </View>
-          </View>
 
           {/* Mật khẩu hiện tại */}
           <View style={styles.fieldGroup}>
@@ -232,27 +222,7 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 40,
   },
-  securityBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF7ED',
-    borderWidth: 1,
-    borderColor: '#FED7AA',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-  },
-  securityBannerTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#9A3412',
-    marginBottom: 4,
-  },
-  securityBannerDesc: {
-    fontSize: 13,
-    color: '#7C2D12',
-    lineHeight: 18,
-  },
+
   fieldGroup: {
     marginBottom: 20,
   },
