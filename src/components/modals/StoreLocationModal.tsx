@@ -12,6 +12,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { ChevronLeft, MapPin, Map, XCircle } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { triggerHaptic } from '../../utils/haptics';
@@ -25,6 +26,7 @@ interface StoreLocationModalProps {
   currentAddress: string;
   onConfirmAddress: (address: string, fulfillmentType: 'delivery' | 'takeaway') => void;
   initialFulfillment?: 'delivery' | 'takeaway';
+  redirectToMenuOnConfirm?: boolean;
 }
 
 export function StoreLocationModal({
@@ -33,7 +35,9 @@ export function StoreLocationModal({
   currentAddress,
   onConfirmAddress,
   initialFulfillment = 'delivery',
+  redirectToMenuOnConfirm = true,
 }: StoreLocationModalProps) {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight || 24));
   const bottomInset = Math.max(insets.bottom, Platform.OS === 'ios' ? 24 : 12);
@@ -109,6 +113,9 @@ export function StoreLocationModal({
     triggerHaptic('success');
     onConfirmAddress(finalAddress, fulfillmentType);
     onClose();
+    if (redirectToMenuOnConfirm) {
+      router.push('/(tabs)/menu');
+    }
   };
 
   return (
@@ -132,7 +139,7 @@ export function StoreLocationModal({
           >
             <ChevronLeft size={28} color="#111827" strokeWidth={2.4} />
           </TouchableOpacity>
-          <Text style={styles.addressModalTitle}>Tìm cửa hàng gần bạn nhất</Text>
+          <Text style={styles.addressModalTitle}>Địa chỉ nhận hàng</Text>
           <View style={{ width: 36 }} />
         </View>
 
@@ -141,46 +148,6 @@ export function StoreLocationModal({
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Subtitle */}
-          <Text style={styles.addressModalSubtitle}>
-            Nhập địa chỉ của bạn để xem các ưu đãi, phiếu giảm giá và khuyến mại tại địa phương.
-          </Text>
-
-          {/* Fulfillment Mode Radio */}
-          <View style={styles.fulfillmentRadioGroup}>
-            <TouchableOpacity
-              style={styles.fulfillmentRadioItem}
-              onPress={() => setFulfillmentType('delivery')}
-              activeOpacity={0.7}
-            >
-              <View
-                style={[
-                  styles.radioCircle,
-                  fulfillmentType === 'delivery' && styles.radioCircleActive,
-                ]}
-              >
-                {fulfillmentType === 'delivery' && <View style={styles.radioDot} />}
-              </View>
-              <Text style={styles.fulfillmentText}>Giao hàng tới</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.fulfillmentRadioItem}
-              onPress={() => setFulfillmentType('takeaway')}
-              activeOpacity={0.7}
-            >
-              <View
-                style={[
-                  styles.radioCircle,
-                  fulfillmentType === 'takeaway' && styles.radioCircleActive,
-                ]}
-              >
-                {fulfillmentType === 'takeaway' && <View style={styles.radioDot} />}
-              </View>
-              <Text style={styles.fulfillmentText}>Mua mang về</Text>
-            </TouchableOpacity>
-          </View>
-
           {/* Section: Vị trí của tôi */}
           <Text style={styles.myLocationSectionTitle}>Vị trí của tôi</Text>
 
@@ -313,52 +280,12 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
   },
-  addressModalSubtitle: {
-    fontSize: 13.5,
-    color: '#4B5563',
-    lineHeight: 20,
-    marginTop: 14,
-    marginBottom: 16,
-  },
-  fulfillmentRadioGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  fulfillmentRadioItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 28,
-  },
-  radioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#9CA3AF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  radioCircleActive: {
-    borderColor: BRAND_RED,
-  },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: BRAND_RED,
-  },
-  fulfillmentText: {
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '500',
-  },
   myLocationSectionTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 10,
+    marginTop: 18,
+    marginBottom: 12,
   },
   addressSearchBox: {
     flexDirection: 'row',

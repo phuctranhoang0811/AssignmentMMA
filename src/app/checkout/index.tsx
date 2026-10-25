@@ -748,6 +748,7 @@ export default function CheckoutScreen() {
         onClose={() => setAddressModalVisible(false)}
         currentAddress={address}
         initialFulfillment={fulfillmentType}
+        redirectToMenuOnConfirm={false}
         onConfirmAddress={(addr, mode) => {
           setAddress(addr);
           setFulfillmentType(mode);

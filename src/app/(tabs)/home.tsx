@@ -263,7 +263,7 @@ export default function HomeScreen() {
         <View style={styles.greetingSection}>
           <Text style={styles.greetingTitle}>Chào mừng bạn trở lại</Text>
           <Text style={styles.greetingSubtitle}>
-            Vui lòng chọn Giao hàng hoặc Mua mang về để đặt hàng
+            Chọn địa chỉ nhận hàng để bắt đầu đặt món
           </Text>
 
           <TouchableOpacity
@@ -275,9 +275,7 @@ export default function HomeScreen() {
               <MapPin size={20} color={BRAND_RED} />
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.locationLabel}>
-                {fulfillmentMode === 'delivery' ? 'Giao hàng tới' : 'Mua mang về'}
-              </Text>
+              <Text style={styles.locationLabel}>Địa chỉ nhận hàng</Text>
               <Text style={styles.locationDetail} numberOfLines={1}>
                 {currentAddress}
               </Text>
