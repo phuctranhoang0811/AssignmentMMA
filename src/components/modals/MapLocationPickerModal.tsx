@@ -7,12 +7,20 @@ import {
   Modal,
   Platform,
   StatusBar,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, User } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { triggerHaptic } from '../../utils/haptics';
-import { getCoordinatesForAddress, getAddressFromCoordinates } from '../../services/addressService';
+import {
+  getCoordinatesForAddress,
+  getAddressFromCoordinates,
+  geocodeAddress,
+  reverseGeocodeLocation,
+  getCurrentPhoneLocation,
+} from '../../services/addressService';
 
 // Sử dụng WebView cho mobile (iOS / Android)
 let WebViewComponent: any = null;
@@ -76,21 +84,34 @@ const MAP_HTML = `
 
       window.map = map;
 
-      function notifyPosition() {
-        var center = map.getCenter();
-        var message = JSON.stringify({
-          type: 'location_changed',
-          lat: Number(center.lat.toFixed(5)),
-          lng: Number(center.lng.toFixed(5))
-        });
-        if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-          window.ReactNativeWebView.postMessage(message);
-        }
+      var isUserInteracting = false;
+      var mapContainer = map.getContainer();
+      mapContainer.addEventListener('touchstart', function() {
+        isUserInteracting = true;
+      }, { passive: true });
+      mapContainer.addEventListener('mousedown', function() {
+        isUserInteracting = true;
+      }, { passive: true });
+
+      var debounceTimer = null;
+      function onMoveEnded() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function() {
+          if (isUserInteracting) {
+            var center = map.getCenter();
+            var message = JSON.stringify({
+              type: 'location_changed',
+              lat: Number(center.lat.toFixed(5)),
+              lng: Number(center.lng.toFixed(5))
+            });
+            if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+              window.ReactNativeWebView.postMessage(message);
+            }
+          }
+        }, 150);
       }
 
-      // Chỉ thông báo khi người dùng chủ động kéo thả bằng tay
-      map.on('dragend', notifyPosition);
-      map.on('zoomend', notifyPosition);
+      map.on('moveend', onMoveEnded);
     </script>
   </body>
   </html>
@@ -154,6 +175,7 @@ export function MapLocationPickerModal({
   const [selectedAddress, setSelectedAddress] = useState(
     initialAddress || '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
   );
+  const [isLocating, setIsLocating] = useState(false);
   const initialAddressRef = useRef(initialAddress);
 
   useEffect(() => {
@@ -167,50 +189,71 @@ export function MapLocationPickerModal({
         '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
       setSelectedAddress(addr);
 
-      // Định vị ngay tọa độ của địa chỉ người dùng vừa nhập
-      const targetCoords = getCoordinatesForAddress(addr);
-      setTimeout(() => {
-        if (webViewRef.current) {
-          webViewRef.current.injectJavaScript(`
-            if (window.map) {
-              window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 18, { animate: false });
-            }
-            true;
-          `);
-        }
-      }, 400);
+      // Phân giải tọa độ GPS thực tế của bất kỳ địa chỉ nào người dùng nhập
+      geocodeAddress(addr).then((targetCoords) => {
+        setTimeout(() => {
+          if (webViewRef.current) {
+            webViewRef.current.injectJavaScript(`
+              if (window.map) {
+                window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 18, { animate: false });
+              }
+              true;
+            `);
+          }
+        }, 300);
+      });
     }
   }, [visible, initialAddress]);
 
-  const handleMessage = useCallback((event: any) => {
+  const handleMessage = useCallback(async (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'location_changed') {
         const { lat, lng } = data;
-        const newAddr = getAddressFromCoordinates(lat, lng, initialAddressRef.current);
-        setSelectedAddress(newAddr);
+        // 1. Phản hồi nhanh lập tức để UI mượt mà
+        const immediateAddr = getAddressFromCoordinates(lat, lng, initialAddressRef.current);
+        setSelectedAddress(immediateAddr);
+
+        // 2. Tra cứu địa chỉ thực tế chính xác qua Geocoder của thiết bị (Apple Maps / Google)
+        const preciseAddr = await reverseGeocodeLocation(lat, lng, immediateAddr);
+        if (preciseAddr) {
+          setSelectedAddress(preciseAddr);
+        }
       }
     } catch {
       // Bỏ qua lỗi
     }
   }, []);
 
-  const handleCenterUserLocation = () => {
+  const handleCenterUserLocation = async () => {
     triggerHaptic('light');
-    const addr =
-      (initialAddress && initialAddress.trim()) ||
-      '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
-    const targetCoords = getCoordinatesForAddress(addr);
-    const script = `
-      if (window.map) {
-        window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 18, { animate: true });
+    setIsLocating(true);
+    try {
+      const result = await getCurrentPhoneLocation();
+      if (result) {
+        const { coords, address } = result;
+        if (webViewRef.current) {
+          webViewRef.current.injectJavaScript(`
+            if (window.map) {
+              window.map.setView([${coords.lat}, ${coords.lng}], 18, { animate: true });
+            }
+            true;
+          `);
+        }
+        setSelectedAddress(address);
+        triggerHaptic('success');
+      } else {
+        Alert.alert(
+          'Quyền truy cập vị trí',
+          'Vui lòng bật quyền truy cập vị trí trong Cài đặt của điện thoại để tự động định vị vị trí hiện tại của bạn.',
+          [{ text: 'Đóng', style: 'cancel' }]
+        );
       }
-      true;
-    `;
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(script);
+    } catch {
+      // Bỏ qua lỗi
+    } finally {
+      setIsLocating(false);
     }
-    setSelectedAddress(addr);
   };
 
   const handleConfirm = () => {
@@ -264,13 +307,18 @@ export function MapLocationPickerModal({
             <Text style={styles.googleWatermarkText}>Google</Text>
           </View>
 
-          {/* Floating Target Location Button on bottom-right */}
+          {/* Floating Target Location Button on bottom-right (GPS định vị điện thoại) */}
           <TouchableOpacity
             style={styles.floatingLocateBtn}
             activeOpacity={0.88}
             onPress={handleCenterUserLocation}
+            disabled={isLocating}
           >
-            <RedCrosshairIcon />
+            {isLocating ? (
+              <ActivityIndicator size="small" color="#CF4226" />
+            ) : (
+              <RedCrosshairIcon />
+            )}
           </TouchableOpacity>
         </View>
 

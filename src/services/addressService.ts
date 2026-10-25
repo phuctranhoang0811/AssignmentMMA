@@ -3,6 +3,8 @@
  * Combines free OpenStreetMap (Nominatim) search with a fast local Vietnam address catalog.
  */
 
+import * as Location from 'expo-location';
+
 export interface AddressSuggestion {
   id: string;
   title: string;
@@ -469,3 +471,109 @@ export function getAddressFromCoordinates(
 
   return baseAddress;
 }
+
+/**
+ * Phân giải tọa độ GPS thực tế từ địa chỉ người dùng gõ (hỗ trợ mọi địa chỉ tại Việt Nam)
+ */
+export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number }> {
+  const cleanAddr = (address || '').trim();
+  if (!cleanAddr) {
+    return getCoordinatesForAddress(address);
+  }
+
+  try {
+    const geo = await Location.geocodeAsync(cleanAddr);
+    if (geo && geo.length > 0) {
+      return { lat: geo[0].latitude, lng: geo[0].longitude };
+    }
+  } catch {
+    // Nếu gõ ngắn, thử kèm theo tên thành phố
+    try {
+      const geo = await Location.geocodeAsync(`${cleanAddr}, TP. Hồ Chí Minh`);
+      if (geo && geo.length > 0) {
+        return { lat: geo[0].latitude, lng: geo[0].longitude };
+      }
+    } catch {}
+  }
+
+  // Fallback danh mục cục bộ
+  return getCoordinatesForAddress(cleanAddr);
+}
+
+/**
+ * Lấy địa chỉ thực tế từ tọa độ GPS của bản đồ qua Apple Maps / Google Geocoder của thiết bị
+ */
+export async function reverseGeocodeLocation(
+  lat: number,
+  lng: number,
+  fallback?: string
+): Promise<string> {
+  try {
+    const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+    if (results && results.length > 0) {
+      const item = results[0];
+      const streetNum = item.streetNumber || '';
+      const street = item.street || item.name || '';
+      const ward = item.district || item.subregion || '';
+      const district = item.city || item.subregion || '';
+      const city = item.region || item.city || 'TP. Hồ Chí Minh';
+
+      const parts: string[] = [];
+      if (streetNum && street) {
+        parts.push(`${streetNum} ${street}`);
+      } else if (street) {
+        parts.push(street);
+      } else if (item.name) {
+        parts.push(item.name);
+      }
+
+      if (ward && !parts.some((p) => p.includes(ward))) {
+        parts.push(ward);
+      }
+      if (district && !parts.some((p) => p.includes(district))) {
+        parts.push(district);
+      }
+      if (city && !parts.some((p) => p.includes(city))) {
+        parts.push(city);
+      }
+
+      if (parts.length > 0) {
+        return parts.join(', ');
+      }
+    }
+  } catch {
+    // Reverse geocode lỗi thì dùng thuật toán cục bộ
+  }
+
+  return getAddressFromCoordinates(lat, lng, fallback);
+}
+
+/**
+ * Lấy vị trí GPS hiện tại của điện thoại và địa chỉ thực tế tương ứng
+ */
+export async function getCurrentPhoneLocation(): Promise<{
+  coords: { lat: number; lng: number };
+  address: string;
+} | null> {
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      return null;
+    }
+
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
+
+    const { latitude, longitude } = location.coords;
+    const address = await reverseGeocodeLocation(latitude, longitude);
+
+    return {
+      coords: { lat: latitude, lng: longitude },
+      address,
+    };
+  } catch {
+    return null;
+  }
+}
+
