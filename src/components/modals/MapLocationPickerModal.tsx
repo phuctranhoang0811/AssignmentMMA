@@ -59,14 +59,16 @@ const MAP_HTML = `
     <script>
       var map = L.map('map', {
         center: [10.8428, 106.7285], // Mặc định tại Đường 48, TP. Thủ Đức, TP.HCM
-        zoom: 15,
+        zoom: 18.5,
+        maxZoom: 21,
+        zoomSnap: 0.5,
         zoomControl: false,
         attributionControl: false
       });
 
       // Lớp bản đồ Google Maps hiện đại sắc nét với tiếng Việt đầy đủ
       L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=vi&x={x}&y={y}&z={z}', {
-        maxZoom: 20,
+        maxZoom: 21,
         subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
       }).addTo(map);
 
@@ -134,7 +136,7 @@ export function MapLocationPickerModal({
         if (webViewRef.current) {
           webViewRef.current.injectJavaScript(`
             if (window.map) {
-              window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 16, { animate: false });
+              window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 18.5, { animate: false });
             }
             true;
           `);
@@ -168,7 +170,7 @@ export function MapLocationPickerModal({
     const targetCoords = getCoordinatesForAddress(addr);
     const script = `
       if (window.map) {
-        window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 16, { animate: true });
+        window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 18.5, { animate: true });
       }
       true;
     `;
