@@ -225,26 +225,6 @@ export default function CheckoutScreen() {
     setAddressModalVisible(false);
   };
 
-  const handleChooseFromMap = () => {
-    triggerHaptic('light');
-    Alert.alert(
-      'Chọn từ bản đồ',
-      'Đã định vị thành công vị trí hiện tại của bạn tại TP. Hồ Chí Minh.',
-      [
-        {
-          text: 'Xác nhận vị trí này',
-          onPress: () => {
-            setManualAddressInput(
-              '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
-            );
-            setAddressSuggestions([]);
-          },
-        },
-        { text: 'Đóng', style: 'cancel' },
-      ]
-    );
-  };
-
   const handlePlaceOrder = () => {
     if (!agreeTerms) {
       Alert.alert('Lưu ý', 'Vui lòng đồng ý với các điều khoản để tiếp tục đặt hàng.');

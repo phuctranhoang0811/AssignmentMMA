@@ -13,11 +13,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, MapPin, Map, XCircle } from 'lucide-react-native';
+import { ChevronLeft, MapPin, XCircle } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { triggerHaptic } from '../../utils/haptics';
-import { searchVietnamAddresses, AddressSuggestion } from '../../services/addressService';
-import { MapLocationPickerModal } from './MapLocationPickerModal';
+import {
+  searchVietnamAddresses,
+  AddressSuggestion,
+  getCurrentPhoneLocation,
+} from '../../services/addressService';
 
 const BRAND_RED = '#CF4226';
 
@@ -47,7 +50,7 @@ export function StoreLocationModal({
   const [manualAddressInput, setManualAddressInput] = useState(currentAddress);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [showMapModal, setShowMapModal] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -90,9 +93,27 @@ export function StoreLocationModal({
     setAddressSuggestions([]);
   };
 
-  const handleChooseFromMap = () => {
+  const handleGetCurrentLocation = async () => {
     triggerHaptic('light');
-    setShowMapModal(true);
+    setIsLocating(true);
+    try {
+      const result = await getCurrentPhoneLocation();
+      if (result && result.address) {
+        setManualAddressInput(result.address);
+        setAddressSuggestions([]);
+        triggerHaptic('success');
+      } else {
+        Alert.alert(
+          'Quyền truy cập vị trí',
+          'Vui lòng bật quyền truy cập vị trí trong Cài đặt của điện thoại để tự động lấy địa chỉ hiện tại của bạn.',
+          [{ text: 'Đóng', style: 'cancel' }]
+        );
+      }
+    } catch {
+      // Bỏ qua lỗi
+    } finally {
+      setIsLocating(false);
+    }
   };
 
   const handleConfirm = () => {
@@ -140,7 +161,12 @@ export function StoreLocationModal({
 
           {/* Address Search Bar */}
           <View style={styles.addressSearchBox}>
-            <View style={styles.crosshairBadge}>
+            <TouchableOpacity
+              style={styles.crosshairBadge}
+              activeOpacity={0.8}
+              onPress={handleGetCurrentLocation}
+              disabled={isLocating}
+            >
               <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
                 <Circle cx="12" cy="12" r="7" stroke="#FFFFFF" strokeWidth={2} />
                 <Circle cx="12" cy="12" r="2.5" fill="#FFFFFF" />
@@ -151,7 +177,7 @@ export function StoreLocationModal({
                   strokeLinecap="round"
                 />
               </Svg>
-            </View>
+            </TouchableOpacity>
 
             <TextInput
               style={styles.addressSearchInput}
@@ -205,16 +231,6 @@ export function StoreLocationModal({
               ))}
             </View>
           )}
-
-          {/* Action: Chọn từ bản đồ */}
-          <TouchableOpacity
-            style={styles.chooseFromMapBtn}
-            activeOpacity={0.7}
-            onPress={handleChooseFromMap}
-          >
-            <Map size={22} color={BRAND_RED} strokeWidth={2} />
-            <Text style={styles.chooseFromMapText}>Chọn từ bản đồ</Text>
-          </TouchableOpacity>
         </ScrollView>
 
         {/* Confirm Button */}
@@ -227,18 +243,6 @@ export function StoreLocationModal({
             <Text style={styles.confirmAddressBtnText}>Bắt đầu đặt hàng</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Interactive Map Picker Modal (Bản đồ chọn vị trí) */}
-        <MapLocationPickerModal
-          visible={showMapModal}
-          onClose={() => setShowMapModal(false)}
-          initialAddress={manualAddressInput}
-          onConfirmLocation={(addr) => {
-            setManualAddressInput(addr);
-            setAddressSuggestions([]);
-            setShowMapModal(false);
-          }}
-        />
       </View>
     </Modal>
   );
