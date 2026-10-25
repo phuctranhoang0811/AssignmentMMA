@@ -5,7 +5,7 @@ import { authService } from '../services';
 import { demoUser } from '../data/mockUsers';
 import { auth, db } from '../services/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 
 interface AuthContextType {
   user: DemoUser | null;
@@ -19,6 +19,7 @@ interface AuthContextType {
     password?: string,
     extra?: { gender?: string; birthday?: string }
   ) => Promise<void>;
+  resetPassword: (email: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (name: string, phone: string, birthday?: string, gender?: string, email?: string) => Promise<void>;
 }
@@ -173,6 +174,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           birthday: extra?.birthday || '01/01/2000',
           role: 'USER',
           rewardPoints: 100,
+          password: password,
           createdAt: serverTimestamp(),
         },
         { merge: true }
@@ -192,6 +194,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser(newUser);
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newUser));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resetPassword = async (email: string, newPassword: string) => {
+    setIsLoading(true);
+    try {
+      const trimmedEmail = email.trim().toLowerCase();
+      const q = query(collection(db, 'users'), where('email', '==', trimmedEmail));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        throw new Error('Không tìm thấy tài khoản với email này trên hệ thống.');
+      }
+      const userDoc = snap.docs[0];
+      await updateDoc(doc(db, 'users', userDoc.id), {
+        password: newPassword,
+        updatedAt: serverTimestamp(),
+      });
     } finally {
       setIsLoading(false);
     }
@@ -247,6 +268,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         loginDemo,
         registerDemo,
+        resetPassword,
         logout,
         updateProfile,
       }}

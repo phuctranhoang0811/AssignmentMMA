@@ -206,7 +206,7 @@ export default function LoginScreen() {
               {/* Quên mật khẩu link */}
               <TouchableOpacity
                 style={styles.forgotBtn}
-                onPress={() => Alert.alert('Quên mật khẩu', 'Tính năng gửi mã xác thực khôi phục mật khẩu sẽ được gửi đến SĐT/Email của bạn.')}
+                onPress={() => router.push('/auth/forgot-password')}
                 activeOpacity={0.7}
               >
                 <Text style={styles.forgotText}>Quên mật khẩu</Text>
