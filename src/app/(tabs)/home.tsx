@@ -33,6 +33,7 @@ import { useToast } from '../../state/ToastContext';
 import { triggerHaptic } from '../../utils/haptics';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
+import { getSavedDeliveryAddress, saveDeliveryAddress } from '../../services/addressStorage';
 
 const BRAND_RED = '#CF4226';
 
@@ -78,6 +79,12 @@ export default function HomeScreen() {
     '29 Đường 48, Khu phố 6, Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
   );
   const [fulfillmentMode, setFulfillmentMode] = useState<'delivery' | 'takeaway'>('delivery');
+
+  useEffect(() => {
+    getSavedDeliveryAddress().then((saved) => {
+      if (saved) setCurrentAddress(saved);
+    });
+  }, []);
 
   // Lunch Combo 3/4 Sheet State
   const [showLunchSheet, setShowLunchSheet] = useState(false);
@@ -522,6 +529,7 @@ export default function HomeScreen() {
         initialFulfillment={fulfillmentMode}
         onConfirmAddress={(addr, mode) => {
           setCurrentAddress(addr);
+          saveDeliveryAddress(addr);
           setFulfillmentMode(mode);
           showToast({
             message: mode === 'delivery' ? `Đã chọn giao tới: ${addr}` : 'Đã chọn mua mang về',

@@ -35,6 +35,7 @@ import { getItemLineUnitPrice } from '../../utils/calculateTotals';
 import { triggerHaptic } from '../../utils/haptics';
 import { searchVietnamAddresses, AddressSuggestion } from '../../services/addressService';
 import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
+import { getSavedDeliveryAddress, saveDeliveryAddress } from '../../services/addressStorage';
 
 const BRAND_RED = '#CF4226';
 
@@ -96,6 +97,12 @@ export default function CheckoutScreen() {
   const [address, setAddress] = useState('29 Đường Lê Duẩn, Sai Gon, Ho Chi Minh, Vietnam');
   const [deliveryNote, setDeliveryNote] = useState('');
   const [deliveryTime] = useState('10:30');
+
+  useEffect(() => {
+    getSavedDeliveryAddress().then((saved) => {
+      if (saved) setAddress(saved);
+    });
+  }, []);
 
   // Customer Information (Tự động điền nếu đã đăng nhập, để trống cho khách tự nhập tay)
   const [fullname, setFullname] = useState(user?.fullname || '');
@@ -731,6 +738,7 @@ export default function CheckoutScreen() {
         redirectToMenuOnConfirm={false}
         onConfirmAddress={(addr, mode) => {
           setAddress(addr);
+          saveDeliveryAddress(addr);
           setFulfillmentType(mode);
         }}
       />

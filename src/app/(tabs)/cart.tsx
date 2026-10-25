@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -28,6 +28,12 @@ import { triggerHaptic } from '../../utils/haptics';
 import { mockProducts } from '../../data/mockProducts';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { getItemLineUnitPrice } from '../../utils/calculateTotals';
+import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
+import {
+  checkHasChosenAddress,
+  saveDeliveryAddress,
+  getSavedDeliveryAddress,
+} from '../../services/addressStorage';
 
 const BRAND_RED = '#CF4226';
 
@@ -142,6 +148,29 @@ export default function CartScreen() {
     title: string;
     isFreeShip?: boolean;
   } | null>(null);
+
+  // Address selection modal flow
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState(
+    '29 Đường 48, Khu phố 6, Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
+  );
+
+  useEffect(() => {
+    getSavedDeliveryAddress().then((saved) => {
+      if (saved) setDeliveryAddress(saved);
+    });
+  }, []);
+
+  const handleProceedToCheckout = async () => {
+    const hasChosen = await checkHasChosenAddress();
+    if (!hasChosen) {
+      // Khách chưa chọn địa chỉ ở trang chủ -> Hiện modal nhập địa chỉ
+      setShowAddressModal(true);
+    } else {
+      // Khách đã chọn địa chỉ rồi -> Chuyển thẳng sang thanh toán
+      router.push('/checkout');
+    }
+  };
 
   // Calculate totals safely
   const subtotal = items.reduce((sum, item) => {
@@ -523,12 +552,26 @@ export default function CartScreen() {
 
         <TouchableOpacity
           style={styles.checkoutBtn}
-          onPress={() => router.push('/checkout')}
+          onPress={handleProceedToCheckout}
           activeOpacity={0.88}
         >
           <Text style={styles.checkoutBtnText}>Thanh toán</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Modal yêu cầu nhập địa chỉ nếu khách chưa chọn ở trang chủ */}
+      <StoreLocationModal
+        visible={showAddressModal}
+        onClose={() => setShowAddressModal(false)}
+        currentAddress={deliveryAddress}
+        redirectToMenuOnConfirm={false}
+        onConfirmAddress={(addr) => {
+          saveDeliveryAddress(addr);
+          setDeliveryAddress(addr);
+          setShowAddressModal(false);
+          router.push('/checkout');
+        }}
+      />
 
       {/* ======================================================== */}
       {/* MODAL 1: MÃ GIẢM GIÁ (EXACT REPLICA OF USER IMAGE 1)      */}
