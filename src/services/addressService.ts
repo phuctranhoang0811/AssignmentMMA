@@ -392,35 +392,80 @@ export function getCoordinatesForAddress(address: string): { lat: number; lng: n
 }
 
 /**
- * Trả về địa chỉ tương ứng theo vị trí kéo thả trên bản đồ
+ * Trả về địa chỉ chi tiết theo vị trí kéo thả trên bản đồ, tính toán động số nhà / hẻm
  */
 export function getAddressFromCoordinates(
   lat: number,
   lng: number,
   fallbackAddress?: string
 ): string {
-  // Khu vực Đường 48, Hiệp Bình Chánh, TP. Thủ Đức (10.83 - 10.86)
-  if (lat >= 10.83 && lat <= 10.86 && lng >= 106.71 && lng <= 106.75) {
-    if (lat > 10.844) {
-      return '29 Hẻm 75, Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
+  const baseAddress =
+    (fallbackAddress && fallbackAddress.trim()) ||
+    '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
+  const baseCoords = getCoordinatesForAddress(baseAddress);
+
+  const dLat = lat - baseCoords.lat;
+  const dLng = lng - baseCoords.lng;
+  const metersNorth = dLat * 111139;
+  const metersEast = dLng * 109200;
+  const dist = Math.sqrt(metersNorth * metersNorth + metersEast * metersEast);
+
+  // Nếu người dùng gần như không di chuyển (< 6m), giữ nguyên địa chỉ ban đầu
+  if (dist < 6) {
+    return baseAddress;
+  }
+
+  // Tách số nhà và tên đường từ địa chỉ gốc (ví dụ: "29 Đường 48, Khu phố 6...")
+  const numberMatch = baseAddress.match(/^(\d+(?:\/\d+)?)\s*(.*)$/);
+  const rawNumber = numberMatch ? numberMatch[1] : '29';
+  const restOfAddress = numberMatch ? numberMatch[2] : baseAddress;
+
+  // Lấy số nhà gốc dạng số nguyên
+  const baseNum = parseInt(rawNumber.split('/')[0], 10) || 29;
+
+  // Nếu di chuyển trong bán kính gần (< 500m quanh con đường/hẻm)
+  if (dist < 500) {
+    // Độ lệch theo chiều dọc con đường (thay đổi số nhà)
+    const numStep = Math.round(metersNorth / 12) * 2;
+    // Độ lệch theo chiều ngang (rẽ vào hẻm hoặc sang dãy đối diện)
+    const alleyDist = Math.abs(metersEast);
+
+    if (alleyDist > 25) {
+      // Đi sâu vào hẻm
+      const alleyHouse = Math.max(2, Math.round(alleyDist / 10) * 2);
+      const mainHouse = Math.max(1, baseNum + numStep);
+      return `${mainHouse}/${alleyHouse} ${restOfAddress}`;
+    }
+
+    if (metersEast < -15) {
+      // Dãy số chẵn đối diện bên đường
+      const evenNum = Math.max(2, Math.floor((baseNum + numStep) / 2) * 2 + 2);
+      return `${evenNum} ${restOfAddress}`;
+    }
+
+    // Dãy số cùng phía
+    const newNum = Math.max(1, baseNum + numStep);
+    return `${newNum} ${restOfAddress}`;
+  }
+
+  // Nếu kéo đi xa (> 500m), phát hiện các trục đường lân cận
+  if (lat >= 10.835 && lat <= 10.855 && lng >= 106.715 && lng <= 106.745) {
+    if (lat > 10.846) {
+      return 'Đường Hiệp Bình, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
+    }
+    if (lng > 106.735) {
+      return 'Đường Kha Vạn Cân, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
     }
     return '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
   }
-  // Khu vực Tam Hà, TP. Thủ Đức (10.85 - 10.87)
-  if (lat >= 10.85 && lat <= 10.87 && lng >= 106.75 && lng <= 106.78) {
+
+  if (lat >= 10.855 && lat <= 10.875) {
     return '48 Đường 29, Khu phố 6, P. Tam Hà, TP. Thủ Đức, TP. Hồ Chí Minh';
   }
-  // Khu vực Quận 1, TP.HCM
-  if (lat >= 10.76 && lat <= 10.8 && lng >= 106.68 && lng <= 106.71) {
+
+  if (lat >= 10.76 && lat <= 10.8) {
     return '29 Đường Lê Duẩn, P. Bến Nghé, Quận 1, TP. Hồ Chí Minh';
   }
-  // Khu vực miền Tây (Vĩnh Long, Cần Thơ)
-  if (lat < 10.4 && lat > 9.8) {
-    return 'XX5X+7G Vĩnh Xuân, Vĩnh Long, Việt Nam';
-  }
-  // Giữ nguyên địa chỉ người dùng đang gõ nếu có
-  return (
-    fallbackAddress ||
-    '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
-  );
+
+  return baseAddress;
 }

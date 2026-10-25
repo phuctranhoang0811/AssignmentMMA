@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -50,8 +50,9 @@ const MAP_HTML = `
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #cce0e8; }
+      body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #e5e3df; }
       .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
+      .leaflet-tile { will-change: transform; }
     </style>
   </head>
   <body>
@@ -59,38 +60,37 @@ const MAP_HTML = `
     <script>
       var map = L.map('map', {
         center: [10.8428, 106.7285], // Mặc định tại Đường 48, TP. Thủ Đức, TP.HCM
-        zoom: 18.5,
-        maxZoom: 21,
-        zoomSnap: 0.5,
+        zoom: 18,
+        maxZoom: 20,
         zoomControl: false,
-        attributionControl: false
+        attributionControl: false,
+        fadeAnimation: false
       });
 
       // Lớp bản đồ Google Maps hiện đại sắc nét với tiếng Việt đầy đủ
       L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=vi&x={x}&y={y}&z={z}', {
-        maxZoom: 21,
-        subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+        maxZoom: 20,
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        keepBuffer: 16
       }).addTo(map);
 
       window.map = map;
 
-      var debounceTimer = null;
       function notifyPosition() {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(function() {
-          var center = map.getCenter();
-          var message = JSON.stringify({
-            type: 'location_changed',
-            lat: Number(center.lat.toFixed(5)),
-            lng: Number(center.lng.toFixed(5))
-          });
-          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-            window.ReactNativeWebView.postMessage(message);
-          }
-        }, 300);
+        var center = map.getCenter();
+        var message = JSON.stringify({
+          type: 'location_changed',
+          lat: Number(center.lat.toFixed(5)),
+          lng: Number(center.lng.toFixed(5))
+        });
+        if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+          window.ReactNativeWebView.postMessage(message);
+        }
       }
 
-      map.on('moveend', notifyPosition);
+      // Chỉ thông báo khi người dùng chủ động kéo thả bằng tay
+      map.on('dragend', notifyPosition);
+      map.on('zoomend', notifyPosition);
     </script>
   </body>
   </html>
@@ -98,6 +98,40 @@ const MAP_HTML = `
 
 // Constant source reference để ngăn webview re-render
 const MAP_SOURCE = { html: MAP_HTML };
+
+// Component WebView được memoize để không bao giờ bị load lại khi state địa chỉ thay đổi
+const LeafletMap = React.memo(function LeafletMap({
+  webViewRef,
+  onMessage,
+}: {
+  webViewRef: React.RefObject<any>;
+  onMessage: (event: any) => void;
+}) {
+  if (!WebViewComponent) {
+    return (
+      <View style={styles.webFallbackMap}>
+        <Text style={{ color: '#4B5563', fontSize: 14 }}>
+          Bản đồ vị trí tương tác
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <WebViewComponent
+      ref={webViewRef}
+      source={MAP_SOURCE}
+      style={styles.webView}
+      onMessage={onMessage}
+      javaScriptEnabled
+      domStorageEnabled
+      originWhitelist={['*']}
+      startInLoadingState={false}
+      scrollEnabled={false}
+      bounces={false}
+    />
+  );
+});
 
 interface MapLocationPickerModalProps {
   visible: boolean;
@@ -120,11 +154,14 @@ export function MapLocationPickerModal({
   const [selectedAddress, setSelectedAddress] = useState(
     initialAddress || '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh'
   );
-  const hasUserMovedMap = useRef(false);
+  const initialAddressRef = useRef(initialAddress);
+
+  useEffect(() => {
+    initialAddressRef.current = initialAddress;
+  }, [initialAddress]);
 
   useEffect(() => {
     if (visible) {
-      hasUserMovedMap.current = false;
       const addr =
         (initialAddress && initialAddress.trim()) ||
         '29 Đường 48, Khu phố 6, P. Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh';
@@ -136,7 +173,7 @@ export function MapLocationPickerModal({
         if (webViewRef.current) {
           webViewRef.current.injectJavaScript(`
             if (window.map) {
-              window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 18.5, { animate: false });
+              window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 18, { animate: false });
             }
             true;
           `);
@@ -145,22 +182,18 @@ export function MapLocationPickerModal({
     }
   }, [visible, initialAddress]);
 
-  const handleMessage = (event: any) => {
+  const handleMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'location_changed') {
-        if (!hasUserMovedMap.current) {
-          // Bỏ qua sự kiện đầu tiên để giữ nguyên địa chỉ người dùng đã nhập
-          hasUserMovedMap.current = true;
-          return;
-        }
         const { lat, lng } = data;
-        setSelectedAddress(getAddressFromCoordinates(lat, lng, initialAddress));
+        const newAddr = getAddressFromCoordinates(lat, lng, initialAddressRef.current);
+        setSelectedAddress(newAddr);
       }
     } catch {
       // Bỏ qua lỗi
     }
-  };
+  }, []);
 
   const handleCenterUserLocation = () => {
     triggerHaptic('light');
@@ -170,7 +203,7 @@ export function MapLocationPickerModal({
     const targetCoords = getCoordinatesForAddress(addr);
     const script = `
       if (window.map) {
-        window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 18.5, { animate: true });
+        window.map.setView([${targetCoords.lat}, ${targetCoords.lng}], 18, { animate: true });
       }
       true;
     `;
@@ -207,29 +240,13 @@ export function MapLocationPickerModal({
           >
             <ChevronLeft size={28} color="#111827" strokeWidth={2.4} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Tìm cửa hàng gần bạn nhất</Text>
+          <Text style={styles.headerTitle}>Địa chỉ nhận hàng</Text>
           <View style={{ width: 36 }} />
         </View>
 
         {/* Map Container */}
         <View style={styles.mapArea}>
-          {WebViewComponent ? (
-            <WebViewComponent
-              ref={webViewRef}
-              source={MAP_SOURCE}
-              style={styles.webView}
-              onMessage={handleMessage}
-              javaScriptEnabled
-              domStorageEnabled
-              startInLoadingState={false}
-            />
-          ) : (
-            <View style={styles.webFallbackMap}>
-              <Text style={{ color: '#4B5563', fontSize: 14 }}>
-                Bản đồ vị trí tương tác
-              </Text>
-            </View>
-          )}
+          <LeafletMap webViewRef={webViewRef} onMessage={handleMessage} />
 
           {/* Center Pin Marker (User Teardrop Pin) */}
           <View style={styles.centerPinWrap} pointerEvents="none">
