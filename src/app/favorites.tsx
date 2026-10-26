@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Heart } from 'lucide-react-native';
 import { colors } from '../theme/colors';
@@ -12,6 +12,7 @@ import { useFavorites } from '../state/FavoritesContext';
 import { mockProducts } from '../data/mockProducts';
 
 export default function FavoritesScreen() {
+  const insets = useSafeAreaInsets();
   const { favoriteIds } = useFavorites();
 
   const favoriteProducts = mockProducts.filter((p) => favoriteIds.includes(p.id));
@@ -34,7 +35,10 @@ export default function FavoritesScreen() {
           data={favoriteProducts}
           keyExtractor={(item) => item.id}
           numColumns={2}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: Math.max(insets.bottom + 20, 40) },
+          ]}
           columnWrapperStyle={styles.columnWrapper}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (

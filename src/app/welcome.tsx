@@ -5,12 +5,12 @@ import {
   Image,
   StyleSheet,
   TouchableOpacity,
-  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../state/AuthContext';
+import { fontFamilies } from '../theme/typography';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -112,20 +112,20 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   titleRegular: {
+    fontFamily: fontFamilies.semiBold,
     fontSize: 16,
     fontWeight: '600',
     color: '#1F2024',
     textAlign: 'center',
     marginBottom: 4,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
   titleBold: {
+    fontFamily: fontFamilies.bold,
     fontSize: 17,
     fontWeight: '800',
     color: '#111215',
     textAlign: 'center',
     marginBottom: 20,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
   primaryButton: {
     backgroundColor: '#CF4226',

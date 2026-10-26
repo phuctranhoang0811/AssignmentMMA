@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { triggerHaptic } from '../../utils/haptics';
+import { fontFamilies } from '../../theme/typography';
 
 const BRAND_RED = '#CF4226';
 
@@ -93,6 +94,7 @@ export default function TabsLayout() {
             shadowRadius: 4,
           },
           tabBarLabelStyle: {
+            fontFamily: fontFamilies.semiBold,
             fontSize: 11,
             fontWeight: '600',
             marginTop: 2,

@@ -11,7 +11,7 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Info, Package } from 'lucide-react-native';
 import { db } from '../../services/firebase';
@@ -23,6 +23,7 @@ const BRAND_RED = '#CF4226';
 
 export default function OrderLookupScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
@@ -118,7 +119,10 @@ export default function OrderLookupScreen() {
 
         <ScrollView
           style={styles.scrollContainer}
-          contentContainerStyle={styles.orderSuccessScroll}
+          contentContainerStyle={[
+            styles.orderSuccessScroll,
+            { paddingBottom: Math.max(insets.bottom + 24, 40) },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           {/* Header Message */}
@@ -199,7 +203,9 @@ export default function OrderLookupScreen() {
                     </Text>
                   </View>
                   <Text style={styles.orderItemOptions}>
-                    {item.variantName || 'Đế Truyền Thống'}
+                    {Array.isArray(item.customizationSummary) && item.customizationSummary.length > 0
+                      ? item.customizationSummary.join(' • ')
+                      : item.variantName || 'Đế Truyền Thống'}
                   </Text>
                 </View>
               ))}
@@ -301,7 +307,7 @@ export default function OrderLookupScreen() {
         </View>
 
         {/* Content */}
-        <View style={styles.container}>
+        <View style={[styles.container, { paddingBottom: Math.max(insets.bottom + 20, 32) }]}>
           {/* Input field */}
           <TextInput
             style={styles.input}

@@ -42,6 +42,7 @@
     "ios": "expo start --ios --go",
     "web": "expo start --web",
     "seed:firebase": "npx tsx scripts/seed-firebase-products.ts",
+    "seed:accounts": "npx tsx scripts/create-admin-employee-accounts.ts",
     "view:firebase": "npx tsx scripts/view-firebase-data.ts",
     "lint": "expo lint"
   },

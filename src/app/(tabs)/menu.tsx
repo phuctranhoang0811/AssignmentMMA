@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    paddingBottom: spacing['4xl'],
+    paddingBottom: 110,
   },
   columnWrapper: {
     justifyContent: 'space-between',

@@ -22,8 +22,10 @@ import {
   Lock,
   LogOut,
   X,
+  Sparkles,
 } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
+import { fontFamilies } from '../../theme/typography';
 
 // Brand colors
 const PRIMARY_COLOR = '#CF4226';
@@ -97,13 +99,6 @@ export default function ProfileScreen() {
     );
   };
 
-  const handleChangePassword = () => {
-    Alert.alert(
-      'Đổi mật khẩu',
-      'Tính năng cập nhật mật khẩu đang được kích hoạt cho tài khoản ' + (user?.email || 'của bạn') + '.',
-      [{ text: 'Đồng ý' }]
-    );
-  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -115,7 +110,7 @@ export default function ProfileScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: Math.max(insets.bottom + 24, 40) },
+          { paddingBottom: Math.max(insets.bottom + 90, 110) },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -131,18 +126,26 @@ export default function ProfileScreen() {
                   <CardBadgeIcon />
                 </View>
                 <View style={styles.memberInfo}>
-                  <Text style={styles.memberTier}>Thành viên Thường</Text>
+                  <Text style={styles.memberTier}>
+                    {user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN'
+                      ? 'Quản trị viên (Admin)'
+                      : user?.role === 'EMPLOYEE'
+                      ? 'Nhân viên (Staff)'
+                      : 'Thành viên Thường'}
+                  </Text>
                   <Text style={styles.memberExpiry}>Ngày hết hạn 30/11/2027</Text>
                 </View>
               </View>
 
               <View style={styles.memberCardBottom}>
                 <View style={styles.statCol}>
-                  <Text style={styles.statNumber}>0</Text>
+                  <Text style={styles.statNumber}>{user?.rewardPoints ?? 0}</Text>
                   <Text style={styles.statUnit}> điểm</Text>
                 </View>
                 <View style={[styles.statCol, { alignItems: 'flex-end' }]}>
-                  <Text style={styles.statNumber}>0%</Text>
+                  <Text style={styles.statNumber}>
+                    {user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' ? '15%' : '0%'}
+                  </Text>
                   <Text style={styles.statUnit}> giảm giá</Text>
                 </View>
               </View>
@@ -159,6 +162,27 @@ export default function ProfileScreen() {
 
             {/* Menu Group 1 */}
             <View style={styles.cardGroup}>
+              {/* Quản lý đơn bếp (dành riêng cho Admin / Employee) */}
+              {(user?.role === 'EMPLOYEE' ||
+                user?.role === 'SUPER_ADMIN' ||
+                user?.role === 'ADMIN') && (
+                <>
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.7}
+                    onPress={() => router.push('/demo/staff-orders')}
+                  >
+                    <View style={styles.menuIconCol}>
+                      <Sparkles size={22} color="#CF4226" strokeWidth={1.8} />
+                    </View>
+                    <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
+                      Quản lý đơn bếp (Staff Demo)
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.divider} />
+                </>
+              )}
+
               {/* Hồ sơ của tôi */}
               <TouchableOpacity
                 style={styles.menuRow}
@@ -424,7 +448,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: '#111215',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontFamily: fontFamilies.bold,
   },
   scrollContent: {
     paddingHorizontal: 16,

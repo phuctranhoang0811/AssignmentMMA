@@ -164,6 +164,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing['4xl'],
+    paddingBottom: 110,
   },
 });

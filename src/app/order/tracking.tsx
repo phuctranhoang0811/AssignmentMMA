@@ -9,7 +9,7 @@ import {
   RefreshControl,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Search, Info } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
@@ -23,6 +23,7 @@ const BRAND_RED = '#CF4226';
 
 export default function OrderTrackingScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [orders, setOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -121,7 +122,10 @@ export default function OrderTrackingScreen() {
 
         <ScrollView
           style={styles.detailScroll}
-          contentContainerStyle={styles.detailContent}
+          contentContainerStyle={[
+            styles.detailContent,
+            { paddingBottom: Math.max(insets.bottom + 24, 40) },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           {/* Header Message */}
@@ -196,7 +200,9 @@ export default function OrderTrackingScreen() {
                     </Text>
                   </View>
                   <Text style={styles.orderItemOptions}>
-                    {item.variantName || 'Nhỏ, Đế Giòn Xốp(Nhỏ)'}
+                    {Array.isArray(item.customizationSummary) && item.customizationSummary.length > 0
+                      ? item.customizationSummary.join(' • ')
+                      : item.variantName || 'Đế Truyền Thống'}
                   </Text>
                 </View>
               ))}
@@ -318,7 +324,10 @@ export default function OrderTrackingScreen() {
         <FlatList
           data={orders}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContainer}
+          contentContainerStyle={[
+            styles.listContainer,
+            { paddingBottom: Math.max(insets.bottom + 24, 40) },
+          ]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl

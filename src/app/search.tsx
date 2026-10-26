@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   TextInput,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Search as SearchIcon, ArrowLeft, X, Clock, Flame } from 'lucide-react-native';
 import { colors } from '../theme/colors';
@@ -21,6 +21,7 @@ import { Product } from '../types/product';
 const popularKeywords = ['Margherita', 'Pepperoni', 'Mì Ý bò bằm', 'Sushi cá hồi', 'Trà đào', 'Phô mai'];
 
 export default function SearchScreen() {
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Product[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
@@ -140,7 +141,10 @@ export default function SearchScreen() {
           data={results}
           keyExtractor={(item) => item.id}
           numColumns={2}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: Math.max(insets.bottom + 20, 40) },
+          ]}
           columnWrapperStyle={styles.columnWrapper}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (

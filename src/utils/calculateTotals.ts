@@ -1,6 +1,7 @@
 import { CartItem, FulfillmentType, OrderPricing } from '../types/order';
 import { Product } from '../types/product';
 import { Coupon } from '../types/user';
+import { calculateCustomizationExtra } from '../types/pizzaCustomization';
 
 export const DEFAULT_TAX_RATE = 0.10;
 export const DEFAULT_DELIVERY_FEE = 20000;
@@ -23,6 +24,10 @@ export function getItemLineUnitPrice(item: CartItem, product?: Product): number 
       return sum + (addon ? addon.price : 0);
     }, 0);
     unitPrice += addonsTotal;
+  }
+
+  if (item.customization) {
+    unitPrice += calculateCustomizationExtra(item.customization);
   }
 
   return unitPrice;

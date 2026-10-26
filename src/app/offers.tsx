@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Tag, Copy, Check, Clock } from 'lucide-react-native';
 import { colors } from '../theme/colors';
@@ -14,6 +14,7 @@ import { triggerHaptic } from '../utils/haptics';
 
 export default function OffersScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
@@ -33,7 +34,12 @@ export default function OffersScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScreenHeader title="Mã ưu đãi & Voucher" showBack />
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(insets.bottom + 20, 40) },
+        ]}
+      >
         <AppText variant="captionMedium" color={colors.textSecondary} style={{ marginBottom: spacing.md }}>
           Các mã giảm giá đang áp dụng cho Pizza Time:
         </AppText>

@@ -44,13 +44,14 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   const lid =
                     item.lineId && !item.lineId.startsWith('undefined')
                       ? item.lineId
-                      : generateCartLineKey(pid, item.variantId, addons, item.specialInstructions);
+                      : generateCartLineKey(pid, item.variantId, addons, item.specialInstructions, item.customization);
                   return {
                     productId: pid,
                     variantId: item.variantId,
                     addonIds: addons,
                     specialInstructions: item.specialInstructions,
                     quantity: Number(item.quantity) || 1,
+                    customization: item.customization,
                     lineId: lid,
                   };
                 })
@@ -80,7 +81,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       productId,
       item.variantId,
       addonIds,
-      item.specialInstructions
+      item.specialInstructions,
+      item.customization
     );
 
     setItems((prev) => {
@@ -100,6 +102,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           addonIds,
           specialInstructions: item.specialInstructions,
           quantity: qty,
+          customization: item.customization,
           lineId,
         },
       ];

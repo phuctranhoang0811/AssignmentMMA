@@ -9,9 +9,10 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../state/AuthContext';
+import { fontFamilies } from '../../theme/typography';
 
 const BRAND_RED = '#CF4226';
 
@@ -78,6 +79,7 @@ const REWARD_ITEMS: RewardItem[] = [
 
 export default function RewardsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { isAuthenticated, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<'list' | 'my_gifts' | 'history'>('list');
   const [userPoints, setUserPoints] = useState(0);
@@ -86,7 +88,7 @@ export default function RewardsScreen() {
     if (!isLoading && !isAuthenticated) {
       router.replace({ pathname: '/auth/login', params: { returnTo: 'profile' } });
     }
-  }, [isLoading, isAuthenticated]);
+  }, [isLoading, isAuthenticated, router]);
 
   if (!isAuthenticated) {
     return null;
@@ -130,7 +132,10 @@ export default function RewardsScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(insets.bottom + 90, 110) },
+        ]}
       >
         {/* ======================================================== */}
         {/* MEMBER CARD (Solid #CF4226 brand red, matches mockup)   */}
@@ -305,6 +310,7 @@ const styles = StyleSheet.create({
     width: 36,
   },
   headerTitle: {
+    fontFamily: fontFamilies.bold,
     fontSize: 18,
     fontWeight: '700',
     color: '#111827',
