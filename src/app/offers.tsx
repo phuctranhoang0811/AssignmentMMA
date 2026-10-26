@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Tag, Copy, Check, Clock } from 'lucide-react-native';
 import { colors } from '../theme/colors';
-import { spacing, radius } from '../theme/spacing';
 import { AppText } from '../components/ui/AppText';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
+import { styles } from '../styles/offers.styles';
 import { mockCoupons } from '../data/mockPromotions';
 import { updateCheckoutDraft } from '../state/checkoutDraft';
 import { useToast } from '../state/ToastContext';
@@ -40,7 +40,7 @@ export default function OffersScreen() {
           { paddingBottom: Math.max(insets.bottom + 20, 40) },
         ]}
       >
-        <AppText variant="captionMedium" color={colors.textSecondary} style={{ marginBottom: spacing.md }}>
+        <AppText variant="captionMedium" color={colors.textSecondary} style={styles.subheading}>
           Các mã giảm giá đang áp dụng cho Pizza Time:
         </AppText>
 
@@ -100,58 +100,3 @@ export default function OffersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing['4xl'],
-  },
-  couponCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.base,
-    overflow: 'hidden',
-  },
-  leftStub: {
-    width: 90,
-    backgroundColor: colors.primarySoft,
-    borderRightWidth: 1,
-    borderRightColor: '#FBDCD3',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.sm,
-  },
-  contentCol: {
-    flex: 1,
-    padding: spacing.base,
-    justifyContent: 'space-between',
-  },
-  description: {
-    marginVertical: spacing.xs,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  expiryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  applyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-  },
-});

@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Check, X } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
 import { AppText } from '../../components/ui/AppText';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -11,6 +10,7 @@ import { PriceText } from '../../components/ui/PriceText';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useOrders } from '../../state/OrderContext';
 import { Order } from '../../types/order';
+import { styles } from '../../styles/staffOrders.styles';
 
 export default function StaffOrdersScreen() {
   const { orders, advanceOrderStatus, cancelOrder } = useOrders();
@@ -194,87 +194,3 @@ export default function StaffOrdersScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    marginHorizontal: spacing.lg,
-    padding: 3,
-    marginVertical: spacing.sm,
-  },
-  tabBtn: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    borderRadius: radius.sm,
-  },
-  activeTabBtn: {
-    backgroundColor: colors.surface,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing['4xl'],
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.base,
-    marginBottom: spacing.base,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingBottom: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  itemsList: {
-    marginVertical: spacing.xs,
-  },
-  itemLine: {
-    marginBottom: spacing.xs,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  actionBtnsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  rejectBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.sm,
-    backgroundColor: colors.errorSoft,
-  },
-  advanceBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.sm,
-  },
-});

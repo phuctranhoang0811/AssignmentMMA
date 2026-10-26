@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import { View, Platform, useWindowDimensions } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -17,6 +17,7 @@ import { OrderProvider } from '../state/OrderContext';
 import { FavoritesProvider } from '../state/FavoritesContext';
 import { ToastProvider } from '../state/ToastContext';
 import { colors } from '../theme/colors';
+import { styles } from '../styles/rootLayout.styles';
 
 export default function RootLayout() {
   const { width } = useWindowDimensions();
@@ -104,49 +105,3 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  mobileContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  desktopCanvas: {
-    flex: 1,
-    backgroundColor: '#EAEAE5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  phoneFrame: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 450,
-    backgroundColor: colors.background,
-    overflow: 'hidden',
-    height: '100%',
-    maxHeight: 900,
-    borderRadius: 36,
-    borderWidth: 7,
-    borderColor: '#1C1C1E',
-    paddingTop: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.16,
-    shadowRadius: 36,
-  },
-  notchContainer: {
-    position: 'absolute',
-    top: 8,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 9999,
-    pointerEvents: 'none',
-  },
-  dynamicIsland: {
-    width: 90,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#000000',
-  },
-});

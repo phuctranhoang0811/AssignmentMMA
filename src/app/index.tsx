@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import {
   Image,
-  StyleSheet,
   Animated,
   Pressable,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../state/AuthContext';
+import { styles } from '../styles/splash.styles';
 
 export default function SplashScreen() {
   const router = useRouter();
@@ -72,22 +72,3 @@ export default function SplashScreen() {
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#D74924',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  imageWrapper: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  splashImage: {
-    width: '100%',
-    height: '100%',
-  },
-});

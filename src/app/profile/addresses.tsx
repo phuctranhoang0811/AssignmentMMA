@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Plus, Trash2, Home, Briefcase } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
 import { AppText } from '../../components/ui/AppText';
 import { AppButton } from '../../components/ui/AppButton';
 import { AppInput } from '../../components/ui/AppInput';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { UserAddress } from '../../types/user';
 import { defaultAddresses } from '../../data/mockUsers';
+import { styles } from '../../styles/addresses.styles';
 
 const ADDRESSES_STORAGE_KEY = '@pizza_time_addresses_v1';
 
@@ -103,7 +103,7 @@ export default function AddressesScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {showAddModal && (
           <View style={styles.addBox}>
-            <AppText variant="h3" style={{ marginBottom: spacing.md }}>
+            <AppText variant="h3" style={styles.addBoxTitle}>
               Thêm địa chỉ mới
             </AppText>
             <AppInput
@@ -144,7 +144,7 @@ export default function AddressesScreen() {
                 ) : (
                   <Briefcase size={16} color={colors.primary} />
                 )}
-                <AppText variant="bodyMedium" style={{ marginLeft: spacing.xs }}>
+                <AppText variant="bodyMedium" style={styles.labelRowText}>
                   {item.label}
                 </AppText>
                 {item.isDefault && (
@@ -185,56 +185,3 @@ export default function AddressesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing['4xl'],
-  },
-  addIconBtn: {
-    padding: spacing.xs,
-  },
-  addBox: {
-    backgroundColor: colors.surface,
-    padding: spacing.base,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.base,
-  },
-  addressCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.base,
-    marginBottom: spacing.md,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  defaultBadge: {
-    backgroundColor: colors.primarySoft,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 1,
-    borderRadius: radius.xs,
-    marginLeft: spacing.xs,
-  },
-  namePhone: {
-    marginBottom: 4,
-  },
-  setDefaultRow: {
-    marginTop: spacing.sm,
-    paddingTop: spacing.xs,
-  },
-});
