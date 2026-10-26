@@ -27,7 +27,7 @@ config.server = {
       // Cho phép Cross-Origin Requests từ Web và Mobile
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
 
       if (req.method === 'OPTIONS') {
         res.statusCode = 204;
@@ -35,11 +35,19 @@ config.server = {
         return;
       }
 
-      if (req.url && req.url.startsWith('/api/send-otp') && req.method === 'POST') {
-        let body = '';
-        req.on('data', (chunk) => {
-          body += chunk.toString();
-        });
+      if (req.url && req.url.includes('/api/send-otp')) {
+        if (req.method === 'GET') {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ success: true, message: 'OTP Email Service is active and ready.' }));
+          return;
+        }
+
+        if (req.method === 'POST') {
+          let body = '';
+          req.on('data', (chunk) => {
+            body += chunk.toString();
+          });
 
         req.on('end', async () => {
           try {
