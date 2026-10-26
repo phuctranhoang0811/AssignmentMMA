@@ -41,21 +41,39 @@ export default function LoginScreen() {
   const handleBack = () => {
     if (returnTo === 'profile') {
       router.replace('/(tabs)/profile');
+    } else if (returnTo === 'menu') {
+      router.replace('/(tabs)/menu');
+    } else if (returnTo === 'cart') {
+      router.replace('/(tabs)/cart');
     } else {
       router.back();
     }
   };
 
   useEffect(() => {
-    if (returnTo === 'profile') {
+    if (returnTo === 'profile' || returnTo === 'menu' || returnTo === 'cart') {
       const onBackPress = () => {
-        router.replace('/(tabs)/profile');
+        if (returnTo === 'profile') router.replace('/(tabs)/profile');
+        else if (returnTo === 'menu') router.replace('/(tabs)/menu');
+        else if (returnTo === 'cart') router.replace('/(tabs)/cart');
         return true;
       };
       const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
       return () => sub.remove();
     }
   }, [returnTo]);
+
+  const navigateAfterLogin = () => {
+    if (returnTo === 'profile') {
+      router.replace('/(tabs)/profile');
+    } else if (returnTo === 'menu') {
+      router.replace('/(tabs)/menu');
+    } else if (returnTo === 'cart') {
+      router.replace('/(tabs)/cart');
+    } else {
+      router.replace('/(tabs)/home');
+    }
+  };
 
   const handleLogin = async () => {
     setErrorMessage('');
@@ -71,7 +89,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await loginDemo(identifier.trim(), password);
-      router.replace('/(tabs)/home');
+      navigateAfterLogin();
     } catch (e: any) {
       Alert.alert('Đăng nhập thất bại', e.message || 'Tài khoản hoặc mật khẩu không đúng');
     } finally {
@@ -83,7 +101,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await loginDemo('demo@pizzatime.local');
-      router.replace('/(tabs)/home');
+      navigateAfterLogin();
     } finally {
       setIsLoading(false);
     }

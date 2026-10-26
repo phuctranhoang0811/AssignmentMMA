@@ -149,6 +149,22 @@ export default function CartScreen() {
     isFreeShip?: boolean;
   } | null>(null);
 
+  // Modal xác nhận xóa món
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+
+  const handleConfirmDelete = () => {
+    if (itemToDelete) {
+      triggerHaptic('medium');
+      removeItem(itemToDelete);
+      setItemToDelete(null);
+      showToast({ message: 'Đã xóa món khỏi giỏ hàng', type: 'info' });
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setItemToDelete(null);
+  };
+
   // Address selection modal flow
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -370,9 +386,8 @@ export default function CartScreen() {
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => {
-                          triggerHaptic('medium');
-                          removeItem(item.lineId);
-                          showToast({ message: 'Đã xóa món khỏi giỏ hàng', type: 'info' });
+                          triggerHaptic('light');
+                          setItemToDelete(item.lineId);
                         }}
                         activeOpacity={0.7}
                         style={{ marginLeft: 16 }}
@@ -755,6 +770,44 @@ export default function CartScreen() {
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* MODAL 3: XÁC NHẬN XÓA MÓN (EXACT REPLICA CỦA ẢNH CHỤP)     */}
+      {/* ======================================================== */}
+      <Modal
+        visible={itemToDelete !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCancelDelete}
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={styles.deleteModalCard}>
+            <Text style={styles.deleteModalTitle}>Xóa món</Text>
+            <View style={styles.deleteModalRedLine} />
+            <Text style={styles.deleteModalMessage}>
+              Bạn có muốn xóa món này không?
+            </Text>
+
+            <View style={styles.deleteModalButtonsRow}>
+              <TouchableOpacity
+                style={[styles.deleteModalBtn, styles.deleteModalCancelBtn]}
+                onPress={handleCancelDelete}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deleteModalCancelText}>Hủy</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.deleteModalBtn, styles.deleteModalConfirmBtn]}
+                onPress={handleConfirmDelete}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.deleteModalConfirmText}>Xác nhận</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );

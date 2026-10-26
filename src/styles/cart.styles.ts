@@ -661,6 +661,84 @@ export const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+
+  /* ======================================================== */
+  /* MODAL XÁC NHẬN XÓA MÓN                                  */
+  /* ======================================================== */
+  deleteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.48)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+  },
+  deleteModalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 10,
+  },
+  deleteModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  deleteModalRedLine: {
+    width: 44,
+    height: 3,
+    backgroundColor: '#C62828',
+    borderRadius: 2,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  deleteModalMessage: {
+    fontSize: 15,
+    color: '#374151',
+    textAlign: 'center',
+    marginBottom: 24,
+    fontWeight: '500',
+    lineHeight: 22,
+  },
+  deleteModalButtonsRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  deleteModalBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteModalCancelBtn: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+  },
+  deleteModalCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  deleteModalConfirmBtn: {
+    backgroundColor: '#C62828',
+  },
+  deleteModalConfirmText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
 });
 
 export default styles;

@@ -19,10 +19,12 @@ import {
   PizzaSizeId,
 } from '../../types/pizzaCustomization';
 import { useCart } from '../../state/CartContext';
+import { useAuth } from '../../state/AuthContext';
 import { useFavorites } from '../../state/FavoritesContext';
 import { useToast } from '../../state/ToastContext';
 import { triggerHaptic } from '../../utils/haptics';
 import { styles } from '../../styles/productDetail.styles';
+import { hasPromptedMemberDiscount } from '../../utils/sessionFlags';
 
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -47,6 +49,7 @@ export default function ProductDetailScreen() {
   });
 
   const { addItem } = useCart();
+  const { isAuthenticated } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites();
   const { showToast } = useToast();
 
@@ -148,15 +151,21 @@ export default function ProductDetailScreen() {
     triggerHaptic('success');
     showToast({
       message: `Đã thêm ${quantity}x ${product.name} vào giỏ hàng`,
-      actionText: 'Xem giỏ',
-      onAction: () => router.push('/(tabs)/cart'),
     });
 
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/(tabs)/menu');
-    }
+    // 2. Kiểm tra nếu thuộc 3 danh mục ưu đãi mà chưa đăng nhập và chưa hỏi phiên này
+    const isMemberDiscount =
+      product.categoryId === 'cheese_party' ||
+      product.categoryId === 'member_deals' ||
+      product.categoryId === 'hot_deals';
+
+    const shouldPrompt = !isAuthenticated && isMemberDiscount && !hasPromptedMemberDiscount();
+
+    // 3. Văng ra trang menu (kèm cờ prompt nếu cần hỏi trên menu)
+    router.replace({
+      pathname: '/(tabs)/menu',
+      params: shouldPrompt ? { promptMemberDiscount: '1' } : undefined,
+    });
   };
 
   const handleToggleFavorite = () => {
