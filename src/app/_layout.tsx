@@ -1,17 +1,35 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import { View, Platform, useWindowDimensions } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  useFonts,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  PlusJakartaSans_800ExtraBold,
+} from '@expo-google-fonts/plus-jakarta-sans';
 import { AuthProvider } from '../state/AuthContext';
 import { CartProvider } from '../state/CartContext';
 import { OrderProvider } from '../state/OrderContext';
 import { FavoritesProvider } from '../state/FavoritesContext';
+import { ToastProvider } from '../state/ToastContext';
 import { colors } from '../theme/colors';
+import { styles } from '../styles/rootLayout.styles';
 
 export default function RootLayout() {
   const { width } = useWindowDimensions();
   const isDesktopWeb = Platform.OS === 'web' && width > 600;
+
+  const [fontsLoaded] = useFonts({
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+    PlusJakartaSans_800ExtraBold,
+  });
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -26,6 +44,10 @@ export default function RootLayout() {
       }
     }
   }, []);
+
+  if (!fontsLoaded && Platform.OS !== 'web') {
+    return null;
+  }
 
   const stackContent = (
     <Stack
@@ -43,6 +65,7 @@ export default function RootLayout() {
       <Stack.Screen name="checkout/review" options={{ headerShown: false }} />
       <Stack.Screen name="order/success" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="order/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="welcome" options={{ headerShown: false }} />
       <Stack.Screen name="auth/login" options={{ headerShown: false }} />
       <Stack.Screen name="auth/register" options={{ headerShown: false }} />
       <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
@@ -60,19 +83,21 @@ export default function RootLayout() {
         <CartProvider>
           <OrderProvider>
             <FavoritesProvider>
-              <StatusBar style="dark" />
-              {isDesktopWeb ? (
-                <View style={styles.desktopCanvas}>
-                  <View style={styles.phoneFrame}>
-                    <View style={styles.notchContainer}>
-                      <View style={styles.dynamicIsland} />
+              <ToastProvider>
+                <StatusBar style="dark" />
+                {isDesktopWeb ? (
+                  <View style={styles.desktopCanvas}>
+                    <View style={styles.phoneFrame}>
+                      <View style={styles.notchContainer}>
+                        <View style={styles.dynamicIsland} />
+                      </View>
+                      {stackContent}
                     </View>
-                    {stackContent}
                   </View>
-                </View>
-              ) : (
-                <View style={styles.mobileContainer}>{stackContent}</View>
-              )}
+                ) : (
+                  <View style={styles.mobileContainer}>{stackContent}</View>
+                )}
+              </ToastProvider>
             </FavoritesProvider>
           </OrderProvider>
         </CartProvider>
@@ -80,49 +105,3 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  mobileContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  desktopCanvas: {
-    flex: 1,
-    backgroundColor: '#EAEAE5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  phoneFrame: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 450,
-    backgroundColor: colors.background,
-    overflow: 'hidden',
-    height: '100%',
-    maxHeight: 900,
-    borderRadius: 36,
-    borderWidth: 7,
-    borderColor: '#1C1C1E',
-    paddingTop: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.16,
-    shadowRadius: 36,
-  },
-  notchContainer: {
-    position: 'absolute',
-    top: 8,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 9999,
-    pointerEvents: 'none',
-  },
-  dynamicIsland: {
-    width: 90,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#000000',
-  },
-});

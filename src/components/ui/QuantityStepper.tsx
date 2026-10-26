@@ -4,6 +4,7 @@ import { Minus, Plus } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { spacing, radius } from '../../theme/spacing';
 import { AppText } from './AppText';
+import { triggerHaptic } from '../../utils/haptics';
 
 interface QuantityStepperProps {
   value: number;
@@ -26,12 +27,24 @@ export const QuantityStepper: React.FC<QuantityStepperProps> = ({
   const btnSize = size === 'sm' ? 28 : 34;
   const iconSize = size === 'sm' ? 14 : 16;
 
+  const handleDecrement = () => {
+    if (isMin) return;
+    triggerHaptic('light');
+    onChange(value - 1);
+  };
+
+  const handleIncrement = () => {
+    if (isMax) return;
+    triggerHaptic('light');
+    onChange(value + 1);
+  };
+
   return (
     <View style={styles.container}>
       <TouchableOpacity
         activeOpacity={0.7}
         disabled={isMin}
-        onPress={() => onChange(value - 1)}
+        onPress={handleDecrement}
         style={[
           styles.button,
           { width: btnSize, height: btnSize, borderRadius: radius.sm },
@@ -53,7 +66,7 @@ export const QuantityStepper: React.FC<QuantityStepperProps> = ({
       <TouchableOpacity
         activeOpacity={0.7}
         disabled={isMax}
-        onPress={() => onChange(value + 1)}
+        onPress={handleIncrement}
         style={[
           styles.button,
           { width: btnSize, height: btnSize, borderRadius: radius.sm },

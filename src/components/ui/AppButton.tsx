@@ -11,6 +11,7 @@ import {
 import { colors } from '../../theme/colors';
 import { spacing, radius } from '../../theme/spacing';
 import { AppText } from './AppText';
+import { triggerHaptic } from '../../utils/haptics';
 
 interface AppButtonProps {
   title: string;
@@ -38,6 +39,12 @@ export const AppButton: React.FC<AppButtonProps> = ({
   textStyle,
 }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePress = () => {
+    if (disabled || isLoading) return;
+    triggerHaptic(variant === 'danger' ? 'medium' : 'light');
+    onPress();
+  };
 
   const handlePressIn = () => {
     if (disabled || isLoading) return;
@@ -107,7 +114,7 @@ export const AppButton: React.FC<AppButtonProps> = ({
     <Animated.View style={[{ transform: [{ scale: scaleAnim }], width: fullWidth ? '100%' : 'auto' }]}>
       <TouchableOpacity
         activeOpacity={0.88}
-        onPress={onPress}
+        onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         disabled={disabled || isLoading}

@@ -9,6 +9,8 @@ import { AppText } from '../ui/AppText';
 import { PriceText } from '../ui/PriceText';
 import { useFavorites } from '../../state/FavoritesContext';
 import { useCart } from '../../state/CartContext';
+import { useToast } from '../../state/ToastContext';
+import { triggerHaptic } from '../../utils/haptics';
 
 interface ProductCardProps {
   product: Product;
@@ -23,6 +25,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 }) => {
   const { isFavorite, toggleFavorite } = useFavorites();
   const { addItem } = useCart();
+  const { showToast } = useToast();
   const favorited = isFavorite(product.id);
 
   const cardScale = useRef(new Animated.Value(1)).current;
@@ -54,6 +57,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   const handleFavoritePress = (e: any) => {
     e.stopPropagation?.();
+    triggerHaptic('medium');
     Animated.sequence([
       Animated.timing(heartScale, {
         toValue: 1.35,
@@ -74,17 +78,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     e.stopPropagation?.();
     if (!product.isAvailable) return;
 
-    // BR-03: If product has variants, MUST navigate to detail to let customer pick size
     if (product.variants && product.variants.length > 0) {
       handlePress();
       return;
     }
 
-    // Direct add for items without variants
     addItem({
       productId: product.id,
       addonIds: [],
       quantity: 1,
+    });
+    triggerHaptic('success');
+    showToast({
+      message: `Đã thêm ${product.name} vào giỏ hàng`,
+      actionText: 'Xem giỏ',
+      onAction: () => router.push('/(tabs)/cart'),
     });
   };
 

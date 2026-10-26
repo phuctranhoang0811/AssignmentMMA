@@ -1,22 +1,32 @@
 import React, { useState } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, ScrollView, TouchableOpacity } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Tag, Copy, Check, Clock } from 'lucide-react-native';
 import { colors } from '../theme/colors';
-import { spacing, radius } from '../theme/spacing';
 import { AppText } from '../components/ui/AppText';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
+import { styles } from '../styles/offers.styles';
 import { mockCoupons } from '../data/mockPromotions';
-import { formatCurrency } from '../utils/formatCurrency';
 import { updateCheckoutDraft } from '../state/checkoutDraft';
+import { useToast } from '../state/ToastContext';
+import { triggerHaptic } from '../utils/haptics';
 
 export default function OffersScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const handleCopyCode = (code: string) => {
     updateCheckoutDraft({ promoCode: code });
     setCopiedCode(code);
-    Alert.alert('Đã lưu mã', `Mã ${code} đã được chọn để tự động áp dụng tại giỏ hàng và thanh toán!`);
+    triggerHaptic('success');
+    showToast({
+      message: `Mã ${code} đã được lưu cho đơn hàng tiếp theo`,
+      actionText: 'Xem giỏ',
+      onAction: () => router.push('/(tabs)/cart'),
+    });
     setTimeout(() => setCopiedCode(null), 3000);
   };
 
@@ -24,8 +34,13 @@ export default function OffersScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScreenHeader title="Mã ưu đãi & Voucher" showBack />
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <AppText variant="captionMedium" color={colors.textSecondary} style={{ marginBottom: spacing.md }}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(insets.bottom + 20, 40) },
+        ]}
+      >
+        <AppText variant="captionMedium" color={colors.textSecondary} style={styles.subheading}>
           Các mã giảm giá đang áp dụng cho Pizza Time:
         </AppText>
 
@@ -85,58 +100,3 @@ export default function OffersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing['4xl'],
-  },
-  couponCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.base,
-    overflow: 'hidden',
-  },
-  leftStub: {
-    width: 90,
-    backgroundColor: colors.primarySoft,
-    borderRightWidth: 1,
-    borderRightColor: '#FBDCD3',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.sm,
-  },
-  contentCol: {
-    flex: 1,
-    padding: spacing.base,
-    justifyContent: 'space-between',
-  },
-  description: {
-    marginVertical: spacing.xs,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  expiryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  applyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-  },
-});

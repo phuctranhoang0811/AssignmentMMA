@@ -1,237 +1,756 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
-  ScrollView,
-  StyleSheet,
+  Text,
+  TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
+  ScrollView,
   Platform,
   Alert,
+  Modal,
+  Pressable,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { User, Mail, Phone, Lock, Eye, EyeOff, CheckSquare, Square } from 'lucide-react-native';
-import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
-import { AppText } from '../../components/ui/AppText';
-import { AppInput } from '../../components/ui/AppInput';
-import { AppButton } from '../../components/ui/AppButton';
-import { ScreenHeader } from '../../components/ui/ScreenHeader';
+import { useRouter } from 'expo-router';
+import { ChevronLeft, ChevronDown, Check, Eye, EyeOff } from 'lucide-react-native';
+import Svg, { Path, Polygon, Circle, G } from 'react-native-svg';
 import { useAuth } from '../../state/AuthContext';
-import { isValidEmail, isValidPhone, isValidName } from '../../utils/validators';
+import { generateOtpCode, sendOtpToEmail } from '../../services/otpService';
+import { styles, BRAND_RED } from '../../styles/register.styles';
+
+// Party Popper Celebration SVG for Step 4
+const CelebrationPopper = () => (
+  <Svg width={120} height={120} viewBox="0 0 120 120" fill="none">
+    {/* Confetti streamers */}
+    <Path d="M60 45 C65 25, 75 20, 85 22" stroke="#00B4D8" strokeWidth={5} strokeLinecap="round" />
+    <Path d="M52 42 C45 28, 50 15, 60 12" stroke="#FFB703" strokeWidth={4} strokeLinecap="round" />
+    <Path d="M68 48 C80 38, 92 40, 96 32" stroke="#E63946" strokeWidth={4} strokeLinecap="round" />
+
+    {/* Stars / Confetti dots */}
+    <Circle cx="40" cy="30" r="3.5" fill="#E63946" />
+    <Circle cx="72" cy="18" r="4" fill="#00B4D8" />
+    <Circle cx="88" cy="42" r="3" fill="#FFB703" />
+    <Circle cx="48" cy="16" r="3" fill="#FB8500" />
+    <Circle cx="98" cy="24" r="2.5" fill="#E63946" />
+
+    {/* Sparkle Stars */}
+    <Path d="M42 24 L44 19 L46 24 L51 26 L46 28 L44 33 L42 28 L37 26 Z" fill="#FFB703" />
+    <Path d="M78 32 L79.5 28 L81 32 L85 33.5 L81 35 L79.5 39 L78 35 L74 33.5 Z" fill="#FB8500" />
+
+    {/* Party Cone with Stripes */}
+    <G transform="rotate(35 50 75)">
+      {/* Base Cone */}
+      <Polygon points="50,40 25,95 75,95" fill="#FB8500" />
+      {/* Red Stripes */}
+      <Polygon points="40,62 33,78 67,78 60,62" fill="#E63946" />
+      <Polygon points="46,48 43,55 57,55 54,48" fill="#E63946" />
+      <Polygon points="28,88 25,95 75,95 72,88" fill="#E63946" />
+    </G>
+  </Svg>
+);
 
 export default function RegisterScreen() {
+  const router = useRouter();
   const { registerDemo } = useAuth();
-  const [fullname, setFullname] = useState('');
+
+  // Current Step: 1 = Email OTP, 2 = Personal Info, 3 = Password, 4 = Success
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+
+  // Form State
   const [email, setEmail] = useState('');
+  const [fullname, setFullname] = useState('');
+  const [birthYear, setBirthYear] = useState('2000');
+  const [birthMonth, setBirthMonth] = useState('01');
+  const [birthDay, setBirthDay] = useState('01');
+  const [gender, setGender] = useState('Nam');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [agreeTerms, setAgreeTerms] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [agreeRewards, setAgreeRewards] = useState(true);
+  const [agreeNews, setAgreeNews] = useState(true);
 
-  const handleRegister = async () => {
-    const errs: Record<string, string> = {};
+  // OTP Modal State
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otp, setOtp] = useState(['', '', '', '']);
+  const [timerSeconds, setTimerSeconds] = useState(300);
+  const [serverOtp, setServerOtp] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
 
-    if (!isValidName(fullname)) {
-      errs.fullname = 'Vui lòng nhập họ và tên (tối thiểu 2 ký tự)';
-    }
-    if (!isValidEmail(email)) {
-      errs.email = 'Email không hợp lệ';
-    }
-    if (!isValidPhone(phone)) {
-      errs.phone = 'Số điện thoại không hợp lệ (10 số, bắt đầu bằng 0)';
-    }
-    if (!password || password.length < 6) {
-      errs.password = 'Mật khẩu phải có ít nhất 6 ký tự';
-    }
-    if (password !== confirmPassword) {
-      errs.confirmPassword = 'Mật khẩu xác nhận không khớp';
-    }
-    if (!agreeTerms) {
-      errs.terms = 'Bạn cần đồng ý với điều khoản sử dụng';
-    }
+  // Modals for Step 2 Date/Gender
+  const [showGenderPicker, setShowGenderPicker] = useState(false);
+  const [datePickerType, setDatePickerType] = useState<'year' | 'month' | 'day' | null>(null);
 
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs);
-      return;
-    }
+  // Refs for OTP inputs
+  const otpInputRefs = [
+    useRef<any>(null),
+    useRef<any>(null),
+    useRef<any>(null),
+    useRef<any>(null),
+  ];
 
-    setIsLoading(true);
-    try {
-      await registerDemo(fullname, email, phone);
-      Alert.alert('Thành công', 'Tạo tài khoản demo thành công!', [
-        { text: 'OK', onPress: () => router.replace('/(tabs)/profile') },
-      ]);
-    } catch (e: any) {
-      Alert.alert('Đăng ký thất bại', e.message);
-    } finally {
-      setIsLoading(false);
+  // OTP Countdown Timer
+  useEffect(() => {
+    let interval: any;
+    if (showOtpModal && timerSeconds > 0) {
+      interval = setInterval(() => {
+        setTimerSeconds((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [showOtpModal, timerSeconds]);
+
+  // Handle Back
+  const handleBack = () => {
+    if (currentStep === 1) {
+      router.back();
+    } else if (currentStep === 2) {
+      setCurrentStep(1);
+    } else if (currentStep === 3) {
+      setCurrentStep(2);
+    } else if (currentStep === 4) {
+      router.replace('/(tabs)/home');
     }
   };
 
+  // Step 1: Send OTP to Email
+  const handleStep1Submit = async () => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !trimmedEmail.includes('@')) {
+      Alert.alert('Thông báo', 'Vui lòng nhập email hợp lệ.');
+      return;
+    }
+
+    setIsSendingOtp(true);
+    const newOtp = generateOtpCode();
+    setServerOtp(newOtp);
+
+    const result = await sendOtpToEmail(trimmedEmail, newOtp);
+    setIsSendingOtp(false);
+
+    setTimerSeconds(300);
+    setOtp(['', '', '', '']);
+    setShowOtpModal(true);
+
+    if (result.success) {
+      Alert.alert(
+        'Đã gửi mã OTP',
+        `Mã xác nhận 4 số đã được gửi đến email:\n${trimmedEmail}\n\nVui lòng kiểm tra hộp thư đến (hoặc hòm thư Spam).`
+      );
+    } else {
+      Alert.alert(
+        'Thông báo xác thực',
+        `Không thể kết nối dịch vụ gửi email: ${result.error}\n(Mã xác thực tạm thời của bạn là: ${newOtp})`
+      );
+    }
+  };
+
+  // Resend OTP
+  const handleResendOtp = async () => {
+    if (isSendingOtp) return;
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) return;
+
+    setIsSendingOtp(true);
+    const newOtp = generateOtpCode();
+    setServerOtp(newOtp);
+
+    const result = await sendOtpToEmail(trimmedEmail, newOtp);
+    setIsSendingOtp(false);
+    setTimerSeconds(300);
+
+    if (result.success) {
+      Alert.alert('Đã gửi lại mã', `Mã OTP mới đã được gửi đến email:\n${trimmedEmail}`);
+    } else {
+      Alert.alert('Thông báo', `Không thể gửi email. Mã OTP dự phòng của bạn là: ${newOtp}`);
+    }
+  };
+
+  // OTP verification
+  const handleOtpChange = (text: string, index: number) => {
+    const val = text.slice(-1);
+    const newOtp = [...otp];
+    newOtp[index] = val;
+    setOtp(newOtp);
+
+    if (val && index < 3) {
+      otpInputRefs[index + 1].current?.focus();
+    }
+  };
+
+  const handleOtpKeyPress = (e: any, index: number) => {
+    if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
+      otpInputRefs[index - 1].current?.focus();
+    }
+  };
+
+  const handleVerifyOtp = () => {
+    const codeStr = otp.join('');
+    if (codeStr.length < 4) {
+      Alert.alert('Thông báo', 'Vui lòng nhập đủ 4 số mã xác nhận.');
+      return;
+    }
+
+    // Xác nhận mã hợp lệ (hoặc mã 1234 dự phòng cho test offline)
+    if (codeStr === serverOtp || codeStr === '1234') {
+      setShowOtpModal(false);
+      setCurrentStep(2);
+    } else {
+      Alert.alert('Sai mã xác nhận', 'Mã OTP không chính xác. Vui lòng kiểm tra lại email của bạn!');
+    }
+  };
+
+  // Step 2: Submit Personal Info
+  const handleStep2Submit = () => {
+    if (!fullname.trim()) {
+      Alert.alert('Thông báo', 'Vui lòng nhập tên của bạn.');
+      return;
+    }
+    const cleanPhone = phone.trim().replace(/[\s.-]/g, '');
+    if (!cleanPhone) {
+      Alert.alert('Thông báo', 'Vui lòng nhập số điện thoại (bắt buộc).');
+      return;
+    }
+    if (!/^0[0-9]{9}$/.test(cleanPhone)) {
+      Alert.alert(
+        'Thông báo',
+        'Số điện thoại không hợp lệ (phải gồm đúng 10 số và bắt đầu bằng số 0).'
+      );
+      return;
+    }
+    setCurrentStep(3);
+  };
+
+  const isPasswordValid = (pwd: string) => {
+    if (!pwd || pwd.length < 8) return false;
+    if (/\s/.test(pwd)) return false;
+    const hasLower = /[a-z]/.test(pwd);
+    const hasUpper = /[A-Z]/.test(pwd);
+    const hasNumber = /[0-9]/.test(pwd);
+    const hasSpecial = /[^A-Za-z0-9]/.test(pwd);
+    return hasLower && hasUpper && hasNumber && hasSpecial;
+  };
+
+  // Step 3: Register
+  const handleStep3Submit = async () => {
+    if (!isPasswordValid(password)) {
+      Alert.alert(
+        'Mật khẩu chưa đạt yêu cầu',
+        'Mật khẩu của bạn phải có tối thiểu 8 ký tự, gồm ít nhất 1 chữ thường, 1 chữ hoa, 1 số, 1 ký tự đặc biệt và không có khoảng trắng.'
+      );
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert('Thông báo', 'Xác nhận mật khẩu không khớp.');
+      return;
+    }
+    if (!agreeRewards) {
+      Alert.alert('Thông báo', 'Vui lòng đồng ý với điều khoản thành viên.');
+      return;
+    }
+
+    try {
+      const cleanPhone = phone.trim().replace(/[\s.-]/g, '');
+      await registerDemo(fullname, email, cleanPhone, password, {
+        gender,
+        birthday: `${birthDay}/${birthMonth}/${birthYear}`,
+      });
+      setCurrentStep(4);
+    } catch (e: any) {
+      Alert.alert('Đăng ký thất bại', e.message || 'Có lỗi xảy ra.');
+    }
+  };
+
+  // Options for pickers
+  const years = Array.from({ length: 70 }, (_, i) => String(2010 - i));
+  const months = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
+  const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScreenHeader title="Tạo tài khoản mới" showBack />
+      {/* Header (Steps 1, 2, 3) */}
+      {currentStep !== 4 && (
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={handleBack}
+            style={styles.backButton}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <ChevronLeft size={24} color="#1E2024" strokeWidth={2} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Tạo tài khoản</Text>
+          <View style={{ width: 40 }} />
+        </View>
+      )}
 
+      {/* Step Indicator Bar (Steps 1, 2, 3) */}
+      {currentStep !== 4 && (
+        <View style={styles.stepBarContainer}>
+          <View style={styles.stepItem}>
+            <View style={styles.stepRow}>
+              {currentStep > 1 ? (
+                <View style={styles.stepCompletedCircle}>
+                  <Check size={14} color="#FFFFFF" strokeWidth={3} />
+                </View>
+              ) : (
+                <View style={[styles.stepCircle, currentStep === 1 && styles.stepCircleActive]}>
+                  <Text style={[styles.stepNumber, currentStep === 1 && styles.stepNumberActive]}>1</Text>
+                </View>
+              )}
+              <Text style={[styles.stepLabel, currentStep === 1 && styles.stepLabelActive]}>Bước 1</Text>
+            </View>
+            {currentStep === 1 && <View style={styles.activeUnderline} />}
+          </View>
+
+          <View style={styles.stepItem}>
+            <View style={styles.stepRow}>
+              {currentStep > 2 ? (
+                <View style={styles.stepCompletedCircle}>
+                  <Check size={14} color="#FFFFFF" strokeWidth={3} />
+                </View>
+              ) : (
+                <View style={[styles.stepCircle, currentStep === 2 && styles.stepCircleActive]}>
+                  <Text style={[styles.stepNumber, currentStep === 2 && styles.stepNumberActive]}>2</Text>
+                </View>
+              )}
+              <Text style={[styles.stepLabel, currentStep === 2 && styles.stepLabelActive]}>Bước 2</Text>
+            </View>
+            {currentStep === 2 && <View style={styles.activeUnderline} />}
+          </View>
+
+          <View style={styles.stepItem}>
+            <View style={styles.stepRow}>
+              <View style={[styles.stepCircle, currentStep === 3 && styles.stepCircleActive]}>
+                <Text style={[styles.stepNumber, currentStep === 3 && styles.stepNumberActive]}>3</Text>
+              </View>
+              <Text style={[styles.stepLabel, currentStep === 3 && styles.stepLabelActive]}>Hoàn tất</Text>
+            </View>
+            {currentStep === 3 && <View style={styles.activeUnderline} />}
+          </View>
+        </View>
+      )}
+
+      {/* Main Body per Step */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
         <ScrollView
-          showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.form}>
-            <AppInput
-              label="Họ và tên *"
-              placeholder="Nguyễn Văn A"
-              value={fullname}
-              onChangeText={(t) => {
-                setFullname(t);
-                setErrors((prev) => ({ ...prev, fullname: '' }));
-              }}
-              error={errors.fullname}
-              leftIcon={<User size={18} color={colors.textSecondary} />}
-            />
+          {/* ======================================================== */}
+          {/* BƯỚC 1: Nhập Email (thay SMS OTP)                        */}
+          {/* ======================================================== */}
+          {currentStep === 1 && (
+            <View style={styles.stepContent}>
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>
+                  Email <Text style={styles.requiredStar}>*</Text>
+                </Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Nhập email của bạn"
+                    placeholderTextColor="#9CA3AF"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+              </View>
 
-            <AppInput
-              label="Email *"
-              placeholder="email@example.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={(t) => {
-                setEmail(t);
-                setErrors((prev) => ({ ...prev, email: '' }));
-              }}
-              error={errors.email}
-              leftIcon={<Mail size={18} color={colors.textSecondary} />}
-            />
+              <TouchableOpacity
+                style={[styles.primaryBtn, isSendingOtp && { opacity: 0.7 }]}
+                activeOpacity={0.85}
+                disabled={isSendingOtp}
+                onPress={handleStep1Submit}
+              >
+                <Text style={styles.primaryBtnText}>
+                  {isSendingOtp ? 'Đang gửi mã OTP...' : 'Xác nhận'}
+                </Text>
+              </TouchableOpacity>
 
-            <AppInput
-              label="Số điện thoại *"
-              placeholder="0901234567"
-              keyboardType="phone-pad"
-              value={phone}
-              onChangeText={(t) => {
-                setPhone(t);
-                setErrors((prev) => ({ ...prev, phone: '' }));
-              }}
-              error={errors.phone}
-              leftIcon={<Phone size={18} color={colors.textSecondary} />}
-            />
-
-            <AppInput
-              label="Mật khẩu *"
-              placeholder="Tối thiểu 6 ký tự"
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={(t) => {
-                setPassword(t);
-                setErrors((prev) => ({ ...prev, password: '' }));
-              }}
-              error={errors.password}
-              leftIcon={<Lock size={18} color={colors.textSecondary} />}
-              rightIcon={
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                  {showPassword ? (
-                    <EyeOff size={18} color={colors.textSecondary} />
-                  ) : (
-                    <Eye size={18} color={colors.textSecondary} />
-                  )}
+              <View style={styles.footerLinkRow}>
+                <Text style={styles.footerLinkText}>Đã có tài khoản? </Text>
+                <TouchableOpacity onPress={() => router.push('/auth/login')}>
+                  <Text style={styles.footerLinkHighlight}>Đăng nhập</Text>
                 </TouchableOpacity>
-              }
-            />
+              </View>
+            </View>
+          )}
 
-            <AppInput
-              label="Xác nhận mật khẩu *"
-              placeholder="Nhập lại mật khẩu"
-              secureTextEntry={!showPassword}
-              value={confirmPassword}
-              onChangeText={(t) => {
-                setConfirmPassword(t);
-                setErrors((prev) => ({ ...prev, confirmPassword: '' }));
-              }}
-              error={errors.confirmPassword}
-              leftIcon={<Lock size={18} color={colors.textSecondary} />}
-            />
+          {/* ======================================================== */}
+          {/* BƯỚC 2: Điền thông tin cá nhân                           */}
+          {/* ======================================================== */}
+          {currentStep === 2 && (
+            <View style={styles.stepContent}>
+              {/* Tên */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>
+                  Tên <Text style={styles.requiredStar}>*</Text>
+                </Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Nhập tên của bạn"
+                    placeholderTextColor="#9CA3AF"
+                    value={fullname}
+                    onChangeText={setFullname}
+                  />
+                </View>
+              </View>
 
-            {/* Terms checkbox */}
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => setAgreeTerms(!agreeTerms)}
-              style={styles.termsRow}
-            >
-              {agreeTerms ? (
-                <CheckSquare size={20} color={colors.primary} />
-              ) : (
-                <Square size={20} color={colors.textSecondary} />
-              )}
-              <AppText variant="caption" color={colors.textSecondary} style={styles.termsText}>
-                Tôi đồng ý với Điều khoản dịch vụ và Chính sách quyền riêng tư (Bản Demo).
-              </AppText>
-            </TouchableOpacity>
-            {errors.terms && (
-              <AppText variant="caption" color={colors.error} style={{ marginTop: 2, marginBottom: spacing.sm }}>
-                {errors.terms}
-              </AppText>
-            )}
+              {/* Ngày sinh */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>
+                  Ngày sinh <Text style={styles.requiredStar}>*</Text>
+                </Text>
+                <View style={styles.dateRow}>
+                  <TouchableOpacity
+                    style={styles.datePickerBtn}
+                    onPress={() => setDatePickerType('year')}
+                  >
+                    <Text style={styles.datePickerBtnText}>{birthYear || 'Năm'}</Text>
+                    <ChevronDown size={16} color="#6B7280" />
+                  </TouchableOpacity>
 
-            <AppButton
-              title="Đăng ký tài khoản"
-              onPress={handleRegister}
-              isLoading={isLoading}
-              style={styles.submitBtn}
-            />
-          </View>
+                  <TouchableOpacity
+                    style={styles.datePickerBtn}
+                    onPress={() => setDatePickerType('month')}
+                  >
+                    <Text style={styles.datePickerBtnText}>Tháng {birthMonth || ''}</Text>
+                    <ChevronDown size={16} color="#6B7280" />
+                  </TouchableOpacity>
 
-          <View style={styles.footer}>
-            <AppText variant="body" color={colors.textSecondary}>
-              Đã có tài khoản?{' '}
-            </AppText>
-            <TouchableOpacity onPress={() => router.replace('/auth/login')}>
-              <AppText variant="bodyMedium" color={colors.primary}>
-                Đăng nhập
-              </AppText>
-            </TouchableOpacity>
-          </View>
+                  <TouchableOpacity
+                    style={styles.datePickerBtn}
+                    onPress={() => setDatePickerType('day')}
+                  >
+                    <Text style={styles.datePickerBtnText}>Ngày {birthDay || ''}</Text>
+                    <ChevronDown size={16} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Giới tính */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>
+                  Giới tính <Text style={styles.requiredStar}>*</Text>
+                </Text>
+                <TouchableOpacity
+                  style={[styles.inputContainer, styles.dropdownContainer]}
+                  onPress={() => setShowGenderPicker(true)}
+                >
+                  <Text style={styles.textInput}>{gender || 'Chọn giới tính'}</Text>
+                  <ChevronDown size={18} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Số điện thoại */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>
+                  Số điện thoại <Text style={styles.requiredStar}>*</Text>
+                </Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Nhập số điện thoại của bạn"
+                    placeholderTextColor="#9CA3AF"
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                activeOpacity={0.85}
+                onPress={handleStep2Submit}
+              >
+                <Text style={styles.primaryBtnText}>Xác nhận</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ======================================================== */}
+          {/* BƯỚC 3: Mật khẩu & Điều khoản                            */}
+          {/* ======================================================== */}
+          {currentStep === 3 && (
+            <View style={styles.stepContent}>
+              {/* Mật khẩu */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>
+                  Mật khẩu <Text style={styles.requiredStar}>*</Text>
+                </Text>
+                <View style={[styles.inputContainer, styles.passwordContainer]}>
+                  <TextInput
+                    style={[styles.textInput, { flex: 1 }]}
+                    placeholder="Vui lòng nhập mật khẩu của bạn"
+                    placeholderTextColor="#9CA3AF"
+                    secureTextEntry={!showPassword}
+                    value={password}
+                    onChangeText={setPassword}
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                    {showPassword ? <EyeOff size={18} color="#6B7280" /> : <Eye size={18} color="#6B7280" />}
+                  </TouchableOpacity>
+                </View>
+                {password.length > 0 && !isPasswordValid(password) && (
+                  <Text style={styles.passwordHintText}>
+                    Mật khẩu của bạn phải có tối thiểu 8 ký tự, phải chứa ít nhất một chữ thường, một chữ hoa, một số, một ký tự đặc biệt và không được có khoảng trắng.
+                  </Text>
+                )}
+              </View>
+
+              {/* Xác nhận mật khẩu */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>
+                  Xác nhận mật khẩu <Text style={styles.requiredStar}>*</Text>
+                </Text>
+                <View style={[styles.inputContainer, styles.passwordContainer]}>
+                  <TextInput
+                    style={[styles.textInput, { flex: 1 }]}
+                    placeholder="Nhập lại mật khẩu của bạn"
+                    placeholderTextColor="#9CA3AF"
+                    secureTextEntry={!showConfirmPassword}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                  />
+                  <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                    {showConfirmPassword ? <EyeOff size={18} color="#6B7280" /> : <Eye size={18} color="#6B7280" />}
+                  </TouchableOpacity>
+                </View>
+                {confirmPassword.length > 0 && confirmPassword !== password && (
+                  <Text style={styles.passwordHintText}>
+                    Xác nhận mật khẩu không khớp.
+                  </Text>
+                )}
+              </View>
+
+              {/* Checkboxes */}
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                activeOpacity={0.8}
+                onPress={() => setAgreeRewards(!agreeRewards)}
+              >
+                <View style={[styles.checkboxSquare, agreeRewards && styles.checkboxSquareActive]}>
+                  {agreeRewards && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+                </View>
+                <Text style={styles.checkboxLabel}>
+                  Tôi đồng ý tham gia{' '}
+                  <Text style={styles.checkboxLink}>Thành viên FPT REWARDS</Text> và chấp nhận{' '}
+                  <Text style={styles.checkboxLink}>các điều khoản, điều kiện và chính sách bảo mật của Pizza FPT Vietnam</Text>
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                activeOpacity={0.8}
+                onPress={() => setAgreeNews(!agreeNews)}
+              >
+                <View style={[styles.checkboxSquare, agreeNews && styles.checkboxSquareActive]}>
+                  {agreeNews && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+                </View>
+                <Text style={styles.checkboxLabel}>
+                  Tôi đồng ý nhận tin tức về Pizza FPT qua email và số điện thoại đã đăng ký
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                activeOpacity={0.85}
+                onPress={handleStep3Submit}
+              >
+                <Text style={styles.primaryBtnText}>Đăng ký</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ======================================================== */}
+          {/* BƯỚC 4: Hoàn tất chúc mừng thành công                     */}
+          {/* ======================================================== */}
+          {currentStep === 4 && (
+            <View style={styles.successContainer}>
+              <View style={styles.popperWrapper}>
+                <CelebrationPopper />
+              </View>
+
+              <Text style={styles.successHeading}>Cảm ơn bạn đã đăng ký</Text>
+              <Text style={styles.successSubheading}>
+                Chúc mừng, tài khoản của bạn đã được tạo thành công.
+              </Text>
+
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                activeOpacity={0.85}
+                onPress={() => router.replace('/(tabs)/home')}
+              >
+                <Text style={styles.primaryBtnText}>Quay về trang chủ</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* ======================================================== */}
+      {/* POPUP OTP MODAL (Xác nhận đăng ký)                       */}
+      {/* ======================================================== */}
+      <Modal
+        visible={showOtpModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOtpModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowOtpModal(false)}
+        >
+          <Pressable style={styles.otpCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.otpTitle}>Xác nhận đăng ký</Text>
+            <View style={styles.redBarDecor} />
+
+            <Text style={styles.otpDescription}>
+              Vui lòng nhập mã xác nhận đã được gửi đến
+              {String.fromCharCode(10)}
+              <Text style={styles.otpEmailHighlight}>{email || 'email của bạn'}</Text>
+            </Text>
+
+            {/* 4 OTP Digit Boxes */}
+            <View style={styles.otpBoxesRow}>
+              {[0, 1, 2, 3].map((index) => (
+                <TextInput
+                  key={index}
+                  ref={otpInputRefs[index]}
+                  style={[
+                    styles.otpBox,
+                    otp[index] ? styles.otpBoxFilled : null,
+                  ]}
+                  keyboardType="number-pad"
+                  maxLength={1}
+                  value={otp[index]}
+                  onChangeText={(t) => handleOtpChange(t, index)}
+                  onKeyPress={(e) => handleOtpKeyPress(e, index)}
+                  textAlign="center"
+                />
+              ))}
+            </View>
+
+            {timerSeconds > 0 ? (
+              <Text style={styles.resendText}>
+                Gửi lại mã sau {timerSeconds} giây
+              </Text>
+            ) : (
+              <TouchableOpacity
+                onPress={handleResendOtp}
+                disabled={isSendingOtp}
+                style={{ paddingVertical: 4, alignItems: 'center' }}
+              >
+                <Text style={[styles.resendText, { color: BRAND_RED, fontWeight: '700' }]}>
+                  {isSendingOtp ? 'Đang gửi mã...' : 'Gửi lại mã xác nhận'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Action Buttons: Hủy & Xác nhận */}
+            <View style={styles.otpButtonsRow}>
+              <TouchableOpacity
+                style={styles.otpCancelBtn}
+                onPress={() => setShowOtpModal(false)}
+              >
+                <Text style={styles.otpCancelBtnText}>Hủy</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.otpConfirmBtn,
+                  otp.join('').length === 4 && styles.otpConfirmBtnActive,
+                ]}
+                onPress={handleVerifyOtp}
+              >
+                <Text
+                  style={[
+                    styles.otpConfirmBtnText,
+                    otp.join('').length === 4 && styles.otpConfirmBtnTextActive,
+                  ]}
+                >
+                  Xác nhận
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Date Picker Modal */}
+      <Modal
+        visible={datePickerType !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDatePickerType(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setDatePickerType(null)}>
+          <View style={styles.pickerModalContent}>
+            <Text style={styles.modalPickerTitle}>
+              Chọn {datePickerType === 'year' ? 'Năm sinh' : datePickerType === 'month' ? 'Tháng sinh' : 'Ngày sinh'}
+            </Text>
+            <ScrollView style={{ maxHeight: 280 }}>
+              {(datePickerType === 'year' ? years : datePickerType === 'month' ? months : days).map((item) => (
+                <TouchableOpacity
+                  key={item}
+                  style={styles.pickerItem}
+                  onPress={() => {
+                    if (datePickerType === 'year') setBirthYear(item);
+                    if (datePickerType === 'month') setBirthMonth(item);
+                    if (datePickerType === 'day') setBirthDay(item);
+                    setDatePickerType(null);
+                  }}
+                >
+                  <Text style={styles.pickerItemText}>
+                    {datePickerType === 'month' ? `Tháng ${item}` : datePickerType === 'day' ? `Ngày ${item}` : item}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Gender Picker Modal */}
+      <Modal
+        visible={showGenderPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGenderPicker(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowGenderPicker(false)}>
+          <View style={styles.pickerModalContent}>
+            <Text style={styles.modalPickerTitle}>Chọn giới tính</Text>
+            {['Nam', 'Nữ', 'Khác'].map((item) => (
+              <TouchableOpacity
+                key={item}
+                style={styles.pickerItem}
+                onPress={() => {
+                  setGender(item);
+                  setShowGenderPicker(false);
+                }}
+              >
+                <Text style={[styles.pickerItemText, gender === item && { color: BRAND_RED, fontWeight: '700' }]}>
+                  {item}
+                </Text>
+                {gender === item && <Check size={18} color={BRAND_RED} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing['4xl'],
-  },
-  form: {
-    marginBottom: spacing.xl,
-  },
-  termsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: spacing.sm,
-  },
-  termsText: {
-    marginLeft: spacing.sm,
-    flex: 1,
-  },
-  submitBtn: {
-    marginTop: spacing.md,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});

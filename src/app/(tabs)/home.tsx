@@ -1,57 +1,281 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
+  Text,
   ScrollView,
-  StyleSheet,
   TouchableOpacity,
   Image,
   RefreshControl,
+  Modal,
+  Pressable,
+  useWindowDimensions,
+  Alert,
+  Linking,
 } from 'react-native';
+import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { MapPin, Search, Tag, Flame, Sparkles } from 'lucide-react-native';
-import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
-import { AppText } from '../../components/ui/AppText';
-import { Chip } from '../../components/ui/Chip';
-import { ProductCard } from '../../components/product/ProductCard';
-import { ProductSkeletonCard } from '../../components/ui/SkeletonCard';
+import { useRouter } from 'expo-router';
+import {
+  Bell,
+  MapPin,
+  ChevronRight,
+  Plus,
+  ChevronUp,
+  ChevronDown,
+  ShoppingBag,
+  Check,
+} from 'lucide-react-native';
 import { productService } from '../../services';
 import { Product, CategoryId } from '../../types/product';
 import { mockCategories } from '../../data/mockCategories';
+import { mockProducts } from '../../data/mockProducts';
+import { useCart } from '../../state/CartContext';
+import { useAuth } from '../../state/AuthContext';
+import { useToast } from '../../state/ToastContext';
+import { triggerHaptic } from '../../utils/haptics';
+import { formatCurrency } from '../../utils/formatCurrency';
+import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
+import { getSavedDeliveryAddress, saveDeliveryAddress } from '../../services/addressStorage';
+
+import { styles, BRAND_RED } from '../../styles/home.styles';
+
+const PROMO_BANNERS = [
+  {
+    id: 'b1',
+    tag: 'COMBO PIZZA KÉO',
+    price: 'MỚI CHỈ TỪ 389.000đ',
+    discount: 'GIẢM TỚI 40.000đ Cho Thành Viên',
+    image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1000&q=80',
+  },
+  {
+    id: 'b2',
+    tag: 'MUA 1 TẶNG 1',
+    price: 'THỨ 3 SIÊU HỘI',
+    discount: 'ÁP DỤNG PIZZA SIZE LỚN',
+    image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=1000&q=80',
+  },
+  {
+    id: 'b3',
+    tag: 'COMBO GIA ĐÌNH',
+    price: 'TRỌN VỊ CHỈ 499.000đ',
+    discount: 'TẶNG NGAY 02 NƯỚC NGỌT LỚN',
+    image: 'https://images.unsplash.com/photo-1590947132387-155cc02f3212?auto=format&fit=crop&w=1000&q=80',
+  },
+];
+
+/* SVG Icons for Bottom Section replicating reference design */
+const TrackingOrderSvg = () => (
+  <Svg width={42} height={42} viewBox="0 0 42 42" fill="none">
+    {/* Back Bag */}
+    <Path
+      d="M10 14H24V31C24 32.1 23.1 33 22 33H12C10.9 33 10 32.1 10 31V14Z"
+      stroke="#E53935"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M13.5 14V10.5C13.5 8.6 15.1 7 17 7C18.9 7 20.5 8.6 20.5 10.5V14"
+      stroke="#E53935"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+    />
+    {/* Front Bag */}
+    <Path
+      d="M16 17H30V34C30 35.1 29.1 36 28 36H18C16.9 36 16 35.1 16 34V17Z"
+      stroke="#E53935"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="#FFFFFF"
+    />
+    <Path
+      d="M19.5 17V13.5C19.5 11.6 21.1 10 23 10C24.9 10 26.5 11.6 26.5 13.5V17"
+      stroke="#E53935"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+    />
+  </Svg>
+);
+
+const StoreLocationSvg = () => (
+  <Svg width={42} height={42} viewBox="0 0 42 42" fill="none">
+    <Path
+      d="M21 5C14.9 5 10 9.9 10 16C10 24.5 21 35 21 35C21 35 32 24.5 32 16C32 9.9 27.1 5 21 5Z"
+      stroke="#E53935"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Circle cx="21" cy="16" r="4.5" stroke="#E53935" strokeWidth={2} />
+    <Path
+      d="M15 36C17 37.2 19 37.8 21 37.8C23 37.8 25 37.2 27 36"
+      stroke="#E53935"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+    />
+  </Svg>
+);
+
+const HelpPhoneSvg = () => (
+  <Svg width={42} height={42} viewBox="0 0 42 42" fill="none">
+    <Path
+      d="M9.5 11C9.5 24 17 31.5 30 31.5L32 26.5L26.5 24L24 26.5C19.8 24.5 16.5 21.2 14.5 17L17 14.5L14.5 9L9.5 11Z"
+      stroke="#E53935"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Rect x="21" y="7" width="16" height="12" rx="6" stroke="#E53935" strokeWidth={1.8} fill="#FFFFFF" />
+    <Circle cx="25.5" cy="13" r="1.3" fill="#E53935" />
+    <Circle cx="29" cy="13" r="1.3" fill="#E53935" />
+    <Circle cx="32.5" cy="13" r="1.3" fill="#E53935" />
+  </Svg>
+);
+
+const TermsDocsSvg = () => (
+  <Svg width={42} height={42} viewBox="0 0 42 42" fill="none">
+    <Rect x="13" y="6" width="20" height="26" rx="3" stroke="#E53935" strokeWidth={1.9} fill="#FFFFFF" />
+    <Rect x="9" y="10" width="20" height="26" rx="3" stroke="#E53935" strokeWidth={1.9} fill="#FFFFFF" />
+    <Path d="M13 16H23M13 21H23M13 26H19M13 31H17" stroke="#E53935" strokeWidth={1.7} strokeLinecap="round" />
+  </Svg>
+);
 
 export default function HomeScreen() {
+  const router = useRouter();
+  const { user } = useAuth();
+  const { addItem, itemCount, subtotal } = useCart();
+  const { showToast } = useToast();
+  const { width: windowWidth } = useWindowDimensions();
+  const bannerWidth = Math.min(windowWidth - 32, 450);
+  const bannerScrollRef = useRef<any>(null);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
-  const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadData = async (cat: CategoryId = selectedCategory) => {
+  // Store Location / Address Autocomplete Modal
+  const [showStoreLocationModal, setShowStoreLocationModal] = useState(false);
+  const [currentAddress, setCurrentAddress] = useState('');
+  const [fulfillmentMode, setFulfillmentMode] = useState<'delivery' | 'takeaway'>('delivery');
+
+  useEffect(() => {
+    getSavedDeliveryAddress().then((saved) => {
+      if (saved) setCurrentAddress(saved);
+    });
+  }, []);
+
+  // Lunch Combo 3/4 Sheet State
+  const [showLunchSheet, setShowLunchSheet] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Carousel banner index
+  const [bannerIndex, setBannerIndex] = useState(0);
+
+  // Lunch Combo Countdown Timer
+  const [hours, setHours] = useState(3);
+  const [minutes, setMinutes] = useState(33);
+  const [seconds, setSeconds] = useState(29);
+
+  // Auto scroll carousel every 4.5s
+  useEffect(() => {
+    const bannerTimer = setInterval(() => {
+      setBannerIndex((prev) => {
+        const next = (prev + 1) % PROMO_BANNERS.length;
+        bannerScrollRef.current?.scrollTo({ x: next * bannerWidth, animated: true });
+        return next;
+      });
+    }, 4500);
+    return () => clearInterval(bannerTimer);
+  }, [bannerWidth]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSeconds((prevSec) => {
+        if (prevSec > 0) return prevSec - 1;
+        setMinutes((prevMin) => {
+          if (prevMin > 0) return prevMin - 1;
+          setHours((prevH) => (prevH > 0 ? prevH - 1 : 0));
+          return 59;
+        });
+        return 59;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const loadData = useCallback(async (cat: CategoryId = selectedCategory) => {
     try {
       const list = await productService.list({
         categoryId: cat === 'all' ? undefined : cat,
       });
       setProducts(list);
     } finally {
-      setIsLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [selectedCategory]);
 
   useEffect(() => {
     loadData(selectedCategory);
-  }, [selectedCategory]);
+  }, [loadData, selectedCategory]);
 
   const onRefresh = () => {
     setRefreshing(true);
     loadData(selectedCategory);
   };
 
-  const bestSellers = products.filter((p) => p.isPopular || p.tags?.includes('Bestseller'));
-  const recommended = products;
+  const favoritePizzas = products.slice(0, 4);
+
+  const lunchCombos = mockProducts.filter(
+    (p) => p.tags?.includes('Combo Trưa') || p.id.startsWith('CB')
+  );
+
+  const handleAddCombo = (combo: Product) => {
+    addItem({
+      productId: combo.id,
+      quantity: 1,
+      addonIds: [],
+    });
+    setShowLunchSheet(false);
+    router.push('/(tabs)/cart');
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      {/* ======================================================== */}
+      {/* HEADER: Centered Logo + Bell Notification with Red Badge */}
+      {/* ======================================================== */}
+      <View style={styles.header}>
+        <View style={styles.headerPlaceholder} />
+
+        {/* Center: Pizza Emblem Image + Brand Name */}
+        <View style={styles.headerLogoWrap}>
+          <Image
+            source={require('../../../assets/header_logo.png')}
+            style={styles.headerLogoImg}
+            resizeMode="contain"
+          />
+          <Image
+            source={require('../../../assets/pizza_fpt_brand_text.png')}
+            style={styles.headerBrandImg}
+            resizeMode="contain"
+          />
+        </View>
+
+        {/* Right: Bell Icon with Red Notification Badge */}
+        <TouchableOpacity
+          style={styles.bellButton}
+          activeOpacity={0.7}
+          onPress={() => router.push('/offers')}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Bell size={24} color="#1E2024" strokeWidth={1.8} />
+          <View style={styles.bellBadge}>
+            <Text style={styles.bellBadgeText}>1</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
@@ -59,332 +283,454 @@ export default function HomeScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.primary}
+            tintColor={BRAND_RED}
           />
         }
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <View style={styles.brandRow}>
-              <Flame size={24} color={colors.primary} />
-              <AppText variant="h2" color={colors.primary} style={styles.brandTitle}>
-                Pizza Time
-              </AppText>
-            </View>
-            <View style={styles.locationRow}>
-              <MapPin size={14} color={colors.textSecondary} />
-              <AppText variant="caption" color={colors.textSecondary} style={styles.locationText}>
-                Giao đến • Quận 1, TP. Hồ Chí Minh
-              </AppText>
-            </View>
+        {/* HERO PROMOTIONAL BANNER */}
+        <View style={styles.bannerContainer}>
+          <ScrollView
+            ref={bannerScrollRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={bannerWidth}
+            decelerationRate="fast"
+            contentContainerStyle={{ alignItems: 'center' }}
+            onMomentumScrollEnd={(e) => {
+              const idx = Math.round(e.nativeEvent.contentOffset.x / bannerWidth);
+              if (idx >= 0 && idx < PROMO_BANNERS.length) {
+                setBannerIndex(idx);
+              }
+            }}
+          >
+            {PROMO_BANNERS.map((banner) => (
+              <View key={banner.id} style={[styles.bannerCard, { width: bannerWidth }]}>
+                <Image
+                  source={{ uri: banner.image }}
+                  style={styles.bannerImage}
+                  resizeMode="cover"
+                />
+                <View style={styles.bannerOverlay}>
+                  <View style={styles.bannerTagBox}>
+                    <Text style={styles.bannerTagText}>{banner.tag}</Text>
+                  </View>
+                  <Text style={styles.bannerPriceTag}>{banner.price}</Text>
+                  <View style={styles.memberDiscountPill}>
+                    <Text style={styles.memberDiscountText}>{banner.discount}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+
+          {/* Dots Indicator */}
+          <View style={styles.dotsRow}>
+            {PROMO_BANNERS.map((_, i) => (
+              <TouchableOpacity
+                key={i}
+                onPress={() => {
+                  setBannerIndex(i);
+                  bannerScrollRef.current?.scrollTo({ x: i * bannerWidth, animated: true });
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              >
+                <View
+                  style={[styles.dot, i === bannerIndex && styles.dotActive]}
+                />
+              </TouchableOpacity>
+            ))}
           </View>
+        </View>
+
+        {/* ======================================================== */}
+        {/* GREETING & LOCATION (Chào mừng bạn trở lại)              */}
+        {/* ======================================================== */}
+        <View style={styles.greetingSection}>
+          <Text style={styles.greetingTitle}>Chào mừng bạn trở lại</Text>
+          <Text style={styles.greetingSubtitle}>
+            Chọn địa chỉ nhận hàng để bắt đầu đặt món
+          </Text>
 
           <TouchableOpacity
+            style={styles.locationCard}
             activeOpacity={0.8}
-            onPress={() => router.push('/offers')}
-            style={styles.promoIconButton}
+            onPress={() => setShowStoreLocationModal(true)}
           >
-            <Tag size={20} color={colors.primary} />
+            <View style={styles.locationIconWrap}>
+              <MapPin size={20} color={BRAND_RED} />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.locationLabel}>Địa chỉ nhận hàng</Text>
+              <Text
+                style={[
+                  styles.locationDetail,
+                  !currentAddress && { color: '#9CA3AF', fontStyle: 'italic' },
+                ]}
+                numberOfLines={1}
+              >
+                {currentAddress || 'Bấm để chọn địa chỉ nhận hàng...'}
+              </Text>
+            </View>
+            <ChevronRight size={20} color="#9CA3AF" />
           </TouchableOpacity>
         </View>
 
-        {/* Search Bar Trigger */}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => router.push('/search')}
-          style={styles.searchBar}
-        >
-          <Search size={18} color={colors.textDisabled} />
-          <AppText variant="body" color={colors.textDisabled} style={styles.searchPlaceholder}>
-            Bạn muốn ăn gì hôm nay? (Pizza, Mì Ý, Sushi...)
-          </AppText>
-        </TouchableOpacity>
-
-        {/* Hero Banner */}
-        <View style={styles.heroBanner}>
-          <Image
-            source={{
-              uri: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=800&q=80',
-            }}
-            style={styles.heroImage}
-          />
-          <View style={styles.heroOverlay} />
-          <View style={styles.heroContent}>
-            <View style={styles.heroBadge}>
-              <Sparkles size={14} color={colors.white} />
-              <AppText variant="captionMedium" color={colors.white} style={styles.heroBadgeText}>
-                Tươi ngon mỗi ngày
-              </AppText>
-            </View>
-            <AppText variant="h2" color={colors.white} style={styles.heroTitle}>
-              Pizza nướng củi{'\n'}Nóng giòn tận nơi
-            </AppText>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => router.push('/(tabs)/menu')}
-              style={styles.heroCta}
-            >
-              <AppText variant="button" color={colors.primary}>
-                Đặt ngay
-              </AppText>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Category Horizontal Chips */}
+        {/* ======================================================== */}
+        {/* SECTION: BẠN SẼ THÍCH (Horizontal Pizza List)            */}
+        {/* ======================================================== */}
         <View style={styles.sectionHeader}>
-          <AppText variant="h3">Danh mục món</AppText>
+          <Text style={styles.sectionTitle}>Bạn sẽ thích</Text>
         </View>
+
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoriesScroll}
+          contentContainerStyle={styles.horizontalPizzaScroll}
         >
-          {mockCategories.map((cat) => (
-            <Chip
-              key={cat.id}
-              label={cat.name}
-              selected={selectedCategory === cat.id}
-              onPress={() => setSelectedCategory(cat.id)}
-            />
+          {favoritePizzas.map((item) => (
+            <View key={item.id} style={styles.pizzaCard}>
+              <Image
+                source={{ uri: item.image }}
+                style={styles.pizzaCardImg}
+                resizeMode="cover"
+              />
+              <View style={styles.pizzaCardInfo}>
+                <Text style={styles.pizzaCardName} numberOfLines={2}>
+                  {item.name}
+                </Text>
+                <View style={styles.pizzaCardPriceRow}>
+                  <View>
+                    <Text style={styles.fromText}>Chỉ từ</Text>
+                    <Text style={styles.priceText}>{formatCurrency(item.basePrice)}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.addBtn}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      addItem({
+                        productId: item.id,
+                        quantity: 1,
+                        addonIds: [],
+                      });
+                      triggerHaptic('success');
+                      showToast({
+                        message: `Đã thêm ${item.name} vào giỏ hàng`,
+                        actionText: 'Xem giỏ',
+                        onAction: () => router.push('/(tabs)/cart'),
+                      });
+                    }}
+                  >
+                    <Plus size={18} color="#FFFFFF" strokeWidth={2.5} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
           ))}
         </ScrollView>
 
-        {/* Best Sellers */}
+        {/* ======================================================== */}
+        {/* SECTION: MENU (Cards Carousel matching Screenshot 2)     */}
+        {/* ======================================================== */}
         <View style={styles.sectionHeader}>
-          <AppText variant="h3">Món bán chạy nhất</AppText>
+          <Text style={styles.sectionTitle}>Menu</Text>
           <TouchableOpacity onPress={() => router.push('/(tabs)/menu')}>
-            <AppText variant="captionMedium" color={colors.primary}>
-              Xem tất cả
-            </AppText>
+            <Text style={styles.viewMoreText}>Xem thêm</Text>
           </TouchableOpacity>
         </View>
 
-        {isLoading ? (
-          <View style={styles.skeletonRow}>
-            <ProductSkeletonCard style={{ width: 220, marginRight: spacing.md }} />
-            <ProductSkeletonCard style={{ width: 220 }} />
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalScroll}
-          >
-            {bestSellers.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                layout="horizontal"
-              />
-            ))}
-          </ScrollView>
-        )}
-
-        {/* Promo Banner Strip */}
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={() => router.push('/offers')}
-          style={styles.offerBannerStrip}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.menuPromoScroll}
         >
-          <View style={styles.offerLeft}>
-            <Tag size={24} color={colors.primary} />
-            <View style={styles.offerTextCol}>
-              <AppText variant="bodyMedium" color={colors.primary}>
-                Ưu đãi giảm 20% đơn từ 200k
-              </AppText>
-              <AppText variant="caption" color={colors.textSecondary}>
-                Mã: PIZZA20 • Nhấn để nhận voucher
-              </AppText>
+          {/* Card 1: KIDS MENU */}
+          <TouchableOpacity
+            style={styles.menuPromoCard}
+            activeOpacity={0.85}
+            onPress={() => router.push('/(tabs)/menu')}
+          >
+            <Image
+              source={{
+                uri: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=400&q=80',
+              }}
+              style={styles.menuPromoImg}
+              resizeMode="cover"
+            />
+            <View style={styles.menuPromoLabelBox}>
+              <Text style={styles.menuPromoLabelText} numberOfLines={1}>
+                KIDS MENU
+              </Text>
             </View>
-          </View>
-          <View style={styles.offerTag}>
-            <AppText variant="captionMedium" color={colors.white}>
-              DÙNG NGAY
-            </AppText>
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
 
-        {/* Recommended For You */}
-        <View style={styles.sectionHeader}>
-          <AppText variant="h3">Gợi ý cho bạn</AppText>
+          {/* Card 2: GIÁ ƯU ĐÃI THÀNH VIÊN */}
+          <TouchableOpacity
+            style={styles.menuPromoCard}
+            activeOpacity={0.85}
+            onPress={() => router.push('/offers')}
+          >
+            <View style={styles.memberDealGraphic}>
+              <Text style={styles.memberDealTopText}>
+                GIẢM THÊM CHO{'\n'}THÀNH VIÊN
+              </Text>
+              <View style={styles.memberDealTicket}>
+                <Text style={styles.memberDealTicketText}>TỚI 70.000 VNĐ</Text>
+              </View>
+            </View>
+            <View style={styles.menuPromoLabelBox}>
+              <Text style={styles.menuPromoLabelText} numberOfLines={1}>
+                GIÁ ƯU ĐÃI THÀN...
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Card 3: MY BOX */}
+          <TouchableOpacity
+            style={styles.menuPromoCard}
+            activeOpacity={0.85}
+            onPress={() => router.push('/(tabs)/menu')}
+          >
+            <View style={styles.myBoxGraphic}>
+              <Text style={styles.myBoxTitle}>MY BOX</Text>
+              <Text style={styles.myBoxSub}>COMBO 1 NGƯỜI</Text>
+            </View>
+            <View style={styles.menuPromoLabelBox}>
+              <Text style={styles.menuPromoLabelText} numberOfLines={1}>
+                MY BOX
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Card 4: COMBO NHÓM */}
+          <TouchableOpacity
+            style={styles.menuPromoCard}
+            activeOpacity={0.85}
+            onPress={() => router.push('/(tabs)/menu')}
+          >
+            <Image
+              source={{
+                uri: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=400&q=80',
+              }}
+              style={styles.menuPromoImg}
+              resizeMode="cover"
+            />
+            <View style={styles.menuPromoLabelBox}>
+              <Text style={styles.menuPromoLabelText} numberOfLines={1}>
+                COMBO NHÓM
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {/* ======================================================== */}
+        {/* SECTION: TRACK ORDER & STORE LOCATION                    */}
+        {/* ======================================================== */}
+        <View style={styles.actionCardsSection}>
+          {/* Card 1: Theo dõi đơn hàng */}
+          <TouchableOpacity
+            style={styles.actionCard}
+            activeOpacity={0.72}
+            onPress={() => {
+              if (user) {
+                router.push('/order/tracking');
+              } else {
+                router.push('/order/lookup');
+              }
+            }}
+          >
+            <View style={styles.actionIconBox}>
+              <TrackingOrderSvg />
+            </View>
+            <View style={styles.actionTextBox}>
+              <Text style={styles.actionTitle}>Theo dõi đơn hàng</Text>
+              <Text style={styles.actionSubtitle}>
+                Dễ dàng theo dõi trạng thái đơn hàng của bạn
+              </Text>
+            </View>
+            <ChevronRight size={22} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          {/* Card 2: Cửa hàng của chúng tôi */}
+          <TouchableOpacity
+            style={styles.actionCard}
+            activeOpacity={0.72}
+            onPress={() => setShowStoreLocationModal(true)}
+          >
+            <View style={styles.actionIconBox}>
+              <StoreLocationSvg />
+            </View>
+            <View style={styles.actionTextBox}>
+              <Text style={styles.actionTitle}>Cửa hàng của chúng tôi</Text>
+            </View>
+            <ChevronRight size={22} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          {/* ======================================================== */}
+          {/* SECTION: KẾT NỐI VỚI PIZZA FPT                           */}
+          {/* ======================================================== */}
+          <Text style={styles.connectSectionTitle}>Kết nối với Pizza FPT</Text>
+
+          {/* Card 3: Cần trợ giúp? */}
+          <TouchableOpacity
+            style={styles.actionCard}
+            activeOpacity={0.72}
+            onPress={() => Linking.openURL('tel:19001822')}
+          >
+            <View style={styles.actionIconBox}>
+              <HelpPhoneSvg />
+            </View>
+            <View style={styles.actionTextBox}>
+              <Text style={styles.actionTitle}>Cần trợ giúp?</Text>
+              <Text style={styles.actionSubtitle}>Gọi 1900 1822</Text>
+            </View>
+            <ChevronRight size={22} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          {/* Card 4: Điều khoản và Điều kiện */}
+          <TouchableOpacity
+            style={styles.actionCard}
+            activeOpacity={0.72}
+            onPress={() => {
+              Alert.alert(
+                'Điều khoản và Điều kiện',
+                'Chào mừng bạn đến với Pizza FPT!\n\n1. Quy định đặt hàng & thanh toán.\n2. Chính sách bảo mật thông tin khách hàng.\n3. Chính sách giao hàng nhanh và hoàn tiền.\n\nTổng đài hỗ trợ 24/7: 1900 1822',
+                [{ text: 'Đồng ý' }]
+              );
+            }}
+          >
+            <View style={styles.actionIconBox}>
+              <TermsDocsSvg />
+            </View>
+            <View style={styles.actionTextBox}>
+              <Text style={styles.actionTitle}>Điều khoản và Điều kiện</Text>
+            </View>
+            <ChevronRight size={22} color="#9CA3AF" />
+          </TouchableOpacity>
         </View>
 
-        {isLoading ? (
-          <View style={styles.grid}>
-            <ProductSkeletonCard style={{ width: '48%' }} />
-            <ProductSkeletonCard style={{ width: '48%' }} />
-          </View>
-        ) : (
-          <View style={styles.grid}>
-            {recommended.map((product) => (
-              <View key={product.id} style={styles.gridItem}>
-                <ProductCard product={product} layout="grid" />
-              </View>
-            ))}
-          </View>
-        )}
+        <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* ======================================================== */}
+      {/* 3/4 LUNCH COMBO BOTTOM SHEET MODAL                       */}
+      {/* ======================================================== */}
+      <Modal
+        visible={showLunchSheet}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowLunchSheet(false)}
+      >
+        <View style={styles.sheetOverlay}>
+          {/* Backdrop tap to close */}
+          <Pressable style={styles.sheetBackdrop} onPress={() => setShowLunchSheet(false)} />
+
+          <View style={styles.sheetContainer}>
+            {/* Grabber handle */}
+            <View style={styles.sheetHandleBar} />
+
+            {/* Header: Thanh COMBO TRƯA nguyên bản với mũi tên hướng xuống để đóng */}
+            <View style={styles.sheetBannerWrapper}>
+              <TouchableOpacity
+                style={styles.lunchComboBanner}
+                activeOpacity={0.9}
+                onPress={() => setShowLunchSheet(false)}
+              >
+                <View style={styles.lunchLeft}>
+                  <Text style={styles.lunchTitle}>COMBO TRƯA</Text>
+                  <Text style={styles.lunchSub}>kết thúc sau</Text>
+                </View>
+
+                <View style={styles.timerRow}>
+                  <View style={styles.timerBox}>
+                    <Text style={styles.timerNum}>{hours}</Text>
+                  </View>
+                  <Text style={styles.timerColon}>:</Text>
+                  <View style={styles.timerBox}>
+                    <Text style={styles.timerNum}>{String(minutes).padStart(2, '0')}</Text>
+                  </View>
+                  <Text style={styles.timerColon}>:</Text>
+                  <View style={styles.timerBox}>
+                    <Text style={styles.timerNum}>{String(seconds).padStart(2, '0')}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.lunchArrow}>
+                  <ChevronDown size={22} color="#FFFFFF" />
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* Danh sách các món ăn giảm giá trong Combo Trưa */}
+            <ScrollView
+              style={styles.sheetScroll}
+              contentContainerStyle={styles.sheetScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {lunchCombos.map((combo) => {
+                const originalPrice = Math.round(
+                  combo.basePrice / (1 - (combo.discountPercent || 35) / 100)
+                );
+
+                return (
+                  <View key={combo.id} style={styles.simpleMenuItem}>
+                    <Image
+                      source={{ uri: combo.image }}
+                      style={styles.simpleMenuImg}
+                      resizeMode="cover"
+                    />
+
+                    <View style={styles.simpleMenuInfo}>
+                      <Text style={styles.simpleMenuName} numberOfLines={1}>
+                        {combo.name}
+                      </Text>
+                      <Text style={styles.simpleMenuDesc} numberOfLines={2}>
+                        {combo.description}
+                      </Text>
+
+                      <View style={styles.simpleMenuPriceRow}>
+                        <View style={styles.priceWrap}>
+                          <Text style={styles.simpleNewPrice}>
+                            {formatCurrency(combo.basePrice)}
+                          </Text>
+                          <Text style={styles.simpleOldPrice}>
+                            {formatCurrency(originalPrice)}
+                          </Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.simpleAddBtn}
+                          activeOpacity={0.8}
+                          onPress={() => handleAddCombo(combo)}
+                        >
+                          <Plus size={18} color="#FFFFFF" strokeWidth={2.6} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Tìm cửa hàng gần bạn nhất / Gợi ý địa chỉ tự động */}
+      <StoreLocationModal
+        visible={showStoreLocationModal}
+        onClose={() => setShowStoreLocationModal(false)}
+        currentAddress={currentAddress}
+        initialFulfillment={fulfillmentMode}
+        onConfirmAddress={(addr, mode) => {
+          setCurrentAddress(addr);
+          saveDeliveryAddress(addr);
+          setFulfillmentMode(mode);
+          showToast({
+            message: mode === 'delivery' ? `Đã chọn giao tới: ${addr}` : 'Đã chọn mua mang về',
+            type: 'success',
+          });
+        }}
+      />
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    paddingBottom: spacing['4xl'],
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  brandTitle: {
-    marginLeft: spacing.xs,
-    letterSpacing: -0.5,
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  locationText: {
-    marginLeft: 4,
-  },
-  promoIconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    backgroundColor: colors.primarySoft,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    marginHorizontal: spacing.lg,
-    paddingHorizontal: spacing.base,
-    height: 46,
-    marginBottom: spacing.base,
-  },
-  searchPlaceholder: {
-    marginLeft: spacing.sm,
-  },
-  heroBanner: {
-    marginHorizontal: spacing.lg,
-    height: 180,
-    borderRadius: radius.card,
-    overflow: 'hidden',
-    position: 'relative',
-    marginBottom: spacing.xl,
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-  heroOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(23, 23, 23, 0.45)',
-  },
-  heroContent: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    padding: spacing.lg,
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  heroBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(200, 74, 48, 0.85)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.pill,
-  },
-  heroBadgeText: {
-    marginLeft: 4,
-  },
-  heroTitle: {
-    marginTop: 4,
-  },
-  heroCta: {
-    backgroundColor: colors.white,
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  categoriesScroll: {
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.xl,
-  },
-  horizontalScroll: {
-    paddingLeft: spacing.lg,
-    paddingRight: spacing.sm,
-    marginBottom: spacing.xl,
-  },
-  skeletonRow: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.xl,
-  },
-  offerBannerStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.primarySoft,
-    borderWidth: 1,
-    borderColor: '#FBDCD3',
-    marginHorizontal: spacing.lg,
-    padding: spacing.base,
-    borderRadius: radius.card,
-    marginBottom: spacing.xl,
-  },
-  offerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  offerTextCol: {
-    marginLeft: spacing.md,
-  },
-  offerTag: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.xs,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-  },
-  gridItem: {
-    width: '48%',
-  },
-});

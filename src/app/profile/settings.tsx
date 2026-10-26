@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Switch, Alert } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Bell, Globe, RotateCcw, AlertTriangle, ChefHat, Sparkles } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
+import { spacing } from '../../theme/spacing';
 import { AppText } from '../../components/ui/AppText';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { AppButton } from '../../components/ui/AppButton';
 import { demoConfig } from '../../data/mockConfig';
 import { useOrders } from '../../state/OrderContext';
 import { useCart } from '../../state/CartContext';
+import { styles } from '../../styles/settings.styles';
 
 export default function SettingsScreen() {
   const { resetOrders } = useOrders();
@@ -154,50 +155,3 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-  },
-  section: {
-    marginBottom: spacing.xl,
-  },
-  sectionTitle: {
-    marginBottom: spacing.sm,
-    marginLeft: spacing.xs,
-  },
-  devHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-    marginLeft: spacing.xs,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.base,
-  },
-  devCard: {
-    borderColor: '#FCD7CC',
-    backgroundColor: '#FFFBF9',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  rowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-});

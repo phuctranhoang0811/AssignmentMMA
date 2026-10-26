@@ -1,14 +1,22 @@
 {
   "expo": {
-    "name": "Pizza Time",
-    "slug": "pizza-time",
+    "name": "Pizza FPT",
+    "slug": "pizza-fpt",
     "scheme": "pizzatime",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-font",
+      "expo-status-bar",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Cho phép Pizza FPT truy cập vị trí để xác định địa chỉ giao hàng chính xác."
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true

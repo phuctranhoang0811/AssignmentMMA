@@ -1,3 +1,5 @@
+import { PizzaCustomizationState } from './pizzaCustomization';
+
 export type OrderStatus =
   | 'PENDING_CONFIRMATION'
   | 'CONFIRMED'
@@ -25,6 +27,7 @@ export type CartItem = {
   addonIds: string[];
   specialInstructions?: string;
   quantity: number;
+  customization?: PizzaCustomizationState;
 };
 
 export type CheckoutDraft = {
@@ -48,6 +51,8 @@ export type OrderItemSnapshot = {
   unitPrice: number;
   lineTotal: number;
   image?: string;
+  customization?: PizzaCustomizationState;
+  customizationSummary?: string[];
 };
 
 export type Order = {
@@ -70,11 +75,11 @@ export type Order = {
   deliveryFee: number;
   tax: number;
   total: number;
-  statusHistory: Array<{
+  statusHistory: {
     status: OrderStatus;
     at: string;
     note?: string;
-  }>;
+  }[];
 };
 
 export type OrderPricing = {

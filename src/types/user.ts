@@ -4,6 +4,10 @@ export type DemoUser = {
   email: string;
   phone: string;
   avatar?: string;
+  birthday?: string;
+  gender?: string;
+  role?: 'USER' | 'EMPLOYEE' | 'STORE_MANAGER' | 'SUPER_ADMIN' | string;
+  rewardPoints?: number;
   isDemo?: boolean;
 };
 

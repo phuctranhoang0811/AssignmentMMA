@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   View,
   FlatList,
-  StyleSheet,
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
@@ -10,17 +9,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ReceiptText, Sparkles } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
 import { AppText } from '../../components/ui/AppText';
 import { OrderCard } from '../../components/order/OrderCard';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useOrders } from '../../state/OrderContext';
-import { Order } from '../../types/order';
+import { styles } from '../../styles/orders.styles';
 
 type TabSegment = 'active' | 'history';
 
 export default function OrdersScreen() {
-  const { orders, isLoading, refreshOrders } = useOrders();
+  const { orders, refreshOrders } = useOrders();
   const [activeTab, setActiveTab] = useState<TabSegment>('active');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -120,51 +118,3 @@ export default function OrdersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-  staffDemoBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primarySoft,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-  },
-  segmentContainer: {
-    flexDirection: 'row',
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    marginHorizontal: spacing.lg,
-    padding: 3,
-    marginBottom: spacing.base,
-  },
-  segmentBtn: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    borderRadius: radius.sm,
-  },
-  activeSegmentBtn: {
-    backgroundColor: colors.surface,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  listContent: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing['4xl'],
-  },
-});
