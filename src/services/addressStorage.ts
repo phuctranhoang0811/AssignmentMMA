@@ -16,6 +16,8 @@ AsyncStorage.multiRemove([
   '@pizza_has_chosen_address_fresh',
   '@pizza_delivery_address_v3',
   '@pizza_has_chosen_address_v3',
+  '@pizza_checkout_customer_info',
+  '@pizza_checkout_customer_info_v2',
 ]).catch(() => {});
 
 /**
@@ -83,7 +85,7 @@ export type SavedCustomerInfo = {
   deliveryNote?: string;
 };
 
-const CUSTOMER_INFO_KEY = '@pizza_checkout_customer_info_v2';
+const CUSTOMER_INFO_KEY = '@pizza_checkout_guest_info_v3';
 
 /**
  * Lấy thông tin người đặt hàng đã lưu trong máy
@@ -105,6 +107,21 @@ export async function saveCustomerInfo(info: Partial<SavedCustomerInfo>): Promis
     const existing = (await getSavedCustomerInfo()) || {};
     const updated = { ...existing, ...info };
     await AsyncStorage.setItem(CUSTOMER_INFO_KEY, JSON.stringify(updated));
+  } catch {
+    // Bỏ qua lỗi
+  }
+}
+
+/**
+ * Xóa sạch thông tin khách hàng đã lưu (gọi khi đăng xuất tài khoản)
+ */
+export async function clearCustomerInfo(): Promise<void> {
+  try {
+    await AsyncStorage.multiRemove([
+      CUSTOMER_INFO_KEY,
+      '@pizza_checkout_customer_info_v2',
+      '@pizza_checkout_customer_info',
+    ]);
   } catch {
     // Bỏ qua lỗi
   }

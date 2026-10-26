@@ -6,6 +6,7 @@ import { demoUser } from '../data/mockUsers';
 import { auth, db } from '../services/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updatePassword } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { clearCustomerInfo } from '../services/addressStorage';
 
 interface AuthContextType {
   user: DemoUser | null;
@@ -309,6 +310,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {}
     setUser(null);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ isLoggedOut: true }));
+    await clearCustomerInfo();
   };
 
   const updateProfile = async (name: string, phone: string, birthday?: string, gender?: string, email?: string) => {

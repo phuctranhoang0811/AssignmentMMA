@@ -105,24 +105,7 @@ export default function CheckoutScreen() {
   const [deliveryTime, setDeliveryTime] = useState('10:30');
   const [timeModalVisible, setTimeModalVisible] = useState(false);
 
-  useEffect(() => {
-    // 1. Khôi phục địa chỉ đã lưu
-    getSavedDeliveryAddress().then((saved) => {
-      if (saved) setAddress(saved);
-    });
-
-    // 2. Khôi phục thông tin người đặt hàng (Tên, SĐT, Email, Ghi chú)
-    getSavedCustomerInfo().then((info) => {
-      if (info) {
-        if (info.fullname) setFullname((prev) => prev || info.fullname || '');
-        if (info.phone) setPhone((prev) => prev || info.phone || '');
-        if (info.email) setEmail((prev) => prev || info.email || '');
-        if (info.deliveryNote) setDeliveryNote((prev) => prev || info.deliveryNote || '');
-      }
-    });
-  }, []);
-
-  // Customer Information (Tự động điền nếu đã đăng nhập hoặc đã từng nhập trước đó)
+  // Customer Information (Tự động điền nếu đã đăng nhập; để trống cho khách tự nhập)
   const [fullname, setFullname] = useState(user?.fullname || '');
   const [phone, setPhone] = useState(
     user?.phone ? (user.phone.startsWith('0') ? user.phone.slice(1) : user.phone) : ''
@@ -130,36 +113,58 @@ export default function CheckoutScreen() {
   const [email, setEmail] = useState(user?.email || '');
 
   useEffect(() => {
+    // 1. Khôi phục địa chỉ đã lưu
+    getSavedDeliveryAddress().then((saved) => {
+      if (saved) setAddress(saved);
+    });
+
+    // 2. Khôi phục ghi chú & thông tin khách (chỉ lấy nếu là khách chưa đăng nhập và đã nhập trước đó)
+    getSavedCustomerInfo().then((info) => {
+      if (info) {
+        if (info.deliveryNote) setDeliveryNote((prev) => prev || info.deliveryNote || '');
+        if (!user) {
+          if (info.fullname) setFullname((prev) => prev || info.fullname || '');
+          if (info.phone) setPhone((prev) => prev || info.phone || '');
+          if (info.email) setEmail((prev) => prev || info.email || '');
+        }
+      }
+    });
+  }, [user]);
+
+  useEffect(() => {
     if (user) {
-      if (user.fullname) {
-        setFullname(user.fullname);
-        saveCustomerInfo({ fullname: user.fullname });
-      }
-      if (user.phone) {
-        const clean = user.phone.startsWith('0') ? user.phone.slice(1) : user.phone;
-        setPhone(clean);
-        saveCustomerInfo({ phone: clean });
-      }
-      if (user.email) {
-        setEmail(user.email);
-        saveCustomerInfo({ email: user.email });
-      }
+      setFullname(user.fullname || '');
+      setPhone(
+        user.phone ? (user.phone.startsWith('0') ? user.phone.slice(1) : user.phone) : ''
+      );
+      setEmail(user.email || '');
+    } else {
+      // Khi không có user (chưa đăng nhập hoặc vừa đăng xuất), xóa sạch thông tin để khách tự nhập mới
+      setFullname('');
+      setPhone('');
+      setEmail('');
     }
   }, [user]);
 
   const handleUpdateFullname = (val: string) => {
     setFullname(val);
-    saveCustomerInfo({ fullname: val });
+    if (!user) {
+      saveCustomerInfo({ fullname: val });
+    }
   };
 
   const handleUpdatePhone = (val: string) => {
     setPhone(val);
-    saveCustomerInfo({ phone: val });
+    if (!user) {
+      saveCustomerInfo({ phone: val });
+    }
   };
 
   const handleUpdateEmail = (val: string) => {
     setEmail(val);
-    saveCustomerInfo({ email: val });
+    if (!user) {
+      saveCustomerInfo({ email: val });
+    }
   };
 
   const handleUpdateDeliveryNote = (val: string) => {
@@ -369,7 +374,7 @@ export default function CheckoutScreen() {
         customer: {
           fullname: fullname.trim(),
           phone: phone.trim(),
-          email: user?.email || '',
+          email: email.trim() || user?.email || '',
         },
         deliveryTime: deliveryTime,
         fulfillmentType: fulfillmentType,
