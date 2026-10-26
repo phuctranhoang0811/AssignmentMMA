@@ -9,7 +9,7 @@ import {
   Modal,
   Alert,
   Platform,
-  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -22,9 +22,6 @@ import {
   CreditCard,
   Banknote,
   Smartphone,
-  MapPin,
-  Map,
-  XCircle,
 } from 'lucide-react-native';
 import Svg, { Path, Polygon, Circle } from 'react-native-svg';
 import { useCart } from '../../state/CartContext';
@@ -35,7 +32,16 @@ import { getItemLineUnitPrice } from '../../utils/calculateTotals';
 import { triggerHaptic } from '../../utils/haptics';
 import { searchVietnamAddresses, AddressSuggestion } from '../../services/addressService';
 import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
-import { getSavedDeliveryAddress, saveDeliveryAddress } from '../../services/addressStorage';
+import { DeliveryTimeModal } from '../../components/modals/DeliveryTimeModal';
+import { CouchIllustration } from '../../components/ui/CouchIllustration';
+import {
+  getSavedDeliveryAddress,
+  saveDeliveryAddress,
+  getSavedCustomerInfo,
+  saveCustomerInfo,
+} from '../../services/addressStorage';
+import { db } from '../../services/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 const BRAND_RED = '#CF4226';
 
@@ -96,15 +102,27 @@ export default function CheckoutScreen() {
   // Address & Notes
   const [address, setAddress] = useState('');
   const [deliveryNote, setDeliveryNote] = useState('');
-  const [deliveryTime] = useState('10:30');
+  const [deliveryTime, setDeliveryTime] = useState('10:30');
+  const [timeModalVisible, setTimeModalVisible] = useState(false);
 
   useEffect(() => {
+    // 1. Khôi phục địa chỉ đã lưu
     getSavedDeliveryAddress().then((saved) => {
       if (saved) setAddress(saved);
     });
+
+    // 2. Khôi phục thông tin người đặt hàng (Tên, SĐT, Email, Ghi chú)
+    getSavedCustomerInfo().then((info) => {
+      if (info) {
+        if (info.fullname) setFullname((prev) => prev || info.fullname || '');
+        if (info.phone) setPhone((prev) => prev || info.phone || '');
+        if (info.email) setEmail((prev) => prev || info.email || '');
+        if (info.deliveryNote) setDeliveryNote((prev) => prev || info.deliveryNote || '');
+      }
+    });
   }, []);
 
-  // Customer Information (Tự động điền nếu đã đăng nhập, để trống cho khách tự nhập tay)
+  // Customer Information (Tự động điền nếu đã đăng nhập hoặc đã từng nhập trước đó)
   const [fullname, setFullname] = useState(user?.fullname || '');
   const [phone, setPhone] = useState(
     user?.phone ? (user.phone.startsWith('0') ? user.phone.slice(1) : user.phone) : ''
@@ -113,17 +131,41 @@ export default function CheckoutScreen() {
 
   useEffect(() => {
     if (user) {
-      setFullname(user.fullname || '');
-      setPhone(
-        user.phone ? (user.phone.startsWith('0') ? user.phone.slice(1) : user.phone) : ''
-      );
-      setEmail(user.email || '');
-    } else {
-      setFullname('');
-      setPhone('');
-      setEmail('');
+      if (user.fullname) {
+        setFullname(user.fullname);
+        saveCustomerInfo({ fullname: user.fullname });
+      }
+      if (user.phone) {
+        const clean = user.phone.startsWith('0') ? user.phone.slice(1) : user.phone;
+        setPhone(clean);
+        saveCustomerInfo({ phone: clean });
+      }
+      if (user.email) {
+        setEmail(user.email);
+        saveCustomerInfo({ email: user.email });
+      }
     }
   }, [user]);
+
+  const handleUpdateFullname = (val: string) => {
+    setFullname(val);
+    saveCustomerInfo({ fullname: val });
+  };
+
+  const handleUpdatePhone = (val: string) => {
+    setPhone(val);
+    saveCustomerInfo({ phone: val });
+  };
+
+  const handleUpdateEmail = (val: string) => {
+    setEmail(val);
+    saveCustomerInfo({ email: val });
+  };
+
+  const handleUpdateDeliveryNote = (val: string) => {
+    setDeliveryNote(val);
+    saveCustomerInfo({ deliveryNote: val });
+  };
 
   // Payment Method Modal & Selection
   const [selectedPaymentId, setSelectedPaymentId] = useState('cash');
@@ -180,6 +222,17 @@ export default function CheckoutScreen() {
   const [orderConfirmed, setOrderConfirmed] = useState(false);
   const [orderCode, setOrderCode] = useState('6X23D93400J5');
   const [orderDateString, setOrderDateString] = useState('23/10/2026 02:58:50');
+  const [confirmedOrderData, setConfirmedOrderData] = useState<{
+    items: typeof items;
+    itemCount: number;
+    subtotal: number;
+    deliveryFee: number;
+    voucherDiscount: number;
+    selectedVoucher: typeof selectedVoucher;
+    total: number;
+    earnedPoints: number;
+  } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Totals Calculation
   const subtotal = items.reduce((sum, item) => {
@@ -232,7 +285,9 @@ export default function CheckoutScreen() {
     setAddressModalVisible(false);
   };
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
+    if (isSubmitting) return;
+
     if (!agreeTerms) {
       Alert.alert('Lưu ý', 'Vui lòng đồng ý với các điều khoản để tiếp tục đặt hàng.');
       return;
@@ -241,6 +296,12 @@ export default function CheckoutScreen() {
       Alert.alert('Thiếu thông tin', 'Vui lòng điền đầy đủ họ tên và số điện thoại.');
       return;
     }
+    if (items.length === 0) {
+      Alert.alert('Giỏ hàng trống', 'Vui lòng chọn món trước khi đặt hàng.');
+      return;
+    }
+
+    setIsSubmitting(true);
 
     // Generate random code or standard order code like #6X23D93400J5
     const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -267,6 +328,80 @@ export default function CheckoutScreen() {
       ':' +
       pad(now.getSeconds());
     setOrderDateString(dateFormatted);
+
+    // 1. Snapshot cart & pricing before clearing
+    const orderSnapshot = {
+      items: [...items],
+      itemCount,
+      subtotal,
+      deliveryFee,
+      voucherDiscount,
+      selectedVoucher,
+      total,
+      earnedPoints,
+    };
+    setConfirmedOrderData(orderSnapshot);
+
+    // 2. Format items snapshot for Firestore
+    const firestoreItems = items.map((item) => {
+      const product = productsMap[item.productId];
+      const unitPrice = getItemLineUnitPrice(item, product) || 0;
+      const lineTotal = unitPrice * (Number(item.quantity) || 1);
+      const variant = product?.variants?.find((v) => v.id === item.variantId);
+      return {
+        productId: item.productId,
+        productName: product?.name || 'Sản phẩm',
+        quantity: Number(item.quantity) || 1,
+        unitPrice,
+        lineTotal,
+        variantName: variant?.name || 'Đế Truyền Thống',
+        image: product?.image || '',
+      };
+    });
+
+    // 3. Save order to Firebase Cloud Firestore (collection 'orders')
+    try {
+      await addDoc(collection(db, 'orders'), {
+        orderCode: generatedOrderCode,
+        createdAt: serverTimestamp(),
+        createdAtFormatted: dateFormatted,
+        userId: user?.id || null,
+        customer: {
+          fullname: fullname.trim(),
+          phone: phone.trim(),
+          email: user?.email || '',
+        },
+        deliveryTime: deliveryTime,
+        fulfillmentType: fulfillmentType,
+        address: address.trim(),
+        deliveryNote: deliveryNote.trim(),
+        paymentMethod: selectedPaymentId,
+        paymentName: selectedPayment?.name || 'Tiền mặt',
+        paymentStatus: selectedPaymentId === 'cash' ? 'UNPAID' : 'PAID_DEMO',
+        status: 'PENDING_CONFIRMATION',
+        statusHistory: [
+          {
+            status: 'PENDING_CONFIRMATION',
+            at: new Date().toISOString(),
+            note: 'Khách hàng vừa đặt đơn',
+          },
+        ],
+        items: firestoreItems,
+        itemCount,
+        subtotal,
+        deliveryFee,
+        discount: voucherDiscount,
+        voucherCode: selectedVoucher?.code || null,
+        total,
+        earnedPoints,
+      });
+      console.log('✅ Đã lưu đơn hàng lên Cloud Firestore thành công: #' + generatedOrderCode);
+    } catch (err: any) {
+      console.error('Lỗi khi ghi đơn hàng lên Firestore:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+
     triggerHaptic('success');
     clearCart();
 
@@ -296,54 +431,34 @@ export default function CheckoutScreen() {
             </Text>
           </View>
 
-          {/* Membership Promotional Banner */}
-          <View style={styles.promoBannerCard}>
-            <View style={styles.promoBannerInner}>
-              <View style={styles.promoHeaderBadge}>
-                <Text style={styles.promoRoofIcon}>🍕</Text>
-                <Text style={styles.promoBadgeText}>ĐĂNG KÝ THÀNH VIÊN</Text>
-              </View>
+          {/* Sofa Illustration with Pizza & Tomato (Khớp 100% Ảnh 2) */}
+          <CouchIllustration width={320} height={160} />
 
-              <Text style={styles.promoMainText}>NHẬN LIỀN</Text>
-              <View style={styles.promoAmountWrap}>
-                <Text style={styles.promoAmount}>80.000</Text>
-                <Text style={styles.promoCurrency}>VND</Text>
-              </View>
-              <View style={styles.promoTimePill}>
-                <Text style={styles.promoTimeText}>trong vòng 72h làm việc</Text>
-              </View>
-
-              {/* Pizza illustration preview */}
-              <View style={styles.promoImagesRow}>
-                <Image
-                  source={{ uri: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500' }}
-                  style={styles.promoPizzaImage}
-                  resizeMode="contain"
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* Action Buttons */}
+          {/* Action Button: Về trang chủ (Khớp 100% Ảnh 2) */}
           <View style={styles.actionButtonsContainer}>
             <TouchableOpacity
               style={styles.primaryActionButton}
-              activeOpacity={0.88}
-              onPress={() => Alert.alert('Đăng ký thành viên', 'Tính năng đang được phát triển!')}
-            >
-              <Text style={styles.primaryActionText}>Đăng ký ngay để tận hưởng ưu đãi</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryActionButton}
               activeOpacity={0.88}
               onPress={() => {
                 clearCart();
                 router.replace('/(tabs)/home');
               }}
             >
-              <Text style={styles.secondaryActionText}>Về trang chủ</Text>
+              <Text style={styles.primaryActionText}>Về trang chủ</Text>
             </TouchableOpacity>
+
+            {!user && (
+              <TouchableOpacity
+                style={[styles.secondaryActionButton, { marginTop: 10 }]}
+                activeOpacity={0.88}
+                onPress={() => {
+                  clearCart();
+                  router.push('/order/lookup');
+                }}
+              >
+                <Text style={styles.secondaryActionText}>Tìm & Theo dõi đơn hàng</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Card 1: Giao Đến */}
@@ -364,12 +479,12 @@ export default function CheckoutScreen() {
           {/* Card 3: Có X sản phẩm trong giỏ hàng của bạn */}
           <View style={styles.infoCard}>
             <Text style={styles.infoCardTitle}>
-              Có {itemCount} sản phẩm trong giỏ hàng của bạn
+              Có {confirmedOrderData?.itemCount ?? itemCount} sản phẩm trong giỏ hàng của bạn
             </Text>
             <Text style={styles.orderTimestampText}>{orderDateString}</Text>
 
             {/* Product list */}
-            {items.map((item, idx) => {
+            {(confirmedOrderData?.items || items).map((item, idx) => {
               const product = productsMap[item.productId];
               const unitPrice = getItemLineUnitPrice(item, product) || 0;
               const lineTotal = unitPrice * (Number(item.quantity) || 1);
@@ -396,7 +511,9 @@ export default function CheckoutScreen() {
             {/* Price breakdown */}
             <View style={styles.pricingRow}>
               <Text style={styles.pricingLabel}>Tạm tính</Text>
-              <Text style={styles.pricingValue}>{formatCurrency(subtotal)}</Text>
+              <Text style={styles.pricingValue}>
+                {formatCurrency(confirmedOrderData?.subtotal ?? subtotal)}
+              </Text>
             </View>
 
             <View style={styles.pricingRow}>
@@ -407,23 +524,27 @@ export default function CheckoutScreen() {
               <Text style={styles.pricingValue}>0 đ</Text>
             </View>
 
-            {selectedVoucher && voucherDiscount > 0 && (
-              <View style={styles.pricingRow}>
-                <Text style={[styles.pricingLabel, { color: BRAND_RED }]}>
-                  Giảm giá Voucher ({selectedVoucher.code})
-                </Text>
-                <Text style={[styles.pricingValue, { color: BRAND_RED }]}>
-                  -{formatCurrency(voucherDiscount)}
-                </Text>
-              </View>
-            )}
+            {(confirmedOrderData?.selectedVoucher || selectedVoucher) &&
+              (confirmedOrderData?.voucherDiscount ?? voucherDiscount) > 0 && (
+                <View style={styles.pricingRow}>
+                  <Text style={[styles.pricingLabel, { color: BRAND_RED }]}>
+                    Giảm giá Voucher (
+                    {confirmedOrderData?.selectedVoucher?.code || selectedVoucher?.code})
+                  </Text>
+                  <Text style={[styles.pricingValue, { color: BRAND_RED }]}>
+                    -{formatCurrency(confirmedOrderData?.voucherDiscount ?? voucherDiscount)}
+                  </Text>
+                </View>
+              )}
 
             <View style={styles.pricingRow}>
               <View style={styles.infoLabelWrap}>
                 <Text style={styles.pricingLabel}>Phí giao hàng</Text>
                 <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
               </View>
-              <Text style={styles.pricingValue}>{formatCurrency(deliveryFee)}</Text>
+              <Text style={styles.pricingValue}>
+                {formatCurrency(confirmedOrderData?.deliveryFee ?? deliveryFee)}
+              </Text>
             </View>
 
             <View style={styles.pricingDivider} />
@@ -432,10 +553,16 @@ export default function CheckoutScreen() {
               <View>
                 <Text style={styles.totalLabel}>Tổng cộng</Text>
                 <Text style={styles.rewardPointsNote}>
-                  Nhận <Text style={{ fontWeight: '700', color: '#111827' }}>{earnedPoints} điểm</Text> Hut rewards
+                  Nhận{' '}
+                  <Text style={{ fontWeight: '700', color: '#111827' }}>
+                    {confirmedOrderData?.earnedPoints ?? earnedPoints} điểm
+                  </Text>{' '}
+                  Hut rewards
                 </Text>
               </View>
-              <Text style={styles.totalValue}>{formatCurrency(total)}</Text>
+              <Text style={styles.totalValue}>
+                {formatCurrency(confirmedOrderData?.total ?? total)}
+              </Text>
             </View>
           </View>
 
@@ -513,7 +640,7 @@ export default function CheckoutScreen() {
               placeholderTextColor="#9CA3AF"
               maxLength={200}
               value={deliveryNote}
-              onChangeText={setDeliveryNote}
+              onChangeText={handleUpdateDeliveryNote}
             />
           </View>
         </View>
@@ -524,9 +651,7 @@ export default function CheckoutScreen() {
         <View style={styles.whiteSectionBlock}>
           <TouchableOpacity
             style={styles.fieldRowClickable}
-            onPress={() =>
-              Alert.alert('Thời gian nhận hàng', 'Đơn hàng sẽ được giao trong khoảng 30 phút tới!')
-            }
+            onPress={() => setTimeModalVisible(true)}
             activeOpacity={0.7}
           >
             <Text style={styles.sectionHeaderTitle}>Thời gian nhận</Text>
@@ -551,7 +676,7 @@ export default function CheckoutScreen() {
             <TextInput
               style={styles.textInputFull}
               value={fullname}
-              onChangeText={setFullname}
+              onChangeText={handleUpdateFullname}
               placeholder="Nhập họ và tên"
               placeholderTextColor="#9CA3AF"
             />
@@ -566,7 +691,7 @@ export default function CheckoutScreen() {
               <TextInput
                 style={styles.phoneTextInput}
                 value={phone}
-                onChangeText={setPhone}
+                onChangeText={handleUpdatePhone}
                 keyboardType="phone-pad"
                 placeholder="Nhập số điện thoại"
                 placeholderTextColor="#9CA3AF"
@@ -579,7 +704,7 @@ export default function CheckoutScreen() {
             <TextInput
               style={styles.textInputFull}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={handleUpdateEmail}
               keyboardType="email-address"
               placeholder="Nhập địa chỉ email"
               placeholderTextColor="#9CA3AF"
@@ -725,11 +850,16 @@ export default function CheckoutScreen() {
       {/* BOTTOM STICKY BUTTON: 'Đặt hàng' */}
       <View style={styles.bottomBar}>
         <TouchableOpacity
-          style={styles.orderBtn}
+          style={[styles.orderBtn, isSubmitting && { opacity: 0.7 }]}
           onPress={handlePlaceOrder}
+          disabled={isSubmitting}
           activeOpacity={0.88}
         >
-          <Text style={styles.orderBtnText}>Đặt hàng</Text>
+          {isSubmitting ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Text style={styles.orderBtnText}>Đặt hàng</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -747,6 +877,16 @@ export default function CheckoutScreen() {
           saveDeliveryAddress(addr);
           setFulfillmentType(mode);
         }}
+      />
+
+      {/* ======================================================== */}
+      {/* MODAL: CHỌN THỜI GIAN NHẬN HÀNG                           */}
+      {/* ======================================================== */}
+      <DeliveryTimeModal
+        visible={timeModalVisible}
+        onClose={() => setTimeModalVisible(false)}
+        selectedTime={deliveryTime}
+        onSelectTime={(time) => setDeliveryTime(time)}
       />
 
       {/* ======================================================== */}

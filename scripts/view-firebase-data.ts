@@ -60,7 +60,20 @@ async function viewFirebaseData() {
     console.log(`📦 COLLECTION 'orders': (${orderSnapshot.size} đơn hàng)`);
     orderSnapshot.forEach((doc) => {
       const data = doc.data();
-      console.log(`  - [Đơn: ${doc.id}] Tổng tiền: ${data.total?.toLocaleString()} đ | Trạng thái: ${data.status}`);
+      console.log(`\n  🧾 ĐƠN HÀNG [ID: ${doc.id}] - Mã: #${data.orderCode || 'N/A'}`);
+      console.log(`     Khách hàng: ${data.customer?.fullname || 'Chưa cập nhật'} | SĐT: ${data.customer?.phone || 'N/A'}`);
+      console.log(`     Địa chỉ:    ${data.address || 'Tại quán'}`);
+      console.log(`     Hẹn giờ nhận: ${data.deliveryTime || 'Càng sớm càng tốt'}`);
+      console.log(`     Thời gian đặt: ${data.createdAtFormatted || 'Vừa xong'}`);
+      console.log(`     Thanh toán: ${data.paymentName || data.paymentMethod || 'Tiền mặt'} (${data.paymentStatus})`);
+      console.log(`     Trạng thái: 🟢 ${data.status}`);
+      console.log(`     Tổng thanh toán: ${data.total?.toLocaleString()} đ (Tạm tính: ${data.subtotal?.toLocaleString()} đ, Ship: ${data.deliveryFee?.toLocaleString()} đ)`);
+      if (Array.isArray(data.items) && data.items.length > 0) {
+        console.log(`     🍽️ Các món đã đặt (${data.items.length} món):`);
+        data.items.forEach((item: any, i: number) => {
+          console.log(`        ${i + 1}. ${item.productName} (x${item.quantity}) - ${item.variantName || ''} - ${item.lineTotal?.toLocaleString()} đ`);
+        });
+      }
     });
   } catch (err: any) {
     console.log("Lỗi đọc collection orders:", err.message);

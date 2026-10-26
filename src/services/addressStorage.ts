@@ -76,3 +76,38 @@ export async function checkHasChosenAddress(): Promise<boolean> {
   }
 }
 
+export type SavedCustomerInfo = {
+  fullname?: string;
+  phone?: string;
+  email?: string;
+  deliveryNote?: string;
+};
+
+const CUSTOMER_INFO_KEY = '@pizza_checkout_customer_info_v2';
+
+/**
+ * Lấy thông tin người đặt hàng đã lưu trong máy
+ */
+export async function getSavedCustomerInfo(): Promise<SavedCustomerInfo | null> {
+  try {
+    const raw = await AsyncStorage.getItem(CUSTOMER_INFO_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lưu thông tin người đặt hàng vào máy để không bắt người dùng nhập lại
+ */
+export async function saveCustomerInfo(info: Partial<SavedCustomerInfo>): Promise<void> {
+  try {
+    const existing = (await getSavedCustomerInfo()) || {};
+    const updated = { ...existing, ...info };
+    await AsyncStorage.setItem(CUSTOMER_INFO_KEY, JSON.stringify(updated));
+  } catch {
+    // Bỏ qua lỗi
+  }
+}
+
+

@@ -177,7 +177,7 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={styles.menuRow}
                 activeOpacity={0.7}
-                onPress={() => router.push('/(tabs)/orders')}
+                onPress={() => router.push('/order/tracking')}
               >
                 <View style={styles.menuIconCol}>
                   <MapPin size={22} color="#1E2024" strokeWidth={1.8} />
@@ -291,7 +291,7 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={styles.menuRow}
                 activeOpacity={0.7}
-                onPress={() => router.push('/(tabs)/orders')}
+                onPress={() => router.push('/order/lookup')}
               >
                 <View style={styles.menuIconCol}>
                   <MapPin size={22} color="#1E2024" strokeWidth={1.8} />

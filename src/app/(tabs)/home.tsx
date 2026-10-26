@@ -32,6 +32,7 @@ import { Product, CategoryId } from '../../types/product';
 import { mockCategories } from '../../data/mockCategories';
 import { mockProducts } from '../../data/mockProducts';
 import { useCart } from '../../state/CartContext';
+import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
 import { triggerHaptic } from '../../utils/haptics';
 import { formatCurrency } from '../../utils/formatCurrency';
@@ -144,6 +145,7 @@ const TermsDocsSvg = () => (
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const { addItem, itemCount, subtotal } = useCart();
   const { showToast } = useToast();
   const { width: windowWidth } = useWindowDimensions();
@@ -531,7 +533,13 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.actionCard}
             activeOpacity={0.72}
-            onPress={() => router.push('/(tabs)/orders')}
+            onPress={() => {
+              if (user) {
+                router.push('/order/tracking');
+              } else {
+                router.push('/order/lookup');
+              }
+            }}
           >
             <View style={styles.actionIconBox}>
               <TrackingOrderSvg />
