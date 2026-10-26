@@ -18,7 +18,6 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { triggerHaptic } from '../../utils/haptics';
 import { CouchIllustration } from '../../components/ui/CouchIllustration';
-import { getSavedCustomerInfo } from '../../services/addressStorage';
 
 const BRAND_RED = '#CF4226';
 
@@ -41,7 +40,7 @@ export default function OrderTrackingScreen() {
       const ordersCol = collection(db, 'orders');
       const foundOrders: any[] = [];
 
-      // 1. Tìm theo userId
+      // Chỉ lấy đơn hàng thuộc về chính tài khoản này (userId khớp chính xác)
       if (user.id) {
         try {
           const userQuery = query(ordersCol, where('userId', '==', user.id));
@@ -49,74 +48,8 @@ export default function OrderTrackingScreen() {
           snap.forEach((doc) => {
             foundOrders.push({ id: doc.id, ...doc.data() });
           });
-        } catch {
-          // Bỏ qua lỗi
-        }
-      }
-
-      // 2. Tìm theo số điện thoại của user để không sót bất kỳ đơn nào
-      const phoneSet = new Set<string>();
-      if (user.phone) {
-        phoneSet.add(user.phone);
-        phoneSet.add(user.phone.startsWith('0') ? user.phone.slice(1) : '0' + user.phone);
-        phoneSet.add(user.phone.startsWith('+84') ? user.phone.replace('+84', '0') : user.phone);
-        phoneSet.add(user.phone.startsWith('+84') ? user.phone.replace('+84', '') : user.phone);
-        phoneSet.add('84' + (user.phone.startsWith('0') ? user.phone.slice(1) : user.phone));
-      }
-
-      // Kiểm tra thêm SĐT đã lưu trong bộ nhớ máy
-      try {
-        const savedInfo = await getSavedCustomerInfo();
-        if (savedInfo?.phone) {
-          phoneSet.add(savedInfo.phone);
-          phoneSet.add(savedInfo.phone.startsWith('0') ? savedInfo.phone.slice(1) : '0' + savedInfo.phone);
-          phoneSet.add('84' + (savedInfo.phone.startsWith('0') ? savedInfo.phone.slice(1) : savedInfo.phone));
-        }
-      } catch {
-        // Bỏ qua
-      }
-
-      for (const phone of phoneSet) {
-        try {
-          const phoneQuery = query(ordersCol, where('customer.phone', '==', phone));
-          const phoneSnap = await getDocs(phoneQuery);
-          phoneSnap.forEach((doc) => {
-            if (!foundOrders.some((o) => o.id === doc.id)) {
-              foundOrders.push({ id: doc.id, ...doc.data() });
-            }
-          });
-        } catch {
-          // Bỏ qua lỗi
-        }
-      }
-
-      // 3. Tìm theo tên khách hàng nếu có
-      if (user.fullname) {
-        try {
-          const nameQuery = query(ordersCol, where('customer.fullname', '==', user.fullname.trim()));
-          const nameSnap = await getDocs(nameQuery);
-          nameSnap.forEach((doc) => {
-            if (!foundOrders.some((o) => o.id === doc.id)) {
-              foundOrders.push({ id: doc.id, ...doc.data() });
-            }
-          });
-        } catch {
-          // Bỏ qua lỗi
-        }
-      }
-
-      // 4. Tìm theo email nếu chưa có đơn nào
-      if (foundOrders.length === 0 && user.email) {
-        try {
-          const emailQuery = query(ordersCol, where('customer.email', '==', user.email));
-          const emailSnap = await getDocs(emailQuery);
-          emailSnap.forEach((doc) => {
-            if (!foundOrders.some((o) => o.id === doc.id)) {
-              foundOrders.push({ id: doc.id, ...doc.data() });
-            }
-          });
-        } catch {
-          // Bỏ qua lỗi
+        } catch (err) {
+          console.error('Lỗi tải đơn hàng của user:', err);
         }
       }
 

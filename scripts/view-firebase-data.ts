@@ -61,7 +61,8 @@ async function viewFirebaseData() {
     orderSnapshot.forEach((doc) => {
       const data = doc.data();
       console.log(`\n  🧾 ĐƠN HÀNG [ID: ${doc.id}] - Mã: #${data.orderCode || 'N/A'}`);
-      console.log(`     Khách hàng: ${data.customer?.fullname || 'Chưa cập nhật'} | SĐT: ${data.customer?.phone || 'N/A'}`);
+      console.log(`     userId:     ${data.userId || 'NULL (Guest)'}`);
+      console.log(`     Khách hàng: ${data.customer?.fullname || 'Chưa cập nhật'} | SĐT: ${data.customer?.phone || 'N/A'} | Email: ${data.customer?.email || 'N/A'}`);
       console.log(`     Địa chỉ:    ${data.address || 'Tại quán'}`);
       console.log(`     Hẹn giờ nhận: ${data.deliveryTime || 'Càng sớm càng tốt'}`);
       console.log(`     Thời gian đặt: ${data.createdAtFormatted || 'Vừa xong'}`);
