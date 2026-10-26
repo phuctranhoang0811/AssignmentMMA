@@ -44,22 +44,26 @@ export default function OrderLookupScreen() {
     try {
       const ordersCol = collection(db, 'orders');
       const cleanCode = rawQuery.replace(/^#/, '').toUpperCase();
-      const phoneVariations = [
-        rawQuery,
-        rawQuery.startsWith('0') ? rawQuery.slice(1) : '0' + rawQuery,
-      ];
-
       const foundOrders: any[] = [];
 
-      // 1. Tìm theo mã đơn hàng
+      // 1. Tìm chính xác theo mã đơn hàng
       const codeQuery = query(ordersCol, where('orderCode', '==', cleanCode));
       const codeSnapshot = await getDocs(codeQuery);
       codeSnapshot.forEach((doc) => {
         foundOrders.push({ id: doc.id, ...doc.data() });
       });
 
-      // 2. Tìm theo số điện thoại nếu chưa tìm thấy theo mã đơn
-      if (foundOrders.length === 0) {
+      // 2. Tìm theo số điện thoại (chỉ tìm bằng SĐT hoặc Mã đơn hàng, KHÔNG tìm theo tên hay gmail)
+      const cleanDigits = rawQuery.replace(/\D/g, '');
+      if (cleanDigits.length >= 8) {
+        const phoneVariations = new Set<string>();
+        phoneVariations.add(rawQuery);
+        phoneVariations.add(cleanDigits);
+        phoneVariations.add(cleanDigits.startsWith('0') ? cleanDigits.slice(1) : '0' + cleanDigits);
+        phoneVariations.add(cleanDigits.startsWith('84') ? cleanDigits.slice(2) : '84' + cleanDigits);
+        phoneVariations.add(cleanDigits.startsWith('84') ? '0' + cleanDigits.slice(2) : cleanDigits);
+        phoneVariations.add('+84' + (cleanDigits.startsWith('0') ? cleanDigits.slice(1) : cleanDigits));
+
         for (const phone of phoneVariations) {
           const phoneQuery = query(ordersCol, where('customer.phone', '==', phone));
           const phoneSnapshot = await getDocs(phoneQuery);
@@ -68,13 +72,18 @@ export default function OrderLookupScreen() {
               foundOrders.push({ id: doc.id, ...doc.data() });
             }
           });
-          if (foundOrders.length > 0) break;
         }
       }
 
+      // Sắp xếp đơn mới nhất lên đầu
+      foundOrders.sort((a, b) => {
+        const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0;
+        const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0;
+        return timeB - timeA;
+      });
+
       if (foundOrders.length > 0) {
         triggerHaptic('success');
-        // Chọn đơn hàng mới nhất
         setSelectedOrder(foundOrders[0]);
       } else {
         triggerHaptic('warning');
