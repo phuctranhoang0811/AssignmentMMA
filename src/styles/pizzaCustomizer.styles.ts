@@ -30,6 +30,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     flex: 1,
+    minWidth: 0,
   },
   stepNumberBadge: {
     width: 24,
@@ -46,6 +47,7 @@ export const styles = StyleSheet.create({
     color: colors.primary,
   },
   groupTitle: {
+    flexShrink: 1, // long titles wrap on 320dp phones instead of pushing the badge off-screen
     fontFamily: fontFamilies.bold,
     fontSize: 16,
     fontWeight: '700',
@@ -64,6 +66,7 @@ export const styles = StyleSheet.create({
     color: colors.primary,
   },
   optionalBadge: {
+    marginLeft: 8,
     backgroundColor: '#F3F4F6',
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -76,6 +79,7 @@ export const styles = StyleSheet.create({
     color: '#4B5563',
   },
   groupSubtitle: {
+    flexShrink: 1,
     fontFamily: fontFamilies.regular,
     fontSize: 13,
     color: '#4B5563',
@@ -225,6 +229,8 @@ export const styles = StyleSheet.create({
   /* Toppings Tab & Counters */
   toppingsCountRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap', // "Đã chọn x/5" moves under the hint on narrow screens
+    columnGap: 8,
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
@@ -243,6 +249,7 @@ export const styles = StyleSheet.create({
   },
   categoryTabsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap', // 4 tabs are wider than a 320px phone; wrap so "Rau củ" stays tappable
     gap: 8,
     marginBottom: 12,
   },

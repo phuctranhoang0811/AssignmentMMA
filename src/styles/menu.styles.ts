@@ -289,6 +289,8 @@ export const styles = StyleSheet.create({
   },
   priceCol: {
     flex: 1,
+    minWidth: 0,
+    marginRight: 8, // keep clear of the + button on narrow (320px) phones
   },
   priceLabel: {
     fontSize: 11,
@@ -296,8 +298,9 @@ export const styles = StyleSheet.create({
   },
   priceNumbersRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap', // the struck original price drops below instead of running under the + button
     alignItems: 'baseline',
-    gap: 6,
+    columnGap: 6,
   },
   currentPrice: {
     fontSize: 15,

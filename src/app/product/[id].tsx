@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Heart } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { AppText } from '../../components/ui/AppText';
@@ -60,6 +60,7 @@ export default function ProductDetailScreen() {
     specialInstructions: '',
   });
 
+  const insets = useSafeAreaInsets();
   const { items, addItem, updateItem } = useCart();
   const editingItem = items.find(item => item.lineId === lineId);
   const { isFavorite, toggleFavorite } = useFavorites();
@@ -388,6 +389,9 @@ export default function ProductDetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* The hero runs under the status bar; once scrolled, keep the clock/battery off the text. */}
+      <View pointerEvents="none" style={[styles.statusBarBackdrop, { height: insets.top }]} />
 
       <BottomActionBar
         title={lineId ? "Lưu thay đổi" : "Thêm vào giỏ"}
