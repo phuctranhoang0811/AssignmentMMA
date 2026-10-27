@@ -22,7 +22,7 @@ import {
   Search,
   Store,
   ChefHat,
-  Truck,
+  CheckCircle2,
   LogOut,
 } from 'lucide-react-native';
 import { db } from '../../services/firebase';
@@ -64,8 +64,8 @@ export default function StaffOrdersScreen() {
   const { user, logout } = useAuth();
   const { showToast } = useToast();
 
-  // Active Segment Tab: 1 = Chờ duyệt, 2 = Bếp nấu, 3 = Giao nhận
-  const [activeTab, setActiveTab] = useState<'pending' | 'kitchen' | 'delivery'>('pending');
+  // Active Segment Tab: 1 = Chờ duyệt, 2 = Bếp & Giao, 3 = Đã xong (Lịch sử)
+  const [activeTab, setActiveTab] = useState<'pending' | 'kitchen' | 'completed'>('pending');
 
   // Trạng thái ca trực của quán: Đang nhận đơn hay Tạm dừng
   const [isAcceptingOrders, setIsAcceptingOrders] = useState(true);
@@ -154,18 +154,19 @@ export default function StaffOrdersScreen() {
   const kitchenOrders = useMemo(
     () =>
       allOrders.filter(
-        (o) => o.status === 'CONFIRMED' || o.status === 'PREPARING' || o.status === 'READY'
+        (o) =>
+          o.status === 'CONFIRMED' ||
+          o.status === 'PREPARING' ||
+          o.status === 'READY' ||
+          o.status === 'OUT_FOR_DELIVERY'
       ),
     [allOrders]
   );
 
-  const deliveryOrders = useMemo(
+  const completedOrders = useMemo(
     () =>
       allOrders.filter(
-        (o) =>
-          o.status === 'OUT_FOR_DELIVERY' ||
-          o.status === 'COMPLETED' ||
-          o.status === 'CANCELLED'
+        (o) => o.status === 'COMPLETED' || o.status === 'CANCELLED'
       ),
     [allOrders]
   );
@@ -413,7 +414,7 @@ export default function StaffOrdersScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* TAB 2: Bếp Nấu (Tạo sẵn cho người được phân công) */}
+          {/* TAB 2: Bếp & Giao (Tạo sẵn cho người được phân công) */}
           <TouchableOpacity
             style={[styles.tabBtn, activeTab === 'kitchen' && styles.activeTabBtn]}
             activeOpacity={0.8}
@@ -424,7 +425,7 @@ export default function StaffOrdersScreen() {
           >
             <ChefHat size={15} color={activeTab === 'kitchen' ? colors.white : colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === 'kitchen' && styles.activeTabText]}>
-              Bếp nấu
+              Bếp & Giao
             </Text>
             <View style={[styles.badgePill, activeTab === 'kitchen' && styles.activeBadgePill]}>
               <Text
@@ -435,24 +436,24 @@ export default function StaffOrdersScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* TAB 3: Giao Hàng & Xong (Tạo sẵn cho người được phân công) */}
+          {/* TAB 3: Đã Xong (Tạo sẵn cho người được phân công) */}
           <TouchableOpacity
-            style={[styles.tabBtn, activeTab === 'delivery' && styles.activeTabBtn]}
+            style={[styles.tabBtn, activeTab === 'completed' && styles.activeTabBtn]}
             activeOpacity={0.8}
             onPress={() => {
               triggerHaptic('light');
-              setActiveTab('delivery');
+              setActiveTab('completed');
             }}
           >
-            <Truck size={15} color={activeTab === 'delivery' ? colors.white : colors.textSecondary} />
-            <Text style={[styles.tabText, activeTab === 'delivery' && styles.activeTabText]}>
-              Giao & Xong
+            <CheckCircle2 size={15} color={activeTab === 'completed' ? colors.white : colors.textSecondary} />
+            <Text style={[styles.tabText, activeTab === 'completed' && styles.activeTabText]}>
+              Đã xong
             </Text>
-            <View style={[styles.badgePill, activeTab === 'delivery' && styles.activeBadgePill]}>
+            <View style={[styles.badgePill, activeTab === 'completed' && styles.activeBadgePill]}>
               <Text
-                style={[styles.badgeText, activeTab === 'delivery' && styles.activeBadgeText]}
+                style={[styles.badgeText, activeTab === 'completed' && styles.activeBadgeText]}
               >
-                {deliveryOrders.length}
+                {completedOrders.length}
               </Text>
             </View>
           </TouchableOpacity>
@@ -774,16 +775,16 @@ export default function StaffOrdersScreen() {
           </View>
         )}
 
-        {/* --- TAB 2: BẾP & CHẾ BIẾN (TẠO SẴN CHO THÀNH VIÊN ĐƯỢC PHÂN CÔNG) --- */}
+        {/* --- TAB 2: BẾP & GIAO NHẬN (TẠO SẴN CHO THÀNH VIÊN ĐƯỢC PHÂN CÔNG) --- */}
         {activeTab === 'kitchen' && (
           <ScrollView contentContainerStyle={styles.scrollContent}>
             <View style={styles.placeholderContainer}>
               <ChefHat size={48} color={colors.warning} />
               <Text style={styles.placeholderTitle}>
-                Tab 2: Khu Vực Bếp & Chế Biến Món Ăn
+                Tab 2: Khu Vực Bếp & Giao Nhận
               </Text>
               <Text style={styles.placeholderDesc}>
-                (Phần khung này đã được khởi tạo sẵn để thành viên được phân công Tab 2 dễ dàng tích hợp).
+                (Phần khung này đã được khởi tạo sẵn để thành viên phụ trách Bếp và Giao hàng dễ dàng tích hợp).
               </Text>
               <Text
                 style={{
@@ -793,7 +794,7 @@ export default function StaffOrdersScreen() {
                   marginTop: 12,
                 }}
               >
-                Hiện có {kitchenOrders.length} đơn hàng đang trong khu vực Bếp
+                Hiện có {kitchenOrders.length} đơn hàng trong quy trình Bếp & Giao
               </Text>
             </View>
 
@@ -820,16 +821,16 @@ export default function StaffOrdersScreen() {
           </ScrollView>
         )}
 
-        {/* --- TAB 3: GIAO & HOÀN TẤT (TẠO SẴN CHO THÀNH VIÊN ĐƯỢC PHÂN CÔNG) --- */}
-        {activeTab === 'delivery' && (
+        {/* --- TAB 3: ĐÃ XONG (LỊCH SỬ CA TRỰC: COMPLETED & CANCELLED) --- */}
+        {activeTab === 'completed' && (
           <ScrollView contentContainerStyle={styles.scrollContent}>
             <View style={styles.placeholderContainer}>
-              <Truck size={48} color={colors.success} />
+              <CheckCircle2 size={48} color={colors.success} />
               <Text style={styles.placeholderTitle}>
-                Tab 3: Khu Vực Giao Nhận & Hoàn Tất
+                Tab 3: Đã Xong (Lịch Sử Ca Trực)
               </Text>
               <Text style={styles.placeholderDesc}>
-                (Phần khung này đã được khởi tạo sẵn để thành viên được phân công Tab 3 dễ dàng tích hợp).
+                Lưu trữ và theo dõi các đơn đã hoàn tất (COMPLETED) hoặc đơn đã hủy (CANCELLED) trong ca làm việc.
               </Text>
               <Text
                 style={{
@@ -839,11 +840,11 @@ export default function StaffOrdersScreen() {
                   marginTop: 12,
                 }}
               >
-                Hiện có {deliveryOrders.length} đơn trong luồng Giao nhận / Hoàn tất
+                Hiện có {completedOrders.length} đơn đã kết thúc trong ca
               </Text>
             </View>
 
-            {deliveryOrders.map((order) => (
+            {completedOrders.map((order) => (
               <View key={order.id} style={styles.orderCard}>
                 <View style={styles.cardHeader}>
                   <Text style={styles.orderCodeText}>
@@ -853,15 +854,15 @@ export default function StaffOrdersScreen() {
                     style={{
                       fontSize: 12,
                       fontWeight: '700',
-                      color: order.status === 'COMPLETED' ? colors.success : colors.textSecondary,
+                      color: order.status === 'COMPLETED' ? colors.success : colors.error,
                     }}
                   >
-                    Trạng thái: {order.status}
+                    {order.status === 'COMPLETED' ? '✓ ĐÃ HOÀN TẤT' : '✕ ĐÃ HỦY'}
                   </Text>
                 </View>
                 <View style={{ padding: 12 }}>
                   <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                    Khách: {order.customer?.fullname} • {order.address || 'Tại quầy'}
+                    Khách: {order.customer?.fullname || 'Khách vãng lai'} • {order.address || 'Tại quầy'}
                   </Text>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary, marginTop: 4 }}>
                     Tổng: {formatCurrency(order.total || 0)}
