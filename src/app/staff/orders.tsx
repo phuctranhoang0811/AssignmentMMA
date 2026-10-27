@@ -23,7 +23,6 @@ import {
   Store,
   ChefHat,
   Truck,
-  ArrowLeft,
   LogOut,
 } from 'lucide-react-native';
 import { db } from '../../services/firebase';
@@ -376,15 +375,6 @@ export default function StaffOrdersScreen() {
             </TouchableOpacity>
 
             <View style={styles.topBarRightIcons}>
-              {/* Nút Về App Khách */}
-              <TouchableOpacity
-                style={styles.iconBtn}
-                activeOpacity={0.7}
-                onPress={() => router.replace('/(tabs)/home')}
-              >
-                <ArrowLeft size={18} color={colors.textPrimary} />
-              </TouchableOpacity>
-
               {/* Nút Đăng xuất */}
               <TouchableOpacity
                 style={styles.iconBtn}
