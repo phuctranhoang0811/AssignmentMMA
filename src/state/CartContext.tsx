@@ -5,6 +5,7 @@ import { generateCartLineKey } from '../utils/cartLineKey';
 import { mockProducts } from '../data/mockProducts';
 import { getItemLineUnitPrice } from '../utils/calculateTotals';
 import { replaceCartItem } from '../utils/cartOperations';
+import { isCustomizablePizza } from '../types/pizzaCustomization';
 
 interface CartContextType {
   items: CartItem[];
@@ -34,8 +35,13 @@ const productsMap = mockProducts.reduce((acc, p) => {
 
 // Quick-add buttons send no size; the backend rejects a sized product without one. A customized pizza's size
 // must equal its variant, so use that, else the first (default) size.
-const withVariant = (productId: string, variantId?: string, sizeId?: string) =>
-  variantId ?? sizeId ?? productsMap[productId]?.variants?.[0]?.id;
+const withVariant = (productId: string, variantId?: string, sizeId?: string) => {
+  const variants = productsMap[productId]?.variants ?? [];
+  return variantId ?? variants.find(v => v.id === sizeId)?.id ?? variants[0]?.id;
+};
+// Older carts may hold a pizza builder state on combos; the backend rejects it there.
+const validCustomization = (productId: string, customization?: CartItem['customization']) =>
+  isCustomizablePizza(productsMap[productId]) ? customization : undefined;
 
 const CartContext = createContext<CartContextType>({} as CartContextType);
 
@@ -69,17 +75,18 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   const pid = item.productId || item.id;
                   const addons = Array.isArray(item.addonIds) ? item.addonIds : [];
                   const variantId = withVariant(pid, item.variantId, item.customization?.sizeId);
+                  const customization = validCustomization(pid, item.customization);
                   const lid =
-                    item.lineId && !item.lineId.startsWith('undefined') && variantId === item.variantId
+                    item.lineId && !item.lineId.startsWith('undefined') && variantId === item.variantId && customization === item.customization
                       ? item.lineId
-                      : generateCartLineKey(pid, variantId, addons, item.specialInstructions, item.customization);
+                      : generateCartLineKey(pid, variantId, addons, item.specialInstructions, customization);
                   return {
                     productId: pid,
                     variantId,
                     addonIds: addons,
                     specialInstructions: item.specialInstructions,
                     quantity: Number(item.quantity) || 1,
-                    customization: item.customization,
+                    customization,
                     lineId: lid,
                   };
                 })
@@ -112,12 +119,13 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const qty = Number(item.quantity) || 1;
     const addonIds = Array.isArray(item.addonIds) ? item.addonIds : [];
     const variantId = withVariant(productId, item.variantId, item.customization?.sizeId);
+    const customization = validCustomization(productId, item.customization);
     const lineId = generateCartLineKey(
       productId,
       variantId,
       addonIds,
       item.specialInstructions,
-      item.customization
+      customization
     );
 
     setItems((prev) => {
@@ -137,7 +145,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           addonIds,
           specialInstructions: item.specialInstructions,
           quantity: qty,
-          customization: item.customization,
+          customization,
           lineId,
         },
       ];

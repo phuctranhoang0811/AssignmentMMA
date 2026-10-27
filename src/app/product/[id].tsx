@@ -17,6 +17,7 @@ import {
   PizzaCustomizationState,
   calculateCustomizationExtra,
   PizzaSizeId,
+  isCustomizablePizza,
 } from '../../types/pizzaCustomization';
 import { useCart } from '../../state/CartContext';
 import { useFavorites } from '../../state/FavoritesContext';
@@ -72,7 +73,7 @@ export default function ProductDetailScreen() {
         }
 
         // Set initial default sauce based on pizza recipe if applicable
-        if (p?.categoryId === 'pizza') {
+        if (p && isCustomizablePizza(p)) {
           let defaultSauceId = 'classic-tomato';
           const lowerName = p.name.toLowerCase();
           if (lowerName.includes('bbq')) {
@@ -107,7 +108,7 @@ export default function ProductDetailScreen() {
   }
 
   const favorited = isFavorite(product.id);
-  const isPizza = product.categoryId === 'pizza';
+  const isPizza = isCustomizablePizza(product);
 
   const handleToggleAddon = (addonId: string) => {
     setSelectedAddonIds((prev) =>

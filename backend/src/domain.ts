@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { calculateOrderTotals, getItemLineUnitPrice } from '../../src/utils/calculateTotals';
-import { PIZZA_CRUSTS, PIZZA_SAUCES, PIZZA_TOPPINGS, MAX_TOPPINGS_COUNT } from '../../src/types/pizzaCustomization';
+import { PIZZA_CRUSTS, PIZZA_SAUCES, PIZZA_TOPPINGS, MAX_TOPPINGS_COUNT, isCustomizablePizza } from '../../src/types/pizzaCustomization';
 import type { Product } from '../../src/types/product';
 import type { Delivery } from '../../src/types/delivery';
 import type { Coupon } from '../../src/types/user';
@@ -56,7 +56,7 @@ export function priceCheckout(checkout: Checkout, products: Product[], coupon?: 
     if (item.variantId && !p.variants?.some(v => v.id === item.variantId)) throw new HttpError(422, 'Invalid variant');
     if (new Set(item.addonIds).size !== item.addonIds.length || item.addonIds.some(id => !p.addons?.some(a => a.id === id))) throw new HttpError(422, 'Invalid addons');
     const c = item.customization;
-    if (c && (p.categoryId !== 'pizza' || c.sizeId !== item.variantId || !PIZZA_CRUSTS.some(v => v.id === c.crustId && v.supportedSizes.includes(c.sizeId)) ||
+    if (c && (!isCustomizablePizza(p) || c.sizeId !== item.variantId || !PIZZA_CRUSTS.some(v => v.id === c.crustId && v.supportedSizes.includes(c.sizeId)) ||
       !PIZZA_SAUCES.some(v => v.id === c.sauceId) || new Set(c.toppings.map(t => t.id)).size !== c.toppings.length ||
       c.toppings.reduce((sum, t) => sum + t.quantity, 0) > MAX_TOPPINGS_COUNT ||
       c.toppings.some(t => !PIZZA_TOPPINGS.some(v => v.id === t.id)) || c.removedIngredients.some(v => !p.ingredients?.includes(v)))) throw new HttpError(422, 'Invalid customization');

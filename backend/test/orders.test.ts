@@ -5,6 +5,7 @@ import { checkoutSchema, HttpError } from '../src/domain';
 import { database } from './fakeDb';
 import { phoneLogin } from '../src/phoneLogin';
 import { OtpStore } from '../src/otp';
+import { isCustomizablePizza } from '../../src/types/pizzaCustomization';
 
 const sized = { name: 'Pizza Size', categoryId: 'pizza', basePrice: 100000, addons: [], isAvailable: true,
   variants: [{ id: 'medium', name: 'Cỡ Vừa', price: 200000 }] };
@@ -124,4 +125,20 @@ test('OTP is generated and checked on the server: expiry, wrong code, attempt li
   await otp.start('a@b.vn');
   now += 5 * 60_000 + 1;
   assert.throws(() => otp.verify('a@b.vn', sent[2]), status(410));
+});
+
+test('pizza builder applies only to real pizzas: combos in the pizza category are ordered without it', async () => {
+  const combo = { name: 'Combo', categoryId: 'pizza', basePrice: 300000, addons: [], isAvailable: true,
+    variants: [{ id: 'pep', name: 'Pepperoni', price: 300000 }] };
+  const { db } = database({ combo });
+  const ops = new OrderOpsStore(db, ['staff']);
+  const item = { lineId: 'line-1', productId: 'combo', variantId: 'pep', addonIds: [], quantity: 1 };
+  const plain = checkoutSchema.parse({ customer: { fullname: 'K', phone: '0900000000' }, fulfillmentType: 'PICKUP', items: [item] });
+  assert.ok((await ops.createCash('customer', 'cash-key-combo-0001', { checkout: plain })).id);
+  const built = checkoutSchema.parse({ ...plain, items: [{ ...item, variantId: 'pep', customization: { sizeId: 'medium',
+    crustId: 'classic-hand-tossed', sauceId: 'classic-tomato', hasExtraSauce: false, toppings: [], spiceLevel: 'none',
+    bakingPreference: 'standard', cutPreference: '6-slices', removedIngredients: [] } }] });
+  await assert.rejects(ops.createCash('customer', 'cash-key-combo-0002', { checkout: built }), status(422));
+  assert.equal(isCustomizablePizza({ categoryId: 'pizza', variants: [{ id: 'small' }, { id: 'large' }] }), true);
+  assert.equal(isCustomizablePizza({ categoryId: 'pizza', variants: [] }), false);
 });
