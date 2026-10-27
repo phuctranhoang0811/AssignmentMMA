@@ -39,7 +39,7 @@ export default function LoginScreen() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const handleBack = () => {
-    if (returnTo === 'profile') {
+    if (returnTo === 'staff' || returnTo === 'profile') {
       router.replace('/(tabs)/profile');
     } else if (returnTo === 'menu') {
       router.replace('/(tabs)/menu');
@@ -51,9 +51,9 @@ export default function LoginScreen() {
   };
 
   useEffect(() => {
-    if (returnTo === 'profile' || returnTo === 'menu' || returnTo === 'cart') {
+    if (returnTo === 'staff' || returnTo === 'profile' || returnTo === 'menu' || returnTo === 'cart') {
       const onBackPress = () => {
-        if (returnTo === 'profile') router.replace('/(tabs)/profile');
+        if (returnTo === 'staff' || returnTo === 'profile') router.replace('/(tabs)/profile');
         else if (returnTo === 'menu') router.replace('/(tabs)/menu');
         else if (returnTo === 'cart') router.replace('/(tabs)/cart');
         return true;
@@ -64,7 +64,9 @@ export default function LoginScreen() {
   }, [returnTo]);
 
   const navigateAfterLogin = () => {
-    if (returnTo === 'profile') {
+    if (returnTo === 'staff' || identifier.trim().toLowerCase().includes('employee@')) {
+      router.replace('/staff/orders');
+    } else if (returnTo === 'profile') {
       router.replace('/(tabs)/profile');
     } else if (returnTo === 'menu') {
       router.replace('/(tabs)/menu');
