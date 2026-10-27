@@ -25,7 +25,7 @@ export default function EditProfileScreen() {
   const [birthday, setBirthday] = useState(user?.birthday || '01/01/2000');
   const [gender, setGender] = useState(user?.gender || 'Nam');
   const [phone, setPhone] = useState(user?.phone || '84934860591');
-  const [email, setEmail] = useState(user?.email || 'luanhuynh296@gmail.com');
+  const [email, setEmail] = useState(user?.email || '');
   const [showGenderModal, setShowGenderModal] = useState(false);
 
   const handleToggleEdit = async () => {
