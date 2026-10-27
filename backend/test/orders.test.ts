@@ -4,6 +4,7 @@ import { OrderOpsStore, nextStatus } from '../src/orders';
 import { checkoutSchema, HttpError } from '../src/domain';
 import { database } from './fakeDb';
 import { phoneLogin } from '../src/phoneLogin';
+import { OtpStore } from '../src/otp';
 
 const sized = { name: 'Pizza Size', categoryId: 'pizza', basePrice: 100000, addons: [], isAvailable: true,
   variants: [{ id: 'medium', name: 'Cỡ Vừa', price: 200000 }] };
@@ -96,4 +97,27 @@ test('phone login verifies the password server-side and never reveals whether a 
   assert.equal(unknown.status, 401);
   assert.equal(wrong.message, unknown.message);
   assert.deepEqual(calls, ['right', 'wrong']);
+});
+
+test('OTP is generated and checked on the server: expiry, wrong code, attempt limit, single use', async () => {
+  let now = 0;
+  const sent: string[] = [];
+  const otp = new OtpStore(async (_to, code) => { sent.push(code); }, () => now);
+  await otp.start('A@B.vn');
+  assert.match(sent[0], /^\d{4}$/);
+  await assert.rejects(otp.start('a@b.vn'), status(429));
+  const wrong = sent[0] === '0000' ? '1111' : '0000';
+  assert.throws(() => otp.verify('a@b.vn', wrong), status(400));
+  otp.verify('a@b.vn', sent[0]);
+  assert.throws(() => otp.verify('a@b.vn', sent[0]), status(410));
+
+  now += 31_000;
+  await otp.start('a@b.vn');
+  for (let i = 0; i < 5; i++) assert.throws(() => otp.verify('a@b.vn', sent[1] === '0000' ? '1111' : '0000'), status(400));
+  assert.throws(() => otp.verify('a@b.vn', sent[1]), status(429));
+
+  now += 31_000;
+  await otp.start('a@b.vn');
+  now += 5 * 60_000 + 1;
+  assert.throws(() => otp.verify('a@b.vn', sent[2]), status(410));
 });

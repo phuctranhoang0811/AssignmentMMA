@@ -16,7 +16,7 @@ import { useRouter } from 'expo-router';
 import { ChevronLeft, ChevronDown, Check, Eye, EyeOff } from 'lucide-react-native';
 import Svg, { Path, Polygon, Circle, G } from 'react-native-svg';
 import { useAuth } from '../../state/AuthContext';
-import { generateOtpCode, sendOtpToEmail } from '../../services/otpService';
+import { sendOtpToEmail, verifyOtp } from '../../services/otpService';
 import { styles, BRAND_RED } from '../../styles/register.styles';
 
 // Party Popper Celebration SVG for Step 4
@@ -76,7 +76,6 @@ export default function RegisterScreen() {
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '']);
   const [timerSeconds, setTimerSeconds] = useState(300);
-  const [serverOtp, setServerOtp] = useState('');
   const [isSendingOtp, setIsSendingOtp] = useState(false);
 
   // Modals for Step 2 Date/Gender
@@ -124,27 +123,20 @@ export default function RegisterScreen() {
     }
 
     setIsSendingOtp(true);
-    const newOtp = generateOtpCode();
-    setServerOtp(newOtp);
-
-    const result = await sendOtpToEmail(trimmedEmail, newOtp);
+    const result = await sendOtpToEmail(trimmedEmail);
     setIsSendingOtp(false);
+    if (!result.success) {
+      Alert.alert('Chưa gửi được mã', result.error);
+      return;
+    }
 
     setTimerSeconds(300);
     setOtp(['', '', '', '']);
     setShowOtpModal(true);
-
-    if (result.success) {
-      Alert.alert(
-        'Đã gửi mã OTP',
-        `Mã xác nhận 4 số đã được gửi đến email:\n${trimmedEmail}\n\nVui lòng kiểm tra hộp thư đến (hoặc hòm thư Spam).`
-      );
-    } else {
-      Alert.alert(
-        'Thông báo xác thực',
-        `Không thể kết nối dịch vụ gửi email: ${result.error}\n(Mã xác thực tạm thời của bạn là: ${newOtp})`
-      );
-    }
+    Alert.alert(
+      'Đã gửi mã OTP',
+      `Mã xác nhận 4 số đã được gửi đến email:\n${trimmedEmail}\n\nVui lòng kiểm tra hộp thư đến (hoặc hòm thư Spam).`
+    );
   };
 
   // Resend OTP
@@ -154,17 +146,13 @@ export default function RegisterScreen() {
     if (!trimmedEmail) return;
 
     setIsSendingOtp(true);
-    const newOtp = generateOtpCode();
-    setServerOtp(newOtp);
-
-    const result = await sendOtpToEmail(trimmedEmail, newOtp);
+    const result = await sendOtpToEmail(trimmedEmail);
     setIsSendingOtp(false);
-    setTimerSeconds(300);
-
     if (result.success) {
+      setTimerSeconds(300);
       Alert.alert('Đã gửi lại mã', `Mã OTP mới đã được gửi đến email:\n${trimmedEmail}`);
     } else {
-      Alert.alert('Thông báo', `Không thể gửi email. Mã OTP dự phòng của bạn là: ${newOtp}`);
+      Alert.alert('Chưa gửi được mã', result.error);
     }
   };
 
@@ -186,19 +174,20 @@ export default function RegisterScreen() {
     }
   };
 
-  const handleVerifyOtp = () => {
+  const handleVerifyOtp = async () => {
     const codeStr = otp.join('');
     if (codeStr.length < 4) {
       Alert.alert('Thông báo', 'Vui lòng nhập đủ 4 số mã xác nhận.');
       return;
     }
 
-    // Xác nhận mã hợp lệ (hoặc mã 1234 dự phòng cho test offline)
-    if (codeStr === serverOtp || codeStr === '1234') {
+    // The code only exists on the server, which checks expiry and limits attempts.
+    const result = await verifyOtp(email.trim().toLowerCase(), codeStr);
+    if (result.success) {
       setShowOtpModal(false);
       setCurrentStep(2);
     } else {
-      Alert.alert('Sai mã xác nhận', 'Mã OTP không chính xác. Vui lòng kiểm tra lại email của bạn!');
+      Alert.alert('Sai mã xác nhận', result.error);
     }
   };
 

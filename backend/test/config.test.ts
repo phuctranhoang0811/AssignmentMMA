@@ -36,3 +36,9 @@ test('Expo Go bridge requires an HTTPS origin and Firebase web API key together'
   assert.throws(() => readConfig({ ...values, GOOGLE_BRIDGE_ORIGIN: 'https://login.example.com' }), /FIREBASE_WEB_API_KEY/);
   assert.equal(readConfig({ ...values, GOOGLE_BRIDGE_ORIGIN: 'https://login.example.com', FIREBASE_WEB_API_KEY: 'public-key' }).GOOGLE_BRIDGE_ORIGIN, 'https://login.example.com');
 });
+
+test('empty SMTP values in .env mean "not configured", not an invalid email', () => {
+  const env = readConfig({ ...values, SMTP_USER: '', SMTP_PASS: '' });
+  assert.equal(env.SMTP_USER, undefined);
+  assert.throws(() => readConfig({ ...values, SMTP_USER: 'not-an-email' }), /SMTP_USER/);
+});

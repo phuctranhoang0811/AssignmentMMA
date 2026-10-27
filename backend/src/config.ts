@@ -40,6 +40,9 @@ export function readConfig(values: NodeJS.ProcessEnv) {
     PAYOS_RETURN_URL: z.url(), PAYOS_CANCEL_URL: z.url(),
     ALLOWED_ORIGINS: z.string().trim().min(1),
     STAFF_UIDS: z.string().trim().optional(),
+    // `KEY=` in .env arrives as '', which means not configured.
+    SMTP_USER: z.preprocess(v => v || undefined, z.email().optional()),
+    SMTP_PASS: z.preprocess(v => v || undefined, z.string().trim().min(1).optional()),
     GOOGLE_BRIDGE_ORIGIN: z.url().optional(),
     FIREBASE_WEB_API_KEY: z.string().trim().min(1).optional(),
     FIREBASE_AUTH_DOMAIN: z.string().regex(/^[a-zA-Z0-9.-]+$/).optional(),

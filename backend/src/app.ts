@@ -13,9 +13,11 @@ import { googleBridgeRouter, type GoogleBridgeOptions } from './googleBridge';
 import { deliveryQuoteInput, verifyAhaWebhook, type DeliveryStore } from './delivery';
 import { cashOrderInput, type OrderOpsStore } from './orders';
 import { phoneLoginInput } from './phoneLogin';
+import { otpSendInput, otpVerifyInput, type OtpStore } from './otp';
 
 type Options = {
   delivery?: Pick<DeliveryStore, 'quote' | 'createCod' | 'dispatch' | 'refresh' | 'webhook' | 'assertStaff' | 'config'>;
+  otp?: Pick<OtpStore, 'start' | 'verify'>;
   phoneLogin?: (phone: string, password: string) => Promise<{ token: string }>;
   orders?: Pick<OrderOpsStore, 'list' | 'advance' | 'reject' | 'cancel' | 'createCash' | 'lookup'>;
   googleBridge?: GoogleBridgeOptions;
@@ -96,6 +98,19 @@ export function createPaymentServer(options: Options) {
     if (!options.phoneLogin) throw new HttpError(503, 'Đăng nhập bằng số điện thoại chưa được cấu hình.');
     const { phone, password } = phoneLoginInput.parse(req.body);
     res.json(await options.phoneLogin(phone, password));
+  });
+  const otp = () => {
+    if (!options.otp) throw new HttpError(503, 'Dịch vụ gửi mã OTP chưa được cấu hình.');
+    return options.otp;
+  };
+  app.post('/api/otp/send', rateLimit({ windowMs: 10 * 60_000, limit: 5, standardHeaders: 'draft-8', legacyHeaders: false }), async (req, res) => {
+    await otp().start(otpSendInput.parse(req.body).email);
+    res.json({ success: true });
+  });
+  app.post('/api/otp/verify', rateLimit({ windowMs: 10 * 60_000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false }), async (req, res) => {
+    const { email, code } = otpVerifyInput.parse(req.body);
+    otp().verify(email, code);
+    res.json({ success: true });
   });
   app.use('/api', async (req, res, next) => {
     try {
