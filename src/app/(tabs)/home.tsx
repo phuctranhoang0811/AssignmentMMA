@@ -397,6 +397,8 @@ export default function HomeScreen() {
                   </View>
                   <TouchableOpacity
                     style={styles.addBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Thêm ${item.name} vào giỏ`}
                     activeOpacity={0.8}
                     onPress={() => {
                       addItem({
@@ -691,6 +693,8 @@ export default function HomeScreen() {
 
                         <TouchableOpacity
                           style={styles.simpleAddBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Thêm ${combo.name} vào giỏ`}
                           activeOpacity={0.8}
                           onPress={() => handleAddCombo(combo)}
                         >

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CreateOrderInput } from './contracts';
-import type { Delivery, DeliveryQuote } from '../types/delivery';
+import type { DeliveryQuote } from '../types/delivery';
 import { BackendRequestError, request } from './payosService';
 import { auth } from './firebase';
 
@@ -51,10 +51,5 @@ export async function createAhamoveCod(quoteId: string) {
   }
   return (await resumeAhamoveCod())!;
 }
-export type StaffDeliveryOrder = {
-  id: string; orderCode: string; status: string; address: string; customer: { fullname: string; phone: string };
-  total: number; delivery: Delivery; items: { productName: string; quantity: number }[];
-};
-export const listDeliveryOrders = () => request<StaffDeliveryOrder[]>('/api/delivery/staff/orders');
 export const updateDeliveryOrder = (id: string, action: 'advance' | 'dispatch' | 'refresh') =>
   request(`/api/delivery/orders/${encodeURIComponent(id)}/${action}`, { method: 'POST' });

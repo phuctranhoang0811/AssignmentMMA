@@ -119,7 +119,7 @@ export default function SettingsScreen() {
 
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => router.push('/demo/staff-orders')}
+              onPress={() => router.push('/staff/orders')}
               style={[styles.row, { borderBottomWidth: 0 }]}
             >
               <View style={styles.rowLeft}>

@@ -14,7 +14,7 @@ export type PaymentSnapshot = {
   payment: { paymentLinkId: string; checkoutUrl: string; qrCode: string | null } | null;
 };
 
-function apiUrl() {
+export function apiUrl() {
   const configured = Platform.OS === 'android'
     ? process.env.EXPO_PUBLIC_ANDROID_API_URL || process.env.EXPO_PUBLIC_API_URL
     : process.env.EXPO_PUBLIC_API_URL;
@@ -61,7 +61,7 @@ export async function request<T>(path: string, options: RequestInit = {}, expect
     });
     if (!response.ok) {
       if (response.status === 401) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-      if (path.startsWith('/api/rewards') || path.startsWith('/api/delivery')) {
+      if (/^\/api\/(rewards|delivery|staff|orders\/(cash|[^/]+\/cancel))/.test(path)) {
         const detail = await response.json().catch(() => null);
         throw new BackendRequestError(detail?.error || 'Chưa thể xử lý yêu cầu. Vui lòng thử lại.', response.status);
       }

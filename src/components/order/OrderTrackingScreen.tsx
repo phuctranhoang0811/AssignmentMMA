@@ -4,6 +4,7 @@ import {
   Text,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -19,6 +20,9 @@ import { triggerHaptic } from '../../utils/haptics';
 import { CouchIllustration } from '../../components/ui/CouchIllustration';
 import { styles, BRAND_RED } from '../../styles/orderTracking.styles';
 import { DeliveryDetails } from './DeliveryDetails';
+import { OrderTimeline } from './OrderTimeline';
+import { AppButton } from '../ui/AppButton';
+import { cancelOrder } from '../../services/orderApi';
 
 export default function OrderTrackingScreen({ historyOnly = false }: { historyOnly?: boolean }) {
   const router = useRouter();
@@ -27,12 +31,14 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
   const [result, setResult] = useState<{ owner?: string; orders: any[]; error: string; loading: boolean }>({ orders: [], error: '', loading: true });
   const [attempt, setAttempt] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [tab, setTab] = useState<'active' | 'history'>(historyOnly ? 'history' : 'active');
+  const [cancelling, setCancelling] = useState(false);
   const owner = user?.id;
   const orders = result.owner === owner ? result.orders : [];
   const error = result.owner === owner ? result.error : '';
   const isLoading = !!owner && (result.owner !== owner || result.loading);
   const selectedOrder = orders.find(order => order.id === selectedId);
-  const visibleOrders = orders.filter(order => historyOnly
+  const visibleOrders = orders.filter(order => tab === 'history'
     ? ['COMPLETED', 'CANCELLED'].includes(order.status)
     : !['COMPLETED', 'CANCELLED'].includes(order.status));
 
@@ -54,6 +60,17 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
   }, [owner, attempt]);
 
   const onRefresh = () => setAttempt(previous => previous + 1);
+
+  const confirmCancel = (id: string) => Alert.alert('Hủy đơn hàng?', 'Bạn chỉ có thể hủy khi cửa hàng chưa xác nhận đơn.', [
+    { text: 'Không', style: 'cancel' },
+    { text: 'Hủy đơn', style: 'destructive', onPress: async () => {
+      setCancelling(true);
+      // The list updates itself through onSnapshot.
+      try { await cancelOrder(id); triggerHaptic('success'); }
+      catch (failure) { Alert.alert('Chưa thể hủy đơn', failure instanceof Error ? failure.message : 'Vui lòng thử lại.'); }
+      finally { setCancelling(false); }
+    } },
+  ]);
 
   const getStatusText = (status: string) => {
     switch (status) {
@@ -87,6 +104,8 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
           <TouchableOpacity
             style={styles.headerBtn}
             onPress={() => setSelectedId(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Quay lại danh sách đơn"
             activeOpacity={0.7}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
@@ -118,8 +137,17 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             </Text>
           </View>
 
-          {/* Sofa Illustration with Pizza & Tomato (Khớp ảnh 2) */}
-          <CouchIllustration width={320} height={160} />
+          {selectedOrder.status === 'CANCELLED' || !selectedOrder.status ? (
+            <CouchIllustration width={320} height={160} />
+          ) : (
+            <View style={styles.infoCard}>
+              <OrderTimeline
+                status={selectedOrder.status}
+                fulfillmentType={['takeaway', 'PICKUP'].includes(selectedOrder.fulfillmentType) ? 'PICKUP' : 'DELIVERY'}
+                history={selectedOrder.statusHistory}
+              />
+            </View>
+          )}
 
           {/* Action Button: Về trang chủ (Khớp ảnh 2) */}
           <View style={styles.actionButtonsContainer}>
@@ -130,6 +158,10 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             >
               <Text style={styles.primaryActionText}>Về trang chủ</Text>
             </TouchableOpacity>
+            {selectedOrder.status === 'PENDING_CONFIRMATION' && (
+              <AppButton title="Hủy đơn" variant="outline" isLoading={cancelling} disabled={cancelling}
+                onPress={() => confirmCancel(selectedOrder.id)} style={{ marginTop: 12 }} />
+            )}
           </View>
 
           {/* Card 1: Giao Đến */}
@@ -243,7 +275,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
               <Text style={styles.supportHotline}>19001822</Text>
             </TouchableOpacity>
             <Text style={styles.supportNotice}>
-              Xin lưu ý: đơn hàng của bạn không thể được thay đổi hoặc hủy từ trang web. Vui lòng gọi cho chúng tôi. Nhân viên của chúng tôi có thể gọi cho bạn nếu cần làm rõ về đơn hàng của bạn.
+              Bạn có thể tự hủy đơn khi cửa hàng chưa xác nhận. Sau đó, vui lòng gọi tổng đài để thay đổi hoặc hủy đơn. Đơn đã thanh toán qua payOS sẽ được hoàn tiền khi bị hủy.
             </Text>
           </View>
 
@@ -263,22 +295,36 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
         <TouchableOpacity
           style={styles.headerBtn}
           onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Quay lại"
           activeOpacity={0.7}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <ChevronLeft size={24} color="#111827" />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>{historyOnly ? 'Lịch sử đơn hàng' : 'Theo dõi đơn hàng'}</Text>
+        <Text style={styles.headerTitle}>Đơn hàng của tôi</Text>
 
         <TouchableOpacity
           style={styles.headerBtn}
           onPress={() => router.push('/order/lookup')}
+          accessibilityRole="button"
+          accessibilityLabel="Tra cứu đơn bằng số điện thoại"
           activeOpacity={0.7}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <Search size={22} color="#111827" />
         </TouchableOpacity>
+      </View>
+
+      <View style={{ flexDirection: 'row', marginHorizontal: 16, marginVertical: 12, backgroundColor: '#F3F4F6', borderRadius: 999, padding: 4 }}
+        accessibilityRole="tablist">
+        {([['active', 'Đang xử lý'], ['history', 'Lịch sử']] as const).map(([key, label]) => (
+          <TouchableOpacity key={key} onPress={() => setTab(key)} accessibilityRole="tab" accessibilityState={{ selected: tab === key }}
+            style={{ flex: 1, paddingVertical: 8, borderRadius: 999, alignItems: 'center', backgroundColor: tab === key ? '#FFFFFF' : 'transparent' }}>
+            <Text style={{ fontWeight: tab === key ? '700' : '500', color: tab === key ? BRAND_RED : '#6B7280' }}>{label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Body */}
@@ -297,7 +343,9 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
         </View>
       ) : visibleOrders.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Text style={styles.emptyText}>{!user ? 'Đăng nhập để xem đơn hàng của bạn' : historyOnly ? 'Chưa có đơn hàng hoàn thành hoặc đã hủy' : 'Không có đơn hàng đang xử lý'}</Text>
+          <Text style={styles.emptyText}>{!user ? 'Đăng nhập để xem đơn hàng của bạn' : tab === 'history' ? 'Chưa có đơn hàng hoàn thành hoặc đã hủy' : 'Không có đơn hàng đang xử lý'}</Text>
+          <AppButton title={!user ? 'Đăng nhập' : 'Đặt món ngay'} style={{ marginTop: 16, alignSelf: 'center', paddingHorizontal: 32 }}
+            onPress={() => router.push(!user ? '/auth/login' : '/(tabs)/menu')} />
         </View>
       ) : (
         <FlatList

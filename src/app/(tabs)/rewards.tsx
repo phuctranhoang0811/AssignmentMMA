@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { AppButton } from '../../components/ui/AppButton';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../state/AuthContext';
@@ -230,9 +231,8 @@ export default function RewardsScreen() {
         </View>}
         {user?.isDemo && <View style={{ padding: 16 }}>
           <Text>Đăng nhập tài khoản thật để tải điểm và đổi quà.</Text>
-          <TouchableOpacity onPress={() => router.push({ pathname: '/auth/login', params: { returnTo: 'rewards' } })} style={{ paddingVertical: 12 }}>
-            <Text>Đăng nhập</Text>
-          </TouchableOpacity>
+          <AppButton title="Đăng nhập" style={{ marginTop: 12 }}
+            onPress={() => router.push({ pathname: '/auth/login', params: { returnTo: 'rewards' } })} />
         </View>}
         {activeTab === 'list' && (
           <View style={styles.itemsListContainer}>

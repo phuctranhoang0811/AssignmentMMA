@@ -14,7 +14,7 @@ import { deliveryQuoteInput, verifyAhaWebhook, type DeliveryStore } from './deli
 import { cashOrderInput, type OrderOpsStore } from './orders';
 
 type Options = {
-  delivery?: Pick<DeliveryStore, 'quote' | 'createCod' | 'list' | 'dispatch' | 'refresh' | 'webhook' | 'assertStaff' | 'config'>;
+  delivery?: Pick<DeliveryStore, 'quote' | 'createCod' | 'dispatch' | 'refresh' | 'webhook' | 'assertStaff' | 'config'>;
   orders?: Pick<OrderOpsStore, 'list' | 'advance' | 'reject' | 'cancel' | 'createCash' | 'lookup'>;
   googleBridge?: GoogleBridgeOptions;
   rewards?: Pick<RewardStore, 'wallet' | 'redeem'>;
@@ -113,9 +113,6 @@ export function createPaymentServer(options: Options) {
     const key = z.string().min(16).max(128).regex(/^[\w-]+$/).parse(req.headers['idempotency-key']);
     const { quoteId } = z.object({ quoteId: z.string().uuid() }).strict().parse(req.body);
     res.json(await delivery().createCod(res.locals.uid, key, quoteId));
-  });
-  app.get('/api/delivery/staff/orders', async (_req, res) => {
-    res.json(await delivery().list(res.locals.uid));
   });
   app.post('/api/delivery/orders/:id/dispatch', async (req, res) => {
     res.json(await delivery().dispatch(res.locals.uid, deliveryId.parse(req.params.id)));

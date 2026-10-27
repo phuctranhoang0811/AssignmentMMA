@@ -126,8 +126,8 @@ export class OrderOpsStore {
     const order = result.docs[0]?.data();
     const digits = (value: string) => value.replace(/\D/g, '').replace(/^84/, '0');
     if (!order || digits(order.customer?.phone ?? '') !== digits(phone)) throw new HttpError(404, 'Không tìm thấy đơn hàng.');
-    return { id: result.docs[0].id, orderCode: order.orderCode, status: order.status, statusHistory: order.statusHistory ?? [],
-      fulfillmentType: order.fulfillmentType, deliveryTime: order.deliveryTime ?? '', items: order.items ?? [],
-      total: order.total ?? 0, paymentName: order.paymentName ?? '', createdAt: order.createdAt?.toDate?.().toISOString?.() ?? null };
+    // Phone + code proves it is the customer's order; drop internal fields only.
+    const { userId: _u, checkoutFingerprint: _f, paymentOrderId: _p, reference: _r, deliveryQuoteId: _q, createdAt, ...visible } = order;
+    return { ...visible, id: result.docs[0].id, createdAt: createdAt?.toDate?.().toISOString?.() ?? null };
   }
 }

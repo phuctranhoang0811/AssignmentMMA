@@ -37,6 +37,8 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
             activeOpacity={0.7}
             onPress={handleBack}
             style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Quay lại"
           >
             <ArrowLeft size={22} color={colors.textPrimary} />
           </TouchableOpacity>

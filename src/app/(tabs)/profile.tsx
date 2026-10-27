@@ -25,7 +25,6 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 import { styles } from '../../styles/profile.styles';
-import { ahamoveEnabled } from '../../services/deliveryService';
 
 // Custom Pizza Reward Slice Badge Icon (exact match to user mockup)
 const PizzaRewardIcon = ({ size = 22, color = '#1E2024' }: { size?: number; color?: string }) => (
@@ -148,13 +147,13 @@ export default function ProfileScreen() {
                   <TouchableOpacity
                     style={styles.menuRow}
                     activeOpacity={0.7}
-                    onPress={() => router.push(ahamoveEnabled ? '/staff/deliveries' : '/demo/staff-orders')}
+                    onPress={() => router.push('/staff/orders')}
                   >
                     <View style={styles.menuIconCol}>
                       <Sparkles size={22} color="#CF4226" strokeWidth={1.8} />
                     </View>
                     <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
-                      {ahamoveEnabled ? 'Bếp & giao Ahamove' : 'Quản lý đơn bếp (Staff Demo)'}
+                      Quản lý đơn hàng (Nhân viên)
                     </Text>
                   </TouchableOpacity>
                   <View style={styles.divider} />

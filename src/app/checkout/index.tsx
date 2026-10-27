@@ -52,12 +52,11 @@ import {
   getSavedCustomerInfo,
   saveCustomerInfo,
 } from '../../services/addressStorage';
-import { db } from '../../services/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 import { styles, BRAND_RED } from '../../styles/checkout.styles';
 import { formatCustomizationSummary } from '../../types/pizzaCustomization';
 import { createPayosPayment } from '../../services/payosService';
+import { createCashOrder } from '../../services/orderApi';
 import { ahamoveEnabled, createAhamoveCod, deliveryCheckout, getDeliveryQuote, resumeAhamoveCod } from '../../services/deliveryService';
 import type { DeliveryQuote } from '../../types/delivery';
 
@@ -400,14 +399,25 @@ export default function CheckoutScreen() {
       return;
     }
 
-    // Generate random code or standard order code like #6X23D93400J5
-    const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    let rand = '';
-    for (let i = 0; i < 6; i++) {
-      rand += chars.charAt(Math.floor(Math.random() * chars.length));
+    // Cash orders are priced and stored by the backend; the app never writes prices to Firestore.
+    if (!user || user.isDemo) {
+      setIsSubmitting(false);
+      router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } });
+      return;
     }
-    const generatedOrderCode = '6X23D' + rand;
-    setOrderCode(generatedOrderCode);
+    try {
+      const result = await createCashOrder({
+        customer: { fullname, phone: localPhone, email },
+        fulfillmentType: fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP',
+        needCutlery, address, deliveryNote, items, promoCode: selectedVoucher?.code, paymentMethod: 'COD',
+      }, formatDeliveryTime(deliveryTime));
+      setOrderCode(result.orderCode);
+    } catch (err) {
+      Alert.alert('Chưa thể đặt hàng', err instanceof Error ? err.message : 'Đơn hàng chưa được lưu. Giỏ hàng của bạn vẫn được giữ nguyên, vui lòng thử lại.');
+      return;
+    } finally {
+      setIsSubmitting(false);
+    }
 
     // Current timestamp format DD/MM/YYYY HH:mm:ss
     const now = new Date();
@@ -438,71 +448,6 @@ export default function CheckoutScreen() {
       earnedPoints,
     };
     setConfirmedOrderData(orderSnapshot);
-
-    // 2. Format items snapshot for Firestore
-    const firestoreItems = items.map((item) => {
-      const product = productsMap[item.productId];
-      const unitPrice = getItemLineUnitPrice(item, product) || 0;
-      const lineTotal = unitPrice * (Number(item.quantity) || 1);
-      const variant = product?.variants?.find((v) => v.id === item.variantId);
-      const customSummary = item.customization ? formatCustomizationSummary(item.customization) : [];
-      return {
-        productId: item.productId,
-        productName: product?.name || 'Sản phẩm',
-        quantity: Number(item.quantity) || 1,
-        unitPrice,
-        lineTotal,
-        variantName: variant?.name || '',
-        customizationSummary: customSummary,
-        image: product?.image || '',
-      };
-    });
-
-    // 3. Save order to Firebase Cloud Firestore (collection 'orders')
-    try {
-      await addDoc(collection(db, 'orders'), {
-        orderCode: generatedOrderCode,
-        createdAt: serverTimestamp(),
-        createdAtFormatted: dateFormatted,
-        userId: user?.id || null,
-        customer: {
-          fullname: fullname.trim(),
-          phone: localPhone,
-          email: email.trim() || user?.email || '',
-        },
-        deliveryTime: formatDeliveryTime(deliveryTime),
-        fulfillmentType: fulfillmentType,
-        needCutlery,
-        address: address.trim(),
-        deliveryNote: deliveryNote.trim(),
-        paymentMethod: selectedPaymentId,
-        paymentName: selectedPayment?.name || 'Tiền mặt',
-        paymentStatus: 'UNPAID',
-        status: 'PENDING_CONFIRMATION',
-        statusHistory: [
-          {
-            status: 'PENDING_CONFIRMATION',
-            at: new Date().toISOString(),
-            note: 'Khách hàng vừa đặt đơn',
-          },
-        ],
-        items: firestoreItems,
-        itemCount,
-        subtotal,
-        deliveryFee,
-        discount: voucherDiscount,
-        voucherCode: selectedVoucher?.code || null,
-        total,
-        earnedPoints,
-      });
-      console.log('✅ Đã lưu đơn hàng lên Cloud Firestore thành công: #' + generatedOrderCode);
-    } catch (err: any) {
-      console.error('Lỗi khi ghi đơn hàng lên Firestore:', err);
-      Alert.alert('Chưa thể đặt hàng', 'Đơn hàng chưa được lưu. Giỏ hàng của bạn vẫn được giữ nguyên, vui lòng thử lại.');
-      return;
-    } finally {
-      setIsSubmitting(false);
-    }
 
     triggerHaptic('success');
     clearCart();

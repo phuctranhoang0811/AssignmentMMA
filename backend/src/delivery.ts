@@ -110,11 +110,6 @@ export class DeliveryStore {
   assertStaff(uid: string) {
     if (!this.config.staffUids.includes(uid)) throw new HttpError(403, 'Tài khoản chưa được cấp quyền vận hành giao hàng.');
   }
-  async list(uid: string) {
-    this.assertStaff(uid);
-    const result = await this.db.collection('orders').where('delivery.provider', '==', 'AHAMOVE').orderBy('createdAt', 'desc').limit(50).get();
-    return result.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-  }
   async dispatch(uid: string, id: string) {
     this.assertStaff(uid);
     const ref = this.db.collection('orders').doc(id);

@@ -133,6 +133,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             activeOpacity={0.7}
             onPress={handleFavoritePress}
             style={styles.favoriteButton}
+            accessibilityRole="button"
+            accessibilityLabel={favorited ? `Bỏ yêu thích ${product.name}` : `Yêu thích ${product.name}`}
+            accessibilityState={{ selected: favorited }}
           >
             <Animated.View style={{ transform: [{ scale: heartScale }] }}>
               <Heart
@@ -172,6 +175,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 activeOpacity={0.8}
                 onPress={handleAddPress}
                 style={styles.addButton}
+                accessibilityRole="button"
+                accessibilityLabel={`Thêm ${product.name} vào giỏ`}
               >
                 <Plus size={18} color={colors.white} />
               </TouchableOpacity>
