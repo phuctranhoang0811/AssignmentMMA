@@ -7,6 +7,7 @@ import { DeliveryStore } from './delivery';
 import { createPaymentServer } from './app';
 import { OrderStore } from './store';
 import { RewardStore } from './rewards';
+import { OrderOpsStore } from './orders';
 import { GoogleBridgeStore } from './googleBridgeStore';
 
 let env: ReturnType<typeof readConfig>;
@@ -29,6 +30,8 @@ const { server, io } = createPaymentServer({
   store: new OrderStore(db, !!ahamoveConfig),
   delivery: ahamoveConfig ? new DeliveryStore(db, ahamoveConfig) : undefined,
   rewards: new RewardStore(db),
+  // Staff accounts: STAFF_UIDS, falling back to the Ahamove staff list.
+  orders: new OrderOpsStore(db, (env.STAFF_UIDS || process.env.AHAMOVE_STAFF_UIDS || '').split(',').map(s => s.trim()).filter(Boolean)),
   googleBridge: env.GOOGLE_BRIDGE_ORIGIN ? {
     store: new GoogleBridgeStore(),
     publicOrigin: env.GOOGLE_BRIDGE_ORIGIN,

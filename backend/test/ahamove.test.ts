@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AhamoveClient, type AhaConfig, type AhaOrder, type AhaPayload } from '../src/ahamove';
 import { DeliveryStore, deliveryUpdate, validateQuote, verifyAhaWebhook, safeAhaUrl, type StoredQuote } from '../src/delivery';
+import { OrderOpsStore } from '../src/orders';
+import { database } from './fakeDb';
 import { OrderStore } from '../src/store';
 import { checkoutSchema, HttpError, type Checkout } from '../src/domain';
 import { readAhamoveConfig } from '../src/config';
@@ -18,44 +20,6 @@ const initial: Delivery = { provider: 'AHAMOVE', environment: 'staging', service
 const detail = (id: string, status = 'ASSIGNING', point = ''): AhaOrder => ({ _id: 'AHA123', status,
   path: [{}, { tracking_number: id, status: point }], total_fee: 27000 });
 
-// Transaction fixture exercises the real stores and rejects reads after writes like Firestore.
-function database() {
-  const docs = new Map<string, Record<string, unknown>>();
-  type Ref = { path: string; id: string; get: () => Promise<ReturnType<typeof snapshot>>; create: (value: Record<string, unknown>) => Promise<void>; update: (value: Record<string, unknown>) => Promise<void> };
-  function reference(name: string, id: string): Ref {
-    const path = `${name}/${id}`;
-    return { path, id, get: async () => snapshot(reference(name, id), docs),
-      create: async value => { assert.ok(!docs.has(path)); docs.set(path, value); },
-      update: async value => { assert.ok(docs.has(path)); docs.set(path, { ...docs.get(path), ...value }); } };
-  }
-  function snapshot(ref: Ref, source: typeof docs) { return { ref, id: ref.id, exists: source.has(ref.path), data: () => source.get(ref.path) }; }
-  let tail = Promise.resolve();
-  const db = {
-    collection: (name: string) => ({ doc: (id: string) => reference(name, id) }),
-    getAll: async (...refs: Ref[]) => refs.map(ref => snapshot(ref, docs)),
-    runTransaction: async <T>(callback: (tx: unknown) => Promise<T>) => {
-      const before = tail;
-      let release!: () => void;
-      tail = new Promise<void>(resolve => { release = resolve; });
-      await before;
-      const staged = new Map(docs);
-      let wrote = false;
-      try {
-        const result = await callback({
-          get: async (ref: Ref) => { assert.equal(wrote, false, 'read after write'); return snapshot(ref, staged); },
-          getAll: async (...refs: Ref[]) => { assert.equal(wrote, false); return refs.map(ref => snapshot(ref, staged)); },
-          create: (ref: Ref, value: Record<string, unknown>) => { wrote = true; assert.ok(!staged.has(ref.path)); staged.set(ref.path, value); },
-          update: (ref: Ref, value: Record<string, unknown>) => { wrote = true; assert.ok(staged.has(ref.path)); staged.set(ref.path, { ...staged.get(ref.path), ...value }); },
-          set: (ref: Ref, value: Record<string, unknown>) => { wrote = true; staged.set(ref.path, value); },
-        });
-        docs.clear(); for (const [key, value] of staged) docs.set(key, value);
-        return result;
-      } finally { release(); }
-    },
-  } as unknown as ConstructorParameters<typeof DeliveryStore>[0];
-  docs.set('products/pizza', { name: 'Pizza', categoryId: 'pizza', basePrice: 100000, variants: [], addons: [], isAvailable: true });
-  return { db, docs };
-}
 async function fixture(method: 'COD' | 'PAYOS' = 'COD') {
   const { db, docs } = database();
   let creates = 0;
@@ -69,8 +33,9 @@ async function fixture(method: 'COD' | 'PAYOS' = 'COD') {
     get: async () => providerOrder!,
   } as unknown as AhamoveClient;
   const store = new DeliveryStore(db, config, provider);
+  const ops = new OrderOpsStore(db, ['staff']);
   const quote = await store.quote('customer', { checkout, paymentMethod: method });
-  return { store, db, docs, quote, creates: () => creates, payload: () => payload!,
+  return { store, ops, db, docs, quote, creates: () => creates, payload: () => payload!,
     restart: () => new DeliveryStore(db, config, provider),
     timeout: () => { timeout = true; }, detail: (value: AhaOrder) => { providerOrder = value; } };
 }
@@ -114,7 +79,7 @@ test('payOS reserves the quoted total, publishes shipment metadata, and retries 
   const fulfillment = f.docs.get(`orders/${order.id}`)!;
   assert.equal(fulfillment.deliveryQuoteId, f.quote.id);
   assert.equal((fulfillment.delivery as Delivery).quotedFee, 25000);
-  await f.store.advance('staff', order.id); await f.store.advance('staff', order.id); await f.store.advance('staff', order.id);
+  await f.ops.advance('staff', order.id); await f.ops.advance('staff', order.id); await f.ops.advance('staff', order.id);
   await f.store.dispatch('staff', order.id);
   assert.equal(f.payload().path[1].cod, 0);
 });
@@ -124,7 +89,7 @@ test('dispatch enforces staff/READY; timeout survives restart and never repeats 
   const order = await f.store.createCod('customer', 'cod-key', f.quote.id);
   await assert.rejects(() => f.store.dispatch('customer', order.id), /quyền/);
   await assert.rejects(() => f.store.dispatch('staff', order.id), /sẵn sàng/);
-  for (let i = 0; i < 3; i++) await f.store.advance('staff', order.id);
+  for (let i = 0; i < 3; i++) await f.ops.advance('staff', order.id);
   f.timeout();
   await assert.rejects(() => f.store.dispatch('staff', order.id), /Timeout/);
   assert.equal(f.payload().payment_method, 'BALANCE');
@@ -144,7 +109,7 @@ test('dispatch enforces staff/READY; timeout survives restart and never repeats 
 test('callback uses current provider data; successful drop-off completes once, without claiming COD settlement', async () => {
   const f = await fixture();
   const order = await f.store.createCod('customer', 'cod-key', f.quote.id);
-  for (let i = 0; i < 3; i++) await f.store.advance('staff', order.id);
+  for (let i = 0; i < 3; i++) await f.ops.advance('staff', order.id);
   await f.store.dispatch('staff', order.id);
   f.detail(detail(order.id, 'IN PROCESS'));
   await f.store.webhook({ _id: 'AHA123', status: 'CANCELLED' });
@@ -172,7 +137,7 @@ test('catalog price change rejects a stale quote before COD or payOS is persiste
 test('a cancelled carrier trip leaves the food order available for staff handling', async () => {
   const f = await fixture();
   const order = await f.store.createCod('customer', 'cod-key', f.quote.id);
-  for (let i = 0; i < 3; i++) await f.store.advance('staff', order.id);
+  for (let i = 0; i < 3; i++) await f.ops.advance('staff', order.id);
   await f.store.dispatch('staff', order.id);
   f.detail(detail(order.id, 'CANCELLED'));
   const result = await f.store.refresh('staff', order.id);
@@ -226,7 +191,7 @@ test('Ahamove configuration is opt-in and defaults to a real HCM demo address', 
 
 test('HTTP delivery endpoints enforce auth, strict pricing inputs, staff rights and webhook credentials', async t => {
   const f = await fixture();
-  const app = createPaymentServer({ delivery: f.store, store: new OrderStore(f.db, true),
+  const app = createPaymentServer({ delivery: f.store, orders: f.ops, store: new OrderStore(f.db, true),
     payos: {} as Pick<PayOS, 'paymentRequests' | 'webhooks'>,
     verifyToken: async token => {
       if (!['customer', 'staff', 'other'].includes(token)) throw new Error('Invalid token');
@@ -254,7 +219,7 @@ test('HTTP delivery endpoints enforce auth, strict pricing inputs, staff rights 
   assert.equal((await post(`/api/delivery/orders/${order.id}/dispatch`, {})).status, 403);
   assert.equal((await post(`/api/delivery/orders/${order.id}/dispatch`, {}, 'staff')).status, 409);
   assert.equal((await post('/api/webhooks/ahamove', { _id: 'AHA123' })).status, 401);
-  for (let i = 0; i < 3; i++) assert.equal((await post(`/api/delivery/orders/${order.id}/advance`, {}, 'staff')).status, 200);
+  for (let i = 0; i < 3; i++) assert.equal((await post(`/api/staff/orders/${order.id}/advance`, {}, 'staff')).status, 200);
   assert.equal((await post(`/api/delivery/orders/${order.id}/dispatch`, {}, 'staff')).status, 200);
   f.detail(detail(order.id, 'COMPLETED', 'COMPLETED'));
   assert.equal((await post('/api/webhooks/ahamove', { _id: 'AHA123' }, config.webhookSecret)).status, 200);

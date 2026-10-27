@@ -3,6 +3,7 @@ import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { z } from 'zod';
 import { AhamoveClient, type AhaConfig, type AhaOrder, type AhaPayload } from './ahamove';
 import { checkoutSchema, HttpError, orderIdentity, priceCheckout, type Checkout } from './domain';
+import { transition } from './orders';
 import type { Product } from '../../src/types/product';
 import type { Delivery, DeliveryQuote, DeliveryStatus } from '../../src/types/delivery';
 
@@ -114,19 +115,6 @@ export class DeliveryStore {
     const result = await this.db.collection('orders').where('delivery.provider', '==', 'AHAMOVE').orderBy('createdAt', 'desc').limit(50).get();
     return result.docs.map(doc => ({ ...doc.data(), id: doc.id }));
   }
-  async advance(uid: string, id: string) {
-    this.assertStaff(uid);
-    const ref = this.db.collection('orders').doc(id);
-    return this.db.runTransaction(async tx => {
-      const order = (await tx.get(ref)).data();
-      if (!order?.delivery || order.delivery.provider !== 'AHAMOVE') throw new HttpError(404, 'Không tìm thấy đơn Ahamove.');
-      const next: Record<string, string> = { PENDING_CONFIRMATION: 'CONFIRMED', CONFIRMED: 'PREPARING', PREPARING: 'READY' };
-      const status = next[order.status];
-      if (!status) throw new HttpError(409, 'Đơn không thể chuyển bước bếp tiếp theo.');
-      tx.update(ref, { status, statusHistory: [...(order.statusHistory ?? []), { status, at: new Date().toISOString() }] });
-      return { id, status };
-    });
-  }
   async dispatch(uid: string, id: string) {
     this.assertStaff(uid);
     const ref = this.db.collection('orders').doc(id);
@@ -194,11 +182,10 @@ export class DeliveryStore {
       const delivery = deliveryUpdate(order.delivery as Delivery, detail);
       const status = delivery.status === 'DELIVERED' ? 'COMPLETED' : delivery.status === 'PICKED_UP' ? 'OUT_FOR_DELIVERY' : order.status;
       const changes: Record<string, unknown> = { delivery };
-      if (status !== order.status && !['COMPLETED', 'CANCELLED'].includes(order.status)) {
-        changes.status = status;
-        changes.statusHistory = [...(order.statusHistory ?? []), { status, at: new Date().toISOString(), note: 'Cập nhật từ Ahamove staging' }];
-      }
       if (delivery.status === 'DELIVERED' && order.paymentMethod === 'cash') changes.codCollectionStatus = 'COLLECTED_STAGING';
+      if (status !== order.status && !['COMPLETED', 'CANCELLED'].includes(order.status)) {
+        await transition(tx, this.db, ref, order, status, 'Cập nhật từ Ahamove staging');
+      }
       tx.update(ref, changes);
       tx.set(mapping, { orderId: id });
       tx.update(operation.ref, { state: 'CREATED' });

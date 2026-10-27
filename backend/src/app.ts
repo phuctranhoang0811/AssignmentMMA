@@ -11,9 +11,11 @@ import type { OrderStore } from './store';
 import type { RewardStore } from './rewards';
 import { googleBridgeRouter, type GoogleBridgeOptions } from './googleBridge';
 import { deliveryQuoteInput, verifyAhaWebhook, type DeliveryStore } from './delivery';
+import { cashOrderInput, type OrderOpsStore } from './orders';
 
 type Options = {
-  delivery?: Pick<DeliveryStore, 'quote' | 'createCod' | 'list' | 'advance' | 'dispatch' | 'refresh' | 'webhook' | 'assertStaff' | 'config'>;
+  delivery?: Pick<DeliveryStore, 'quote' | 'createCod' | 'list' | 'dispatch' | 'refresh' | 'webhook' | 'assertStaff' | 'config'>;
+  orders?: Pick<OrderOpsStore, 'list' | 'advance' | 'reject' | 'cancel' | 'createCash' | 'lookup'>;
   googleBridge?: GoogleBridgeOptions;
   rewards?: Pick<RewardStore, 'wallet' | 'redeem'>;
   store: Pick<OrderStore, 'get' | 'reserve' | 'attach' | 'pay'>;
@@ -78,6 +80,15 @@ export function createPaymentServer(options: Options) {
     await options.delivery.webhook(req.body);
     res.json({ success: true });
   });
+  const orders = () => {
+    if (!options.orders) throw new HttpError(503, 'Quản lý đơn chưa được cấu hình.');
+    return options.orders;
+  };
+  // Public guest lookup (phone + order code); its own per-IP limit since it runs before auth.
+  app.get('/api/orders/lookup', rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false }), async (req, res) => {
+    const { phone, code } = z.object({ phone: z.string().regex(/^\+?[0-9 .-]{9,20}$/), code: z.string().trim().min(4).max(40) }).parse(req.query);
+    res.json(await orders().lookup(phone, code.replace(/^#/, '').toUpperCase()));
+  });
   app.use('/api', async (req, res, next) => {
     try {
       const match = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '');
@@ -106,14 +117,30 @@ export function createPaymentServer(options: Options) {
   app.get('/api/delivery/staff/orders', async (_req, res) => {
     res.json(await delivery().list(res.locals.uid));
   });
-  app.post('/api/delivery/orders/:id/advance', async (req, res) => {
-    res.json(await delivery().advance(res.locals.uid, deliveryId.parse(req.params.id)));
-  });
   app.post('/api/delivery/orders/:id/dispatch', async (req, res) => {
     res.json(await delivery().dispatch(res.locals.uid, deliveryId.parse(req.params.id)));
   });
   app.post('/api/delivery/orders/:id/refresh', async (req, res) => {
     res.json(await delivery().refresh(res.locals.uid, deliveryId.parse(req.params.id)));
+  });
+  const orderId = z.string().min(1).max(128).regex(/^[\w-]+$/);
+  const idempotencyKey = (req: express.Request) => z.string().min(16).max(128).regex(/^[\w-]+$/).parse(req.headers['idempotency-key']);
+  app.post('/api/orders/cash', async (req, res) => {
+    res.json(await orders().createCash(res.locals.uid, idempotencyKey(req), cashOrderInput.parse(req.body)));
+  });
+  app.post('/api/orders/:id/cancel', async (req, res) => {
+    res.json(await orders().cancel(res.locals.uid, orderId.parse(req.params.id)));
+  });
+  app.get('/api/staff/orders', async (req, res) => {
+    const { status } = z.object({ status: z.string().regex(/^[A-Z_]{4,30}$/).optional() }).parse(req.query);
+    res.json(await orders().list(res.locals.uid, status));
+  });
+  app.post('/api/staff/orders/:id/advance', async (req, res) => {
+    res.json(await orders().advance(res.locals.uid, orderId.parse(req.params.id)));
+  });
+  app.post('/api/staff/orders/:id/reject', async (req, res) => {
+    const { reason } = z.object({ reason: z.string().trim().min(3).max(200) }).strict().parse(req.body);
+    res.json(await orders().reject(res.locals.uid, orderId.parse(req.params.id), reason));
   });
   app.post('/api/payments/payos', async (req, res) => {
     const key = z.string().min(16).max(128).regex(/^[\w-]+$/).parse(req.headers['idempotency-key']);

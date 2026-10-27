@@ -4,6 +4,7 @@ import { calculateOrderTotals, getItemLineUnitPrice } from '../../src/utils/calc
 import { PIZZA_CRUSTS, PIZZA_SAUCES, PIZZA_TOPPINGS, MAX_TOPPINGS_COUNT } from '../../src/types/pizzaCustomization';
 import type { Product } from '../../src/types/product';
 import type { Delivery } from '../../src/types/delivery';
+import type { Coupon } from '../../src/types/user';
 
 export class HttpError extends Error {
   constructor(public status: number, message: string, public code?: string) { super(message); }
@@ -40,13 +41,13 @@ export type PaymentOrder = {
   reference?: string; payment?: PaymentLink; total: number;
   checkout: Checkout; pricing: ReturnType<typeof calculateOrderTotals>;
   delivery?: Delivery;
-  items: { productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
+  items: { productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number; variantName?: string }[];
 };
 export function orderIdentity(uid: string, key: string, checkout: Checkout) {
   return { id: createHash('sha256').update(JSON.stringify([uid, key])).digest('hex'),
     fingerprint: createHash('sha256').update(JSON.stringify(checkout)).digest('hex') };
 }
-export function priceCheckout(checkout: Checkout, products: Product[]) {
+export function priceCheckout(checkout: Checkout, products: Product[], coupon?: Coupon) {
   const map = Object.fromEntries(products.map(p => [p.id, p]));
   for (const item of checkout.items) {
     const p = map[item.productId];
@@ -62,11 +63,13 @@ export function priceCheckout(checkout: Checkout, products: Product[]) {
     const price = getItemLineUnitPrice(item, p);
     if (!Number.isSafeInteger(price) || price < 0) throw new HttpError(422, 'Invalid catalog price');
   }
-  const pricing = calculateOrderTotals(checkout.items, map, checkout.fulfillmentType);
+  const pricing = calculateOrderTotals(checkout.items, map, checkout.fulfillmentType, coupon);
   if (!Number.isSafeInteger(pricing.total) || pricing.total < 1 || pricing.total > 50000000) throw new HttpError(422, 'Invalid order total');
   return { pricing, items: checkout.items.map(item => {
-    const unitPrice = getItemLineUnitPrice(item, map[item.productId]);
-    return { productId: item.productId, productName: map[item.productId].name, quantity: item.quantity, unitPrice, lineTotal: unitPrice * item.quantity };
+    const product = map[item.productId];
+    const unitPrice = getItemLineUnitPrice(item, product);
+    return { productId: item.productId, productName: product.name, quantity: item.quantity, unitPrice, lineTotal: unitPrice * item.quantity,
+      variantName: product.variants?.find(v => v.id === item.variantId)?.name ?? '' };
   }) };
 }
 export type PaidData = { orderCode: number; amount: number; paymentLinkId: string; reference: string };
@@ -97,7 +100,6 @@ export function paidFulfillmentOrder(order: PaymentOrder) {
     status: 'PENDING_CONFIRMATION',
     statusHistory: [{ status: 'PENDING_CONFIRMATION', at: order.paidAt, note: 'Đã xác nhận thanh toán payOS' }],
     items: order.items.map((item, index) => ({ ...item,
-      variantName: order.checkout.items[index]?.variantId ?? '',
       addonIds: order.checkout.items[index]?.addonIds ?? [],
       customization: order.checkout.items[index]?.customization ?? null,
       note: order.checkout.items[index]?.specialInstructions ?? '',
