@@ -41,6 +41,9 @@ export const PizzaCustomizer: React.FC<PizzaCustomizerProps> = ({
   const [activeToppingTab, setActiveToppingTab] = useState<'all' | 'cheese' | 'meat' | 'veggie'>('all');
 
   const currentSizeId: PizzaSizeId = (selectedVariant?.id as PizzaSizeId) || 'small';
+  // The backend allows MAX_TOPPINGS_COUNT portions in total (not kinds), so count portions.
+  const toppingPortions = customization.toppings.reduce((sum, t) => sum + t.quantity, 0);
+  const isMaxReached = toppingPortions >= MAX_TOPPINGS_COUNT;
 
   const handleSizeChange = (variant: ProductVariant) => {
     triggerHaptic('light');
@@ -88,6 +91,10 @@ export const PizzaCustomizer: React.FC<PizzaCustomizerProps> = ({
   };
 
   const handleAddOrIncrementTopping = (toppingId: string) => {
+    if (isMaxReached) {
+      triggerHaptic('warning');
+      return;
+    }
     const existing = customization.toppings.find((t) => t.id === toppingId);
     if (existing) {
       // Increment
@@ -99,11 +106,6 @@ export const PizzaCustomizer: React.FC<PizzaCustomizerProps> = ({
         ),
       });
     } else {
-      // Check maximum 5 unique toppings limit
-      if (customization.toppings.length >= MAX_TOPPINGS_COUNT) {
-        triggerHaptic('warning');
-        return;
-      }
       triggerHaptic('light');
       onChangeCustomization({
         ...customization,
@@ -363,10 +365,10 @@ export const PizzaCustomizer: React.FC<PizzaCustomizerProps> = ({
         </View>
 
         <View style={styles.toppingsCountRow}>
-          <Text style={styles.groupSubtitle}>Thêm nguyên liệu ưa thích (Tối đa 5 loại)</Text>
+          <Text style={styles.groupSubtitle}>Thêm nguyên liệu ưa thích (tối đa {MAX_TOPPINGS_COUNT} phần)</Text>
           <View style={styles.toppingsCountBadge}>
             <Text style={styles.toppingsCountText}>
-              Đã chọn: {customization.toppings.length}/{MAX_TOPPINGS_COUNT}
+              Đã chọn: {toppingPortions}/{MAX_TOPPINGS_COUNT}
             </Text>
           </View>
         </View>
@@ -402,7 +404,6 @@ export const PizzaCustomizer: React.FC<PizzaCustomizerProps> = ({
         {filteredToppings.map((topping) => {
           const selected = customization.toppings.find((t) => t.id === topping.id);
           const isSelected = !!selected;
-          const isMaxReached = customization.toppings.length >= MAX_TOPPINGS_COUNT;
 
           return (
             <View
@@ -419,13 +420,18 @@ export const PizzaCustomizer: React.FC<PizzaCustomizerProps> = ({
                   <TouchableOpacity
                     style={styles.stepperBtn}
                     onPress={() => handleDecrementTopping(topping.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Bớt một phần ${topping.name}`}
                   >
                     <Minus size={14} color="#111827" />
                   </TouchableOpacity>
                   <Text style={styles.stepperQtyText}>{selected.quantity}</Text>
                   <TouchableOpacity
-                    style={styles.stepperBtn}
+                    style={[styles.stepperBtn, isMaxReached && { opacity: 0.4 }]}
+                    disabled={isMaxReached}
                     onPress={() => handleAddOrIncrementTopping(topping.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Thêm một phần ${topping.name}`}
                   >
                     <Plus size={14} color="#111827" />
                   </TouchableOpacity>

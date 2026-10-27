@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { OrderOpsStore, nextStatus } from '../src/orders';
-import { checkoutSchema, HttpError } from '../src/domain';
+import { checkoutSchema, HttpError, priceCheckout } from '../src/domain';
+import { mockProducts } from '../../src/data/mockProducts';
 import { database } from './fakeDb';
 import { phoneLogin } from '../src/phoneLogin';
 import { OtpStore } from '../src/otp';
-import { isCustomizablePizza } from '../../src/types/pizzaCustomization';
+import { isCustomizablePizza, PIZZA_TOPPINGS } from '../../src/types/pizzaCustomization';
 
 const sized = { name: 'Pizza Size', categoryId: 'pizza', basePrice: 100000, addons: [], isAvailable: true,
   variants: [{ id: 'medium', name: 'Cỡ Vừa', price: 200000 }] };
@@ -141,4 +142,16 @@ test('pizza builder applies only to real pizzas: combos in the pizza category ar
   await assert.rejects(ops.createCash('customer', 'cash-key-combo-0002', { checkout: built }), status(422));
   assert.equal(isCustomizablePizza({ categoryId: 'pizza', variants: [{ id: 'small' }, { id: 'large' }] }), true);
   assert.equal(isCustomizablePizza({ categoryId: 'pizza', variants: [] }), false);
+});
+
+test('pizza toppings: the backend counts portions (max 5 in total), which the builder UI now enforces', () => {
+  const pizza = mockProducts.find(p => p.id === 'PZ001')!;
+  const [a, b] = PIZZA_TOPPINGS;
+  const order = (toppings: { id: string; quantity: number }[]) => checkoutSchema.parse({
+    customer: { fullname: 'K', phone: '0900000000' }, fulfillmentType: 'PICKUP',
+    items: [{ lineId: 'line-1', productId: 'PZ001', variantId: 'medium', addonIds: [], quantity: 1, customization: {
+      sizeId: 'medium', crustId: 'classic-hand-tossed', sauceId: 'classic-tomato', hasExtraSauce: false, toppings,
+      spiceLevel: 'none', bakingPreference: 'standard', cutPreference: '6-slices', removedIngredients: [] } }] });
+  assert.ok(priceCheckout(order([{ id: a.id, quantity: 3 }, { id: b.id, quantity: 2 }]), [pizza]).pricing.total > 0);
+  assert.throws(() => priceCheckout(order([{ id: a.id, quantity: 3 }, { id: b.id, quantity: 3 }]), [pizza]), status(422));
 });

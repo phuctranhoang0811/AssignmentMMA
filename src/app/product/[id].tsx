@@ -18,7 +18,9 @@ import {
   calculateCustomizationExtra,
   PizzaSizeId,
   isCustomizablePizza,
+  PIZZA_CRUSTS,
 } from '../../types/pizzaCustomization';
+
 import { useCart } from '../../state/CartContext';
 import { useFavorites } from '../../state/FavoritesContext';
 import { useToast } from '../../state/ToastContext';
@@ -26,9 +28,15 @@ import { replaceCartItem } from '../../utils/cartOperations';
 import { triggerHaptic } from '../../utils/haptics';
 import { styles } from '../../styles/productDetail.styles';
 
+function fitToSize(customization: PizzaCustomizationState, sizeId: PizzaSizeId): PizzaCustomizationState {
+  const crust = PIZZA_CRUSTS.find(c => c.id === customization.crustId);
+  return { ...customization, sizeId, crustId: crust?.supportedSizes.includes(sizeId) ? customization.crustId : 'classic-hand-tossed' };
+}
+
 export default function ProductDetailScreen() {
   const { id, lineId } = useLocalSearchParams<{ id: string; lineId?: string }>();
   const [product, setProduct] = useState<Product | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -59,6 +67,7 @@ export default function ProductDetailScreen() {
       productService.getById(id).then((p) => {
         if (!active) return;
         setProduct(p);
+        setNotFound(!p);
         if (editingItem && p) {
           setSelectedVariant(p.variants?.find(v => v.id === editingItem.variantId) || null);
           setSelectedAddonIds(editingItem.addonIds);
@@ -95,6 +104,21 @@ export default function ProductDetailScreen() {
     return () => { active = false; };
   }, [id, lineId, editingItem]);
 
+  if (notFound) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loadingContainer}>
+          <AppText variant="body" color={colors.textSecondary}>
+            Món này không còn trong thực đơn.
+          </AppText>
+          <TouchableOpacity onPress={() => router.replace('/(tabs)/menu')} accessibilityRole="button" style={{ padding: 16 }}>
+            <AppText variant="bodyMedium" color={colors.primary}>Xem thực đơn</AppText>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (!product) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -125,8 +149,10 @@ export default function ProductDetailScreen() {
     return sum + (addon ? addon.price : 0);
   }, 0);
 
+  // Price and cart item use the same size-aligned customization, so the shown total matches the cart.
+  const fittedCustomization = isPizza && selectedVariant ? fitToSize(pizzaCustomization, selectedVariant.id as PizzaSizeId) : undefined;
   const unitPrice = isPizza
-    ? baseOrVariantPrice + calculateCustomizationExtra(pizzaCustomization)
+    ? baseOrVariantPrice + calculateCustomizationExtra(fittedCustomization ?? pizzaCustomization)
     : baseOrVariantPrice + addonsTotal;
 
   const totalPrice = unitPrice * quantity;
@@ -149,7 +175,8 @@ export default function ProductDetailScreen() {
       addonIds: isPizza ? [] : selectedAddonIds,
       specialInstructions: (isPizza ? pizzaCustomization.specialInstructions : specialInstructions)?.trim() || undefined,
       quantity,
-      ...(isPizza ? { customization: pizzaCustomization } : {}),
+      // The backend requires the builder's size to equal the chosen variant and the crust to fit that size.
+      ...(fittedCustomization ? { customization: fittedCustomization } : {}),
     };
     if (lineId) {
       if (replaceCartItem(items, lineId, item) === items) {
@@ -189,6 +216,8 @@ export default function ProductDetailScreen() {
               activeOpacity={0.8}
               onPress={() => router.back()}
               style={styles.circleButton}
+              accessibilityRole="button"
+              accessibilityLabel="Quay lại"
             >
               <ArrowLeft size={22} color={colors.textPrimary} />
             </TouchableOpacity>
@@ -197,6 +226,9 @@ export default function ProductDetailScreen() {
               activeOpacity={0.8}
               onPress={handleToggleFavorite}
               style={styles.circleButton}
+              accessibilityRole="button"
+              accessibilityLabel={favorited ? 'Bỏ yêu thích' : 'Yêu thích'}
+              accessibilityState={{ selected: favorited }}
             >
               <Heart
                 size={22}
