@@ -33,7 +33,8 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<'active' | 'history'>(historyOnly ? 'history' : 'active');
   const [cancelling, setCancelling] = useState(false);
-  const owner = user?.id;
+  // Demo/guest users have no Firebase session; Firestore rules would reject their query.
+  const owner = user && !user.isDemo ? user.id : undefined;
   const orders = result.owner === owner ? result.orders : [];
   const error = result.owner === owner ? result.error : '';
   const isLoading = !!owner && (result.owner !== owner || result.loading);
@@ -343,9 +344,9 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
         </View>
       ) : visibleOrders.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Text style={styles.emptyText}>{!user ? 'Đăng nhập để xem đơn hàng của bạn' : tab === 'history' ? 'Chưa có đơn hàng hoàn thành hoặc đã hủy' : 'Không có đơn hàng đang xử lý'}</Text>
-          <AppButton title={!user ? 'Đăng nhập' : 'Đặt món ngay'} style={{ marginTop: 16, alignSelf: 'center', paddingHorizontal: 32 }}
-            onPress={() => router.push(!user ? '/auth/login' : '/(tabs)/menu')} />
+          <Text style={styles.emptyText}>{!owner ? 'Đăng nhập để xem đơn hàng của bạn' : tab === 'history' ? 'Chưa có đơn hàng hoàn thành hoặc đã hủy' : 'Không có đơn hàng đang xử lý'}</Text>
+          <AppButton title={!owner ? 'Đăng nhập' : 'Đặt món ngay'} style={{ marginTop: 16, alignSelf: 'center', paddingHorizontal: 32 }}
+            onPress={() => router.push(!owner ? '/auth/login' : '/(tabs)/menu')} />
         </View>
       ) : (
         <FlatList

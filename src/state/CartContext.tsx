@@ -32,8 +32,10 @@ const productsMap = mockProducts.reduce((acc, p) => {
   return acc;
 }, {} as Record<string, (typeof mockProducts)[0]>);
 
-// Quick-add buttons send no size; the backend rejects a sized product without one, so use the first (default) size.
-const withVariant = (productId: string, variantId?: string) => variantId ?? productsMap[productId]?.variants?.[0]?.id;
+// Quick-add buttons send no size; the backend rejects a sized product without one. A customized pizza's size
+// must equal its variant, so use that, else the first (default) size.
+const withVariant = (productId: string, variantId?: string, sizeId?: string) =>
+  variantId ?? sizeId ?? productsMap[productId]?.variants?.[0]?.id;
 
 const CartContext = createContext<CartContextType>({} as CartContextType);
 
@@ -66,7 +68,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .map((item: any) => {
                   const pid = item.productId || item.id;
                   const addons = Array.isArray(item.addonIds) ? item.addonIds : [];
-                  const variantId = withVariant(pid, item.variantId);
+                  const variantId = withVariant(pid, item.variantId, item.customization?.sizeId);
                   const lid =
                     item.lineId && !item.lineId.startsWith('undefined') && variantId === item.variantId
                       ? item.lineId
@@ -109,7 +111,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!productId) return;
     const qty = Number(item.quantity) || 1;
     const addonIds = Array.isArray(item.addonIds) ? item.addonIds : [];
-    const variantId = withVariant(productId, item.variantId);
+    const variantId = withVariant(productId, item.variantId, item.customization?.sizeId);
     const lineId = generateCartLineKey(
       productId,
       variantId,

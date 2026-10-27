@@ -117,7 +117,7 @@ export default function OrderLookupScreen() {
           <View style={styles.infoCard}>
             <Text style={styles.infoCardTitle}>Giao Đến</Text>
             <Text style={styles.infoDeliveryTime}>
-              Thời gian nhận: {selectedOrder.deliveryTime || '10:30'}
+              Thời gian nhận: {selectedOrder.deliveryTime || 'Chưa có thời gian dự kiến'}
             </Text>
             <Text style={styles.infoText}>{selectedOrder.customer?.fullname || 'Khách hàng'}</Text>
             <Text style={styles.infoText}>{selectedOrder.customer?.phone || ''}</Text>
@@ -141,7 +141,7 @@ export default function OrderLookupScreen() {
               Có {selectedOrder.itemCount || selectedOrder.items?.length || 0} sản phẩm trong giỏ hàng của bạn
             </Text>
             <Text style={styles.orderTimestampText}>
-              {selectedOrder.createdAtFormatted || '26/10/2026'}
+              {selectedOrder.createdAtFormatted || (selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString('vi-VN') : '')}
             </Text>
 
             {/* Product list */}

@@ -24,7 +24,7 @@ const INVALID = 'Số điện thoại hoặc mật khẩu không đúng.';
 export async function phoneLogin({ db, apiKey, createCustomToken, fetch: request = fetch }: PhoneLoginDeps, phone: string, password: string) {
   const digits = phone.replace(/[\s.-]/g, '');
   // Profiles store the number as typed at registration; try the common Vietnamese forms.
-  const forms = [...new Set([digits, digits.replace(/^\+?84/, '0'), digits.replace(/^0/, '+84')])];
+  const forms = [...new Set([phone.trim(), digits, digits.replace(/^\+?84/, '0'), digits.replace(/^0/, '+84')])];
   const found = await db.collection('users').where('phone', 'in', forms).limit(1).get();
   const email = found.docs[0]?.data().email;
   if (!email) throw new HttpError(401, INVALID);

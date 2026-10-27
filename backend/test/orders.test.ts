@@ -91,12 +91,16 @@ test('phone login verifies the password server-side and never reveals whether a 
       return new Response(JSON.stringify(password === 'right' ? { localId: 'uid-1' } : { error: {} }), { status: password === 'right' ? 200 : 400 });
     }) as typeof fetch };
   assert.deepEqual(await phoneLogin(deps, '+84 900 000 000', 'right'), { token: 'token-uid-1' });
+  users.push({ id: 'uid-2', data: () => ({ email: 'c@d.vn', phone: '0911 222 333' }) });
+  const spaced = await phoneLogin(deps, '0911 222 333', 'wrong').catch(e => e);
+  assert.equal(calls.at(-1), 'wrong'); // stored with spaces is still found (password then checked)
+  assert.equal(spaced.status, 401);
   const wrong = await phoneLogin(deps, '0900000000', 'wrong').catch(e => e);
   const unknown = await phoneLogin(deps, '0911111111', 'right').catch(e => e);
   assert.equal(wrong.status, 401);
   assert.equal(unknown.status, 401);
   assert.equal(wrong.message, unknown.message);
-  assert.deepEqual(calls, ['right', 'wrong']);
+  assert.deepEqual(calls, ['right', 'wrong', 'wrong']);
 });
 
 test('OTP is generated and checked on the server: expiry, wrong code, attempt limit, single use', async () => {
