@@ -32,6 +32,9 @@ const productsMap = mockProducts.reduce((acc, p) => {
   return acc;
 }, {} as Record<string, (typeof mockProducts)[0]>);
 
+// Quick-add buttons send no size; the backend rejects a sized product without one, so use the first (default) size.
+const withVariant = (productId: string, variantId?: string) => variantId ?? productsMap[productId]?.variants?.[0]?.id;
+
 const CartContext = createContext<CartContextType>({} as CartContextType);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -63,13 +66,14 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .map((item: any) => {
                   const pid = item.productId || item.id;
                   const addons = Array.isArray(item.addonIds) ? item.addonIds : [];
+                  const variantId = withVariant(pid, item.variantId);
                   const lid =
-                    item.lineId && !item.lineId.startsWith('undefined')
+                    item.lineId && !item.lineId.startsWith('undefined') && variantId === item.variantId
                       ? item.lineId
-                      : generateCartLineKey(pid, item.variantId, addons, item.specialInstructions, item.customization);
+                      : generateCartLineKey(pid, variantId, addons, item.specialInstructions, item.customization);
                   return {
                     productId: pid,
-                    variantId: item.variantId,
+                    variantId,
                     addonIds: addons,
                     specialInstructions: item.specialInstructions,
                     quantity: Number(item.quantity) || 1,
@@ -105,9 +109,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!productId) return;
     const qty = Number(item.quantity) || 1;
     const addonIds = Array.isArray(item.addonIds) ? item.addonIds : [];
+    const variantId = withVariant(productId, item.variantId);
     const lineId = generateCartLineKey(
       productId,
-      item.variantId,
+      variantId,
       addonIds,
       item.specialInstructions,
       item.customization
@@ -126,7 +131,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...prev,
         {
           productId,
-          variantId: item.variantId,
+          variantId,
           addonIds,
           specialInstructions: item.specialInstructions,
           quantity: qty,
