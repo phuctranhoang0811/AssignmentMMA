@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Image, TouchableOpacity, Alert } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Heart } from 'lucide-react-native';
@@ -11,6 +11,9 @@ import { BottomActionBar } from '../../components/ui/BottomActionBar';
 import { VariantSelector } from '../../components/product/VariantSelector';
 import { AddonSelector } from '../../components/product/AddonSelector';
 import { PizzaCustomizer } from '../../components/product/pizza/PizzaCustomizer';
+import { ProductImage } from '../../components/product/ProductImage';
+import { ProductCard } from '../../components/product/ProductCard';
+import { formatCurrency } from '../../utils/formatCurrency';
 import { productService } from '../../services';
 import { Product, ProductVariant } from '../../types/product';
 import {
@@ -37,6 +40,7 @@ export default function ProductDetailScreen() {
   const { id, lineId } = useLocalSearchParams<{ id: string; lineId?: string }>();
   const [product, setProduct] = useState<Product | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [related, setRelated] = useState<Product[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -68,6 +72,11 @@ export default function ProductDetailScreen() {
         if (!active) return;
         setProduct(p);
         setNotFound(!p);
+        if (p) {
+          productService.list({ categoryId: p.categoryId, onlyAvailable: true })
+            .then(list => { if (active) setRelated(list.filter(x => x.id !== p.id).slice(0, 6)); })
+            .catch(() => {});
+        }
         if (editingItem && p) {
           setSelectedVariant(p.variants?.find(v => v.id === editingItem.variantId) || null);
           setSelectedAddonIds(editingItem.addonIds);
@@ -133,6 +142,15 @@ export default function ProductDetailScreen() {
 
   const favorited = isFavorite(product.id);
   const isPizza = isCustomizablePizza(product);
+  // Display-only facts already present in the menu data.
+  const fromPrice = product.variants?.length ? Math.min(...product.variants.map(v => v.price)) : product.basePrice;
+  // 'Popular' is the English tag for the same thing as isPopular; Set drops exact duplicates such as 'Mới'.
+  const badges = [...new Set([
+    ...(product.isNew ? ['Mới'] : []),
+    ...(product.isSpicy ? ['🌶 Cay'] : []),
+    ...(product.isPopular ? ['Phổ biến'] : []),
+    ...(product.tags ?? []).filter(tag => !(tag === 'Popular' && product.isPopular)),
+  ])];
 
   const handleToggleAddon = (addonId: string) => {
     setSelectedAddonIds((prev) =>
@@ -208,7 +226,7 @@ export default function ProductDetailScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Hero Image Section */}
         <View style={styles.imageContainer}>
-          <Image source={{ uri: product.image }} style={styles.heroImage} resizeMode="cover" />
+          <ProductImage uri={product.image} style={styles.heroImage} iconSize={64} />
 
           {/* Floating Navigation Controls */}
           <SafeAreaView style={styles.floatingNav} edges={['top']}>
@@ -244,6 +262,42 @@ export default function ProductDetailScreen() {
           <AppText variant="h1" style={styles.title}>
             {product.name}
           </AppText>
+
+          {badges.length > 0 && (
+            <View style={styles.badgeRow}>
+              {badges.map(tag => (
+                <View key={tag} style={styles.badgeChip}>
+                  <AppText variant="captionMedium" color={colors.primary}>{tag}</AppText>
+                </View>
+              ))}
+            </View>
+          )}
+
+          <View style={styles.priceRow} accessibilityLabel={`Giá chỉ từ ${formatCurrency(fromPrice)}`}>
+            <AppText variant="caption" color={colors.textSecondary}>{product.variants?.length > 1 ? 'Chỉ từ' : 'Giá'}</AppText>
+            <AppText variant="h2" color={colors.primary} style={styles.priceValue}>{formatCurrency(fromPrice)}</AppText>
+            {!!product.originalPrice && product.originalPrice > fromPrice && (
+              <AppText variant="body" color={colors.textSecondary} style={styles.originalPrice}>
+                {formatCurrency(product.originalPrice)}
+              </AppText>
+            )}
+            {!!product.discountPercent && (
+              <View style={styles.discountChip}>
+                <AppText variant="captionMedium" color={colors.white}>-{product.discountPercent}%</AppText>
+              </View>
+            )}
+          </View>
+          {!!product.memberDiscountTag && (
+            <AppText variant="captionMedium" color={colors.success} style={styles.memberNote}>
+              🎁 {product.memberDiscountTag}
+            </AppText>
+          )}
+
+          {!product.isAvailable && (
+            <View style={styles.soldOutBox} accessibilityLiveRegion="polite">
+              <AppText variant="bodyMedium" color={colors.warning}>Món này tạm hết. Bạn có thể chọn món khác bên dưới.</AppText>
+            </View>
+          )}
 
           <AppText variant="body" color={colors.textSecondary} style={styles.description}>
             {product.description}
@@ -322,6 +376,17 @@ export default function ProductDetailScreen() {
             <QuantityStepper value={quantity} onChange={setQuantity} min={1} max={20} />
           </View>
         </View>
+
+        {related.length > 0 && (
+          <View style={styles.relatedSection}>
+            <AppText variant="h3" style={styles.relatedTitle}>Món cùng loại</AppText>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.relatedList}>
+              {related.map(item => (
+                <ProductCard key={item.id} product={item} layout="horizontal" style={styles.relatedCard} />
+              ))}
+            </ScrollView>
+          </View>
+        )}
       </ScrollView>
 
       <BottomActionBar

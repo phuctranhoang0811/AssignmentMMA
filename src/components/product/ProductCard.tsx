@@ -1,9 +1,10 @@
 import React, { useRef } from 'react';
-import { View, Image, StyleSheet, TouchableOpacity, ViewStyle, Animated } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ViewStyle, Animated } from 'react-native';
 import { router } from 'expo-router';
 import { Plus, Heart } from 'lucide-react-native';
 import { Product } from '../../types/product';
 import { colors } from '../../theme/colors';
+import { ProductImage } from './ProductImage';
 import { spacing, radius, shadows } from '../../theme/spacing';
 import { AppText } from '../ui/AppText';
 import { PriceText } from '../ui/PriceText';
@@ -117,11 +118,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         ]}
       >
         <View style={isGrid ? styles.gridImageWrapper : styles.horizontalImageWrapper}>
-          <Image
-            source={{ uri: product.image }}
-            style={styles.image}
-            resizeMode="cover"
-          />
+          <ProductImage uri={product.image} style={styles.image} iconSize={32} />
           {product.tags && product.tags.length > 0 && (
             <View style={styles.badge}>
               <AppText variant="captionMedium" color={colors.white}>

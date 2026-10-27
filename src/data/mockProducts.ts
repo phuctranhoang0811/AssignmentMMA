@@ -222,7 +222,7 @@ export const mockProducts: Product[] = [
     name: 'Cánh Gà Nướng BBQ (4 miếng)',
     categoryId: 'starters',
     description: 'Cánh gà tẩm ướp xốt mật ong BBQ nướng vàng ruộm óng ánh',
-    image: 'https://images.unsplash.com/photo-1527477378408-1bc097a90715?auto=format&fit=crop&w=800&q=80',
+    image: 'https://images.unsplash.com/photo-1567620832903-9fc6debc209f?auto=format&fit=crop&w=800&q=80',
     basePrice: 89000,
     variants: [],
     addons: [],
@@ -428,7 +428,7 @@ export const mockProducts: Product[] = [
     name: 'Creamy Mushroom Pasta',
     categoryId: 'pasta',
     description: 'Sợi mì dẹt Fettuccine hòa quyện sốt kem tươi nấm truffle thơm nức mũi, rắc mùi tây tươi xắt nhỏ.',
-    image: 'https://images.unsplash.com/photo-1621996346565-e3d5d6281728?auto=format&fit=crop&w=800&q=80',
+    image: 'https://images.unsplash.com/photo-1645112411341-6c4fd023714a?auto=format&fit=crop&w=800&q=80',
     basePrice: 145000,
     variants: [],
     addons: [
