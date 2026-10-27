@@ -3,9 +3,8 @@ import { Product } from '../types/product';
 import { Coupon } from '../types/user';
 import { calculateCustomizationExtra } from '../types/pizzaCustomization';
 
-export const DEFAULT_TAX_RATE = 0.10;
-export const DEFAULT_DELIVERY_FEE = 20000;
-export const FREE_DELIVERY_THRESHOLD = 299000;
+// Catalog prices are the displayed item prices; no extra tax is added at checkout.
+export const DEFAULT_TAX_RATE = 0;
 
 export function getItemLineUnitPrice(item: CartItem, product?: Product): number {
   if (!product) return 0;
@@ -36,7 +35,7 @@ export function getItemLineUnitPrice(item: CartItem, product?: Product): number 
 export function calculateOrderTotals(
   items: CartItem[],
   productsMap: Record<string, Product>,
-  fulfillmentType: FulfillmentType = 'DELIVERY',
+  _fulfillmentType: FulfillmentType = 'DELIVERY',
   coupon?: Coupon | null,
   taxRate: number = DEFAULT_TAX_RATE
 ): OrderPricing {
@@ -47,7 +46,7 @@ export function calculateOrderTotals(
   }, 0);
 
   let discount = 0;
-  if (coupon && subtotal >= coupon.minSubtotal) {
+  if (coupon && !coupon.freeShipping && subtotal >= coupon.minSubtotal) {
     if (coupon.discountType === 'PERCENT') {
       const percentVal = Math.round((subtotal * coupon.value) / 100);
       discount = coupon.maxDiscount ? Math.min(percentVal, coupon.maxDiscount) : percentVal;
@@ -59,10 +58,8 @@ export function calculateOrderTotals(
 
   const taxableAmount = Math.max(0, subtotal - discount);
 
-  let deliveryFee = 0;
-  if (fulfillmentType === 'DELIVERY') {
-    deliveryFee = taxableAmount >= FREE_DELIVERY_THRESHOLD ? 0 : DEFAULT_DELIVERY_FEE;
-  }
+  // shortcut: Keep delivery fees disabled until a delivery pricing API is integrated.
+  const deliveryFee = 0;
 
   const tax = Math.round(taxableAmount * taxRate);
   const total = Math.max(0, taxableAmount + deliveryFee + tax);

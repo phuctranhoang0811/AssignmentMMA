@@ -9,6 +9,7 @@ export type DemoUser = {
   role?: 'USER' | 'EMPLOYEE' | 'STORE_MANAGER' | 'SUPER_ADMIN' | string;
   rewardPoints?: number;
   isDemo?: boolean;
+  hasPassword?: boolean;
 };
 
 export type UserAddress = {
@@ -21,6 +22,7 @@ export type UserAddress = {
 };
 
 export type Coupon = {
+  freeShipping?: boolean;
   code: string;
   discountType: 'PERCENT' | 'FIXED';
   value: number;

@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Order } from '../types/order';
 import { CreateOrderInput } from '../services/contracts';
+import { useAuth } from './AuthContext';
 import { orderService } from '../services';
 
 interface OrderContextType {
@@ -17,20 +18,26 @@ interface OrderContextType {
 const OrderContext = createContext<OrderContextType>({} as OrderContextType);
 
 export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  const owner = user?.isDemo ? user.id : undefined;
+  const currentOwner = useRef(owner);
+  currentOwner.current = owner;
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshOrders = useCallback(async () => {
     try {
-      const data = await orderService.list();
-      setOrders(data);
+      if (!owner) { setOrders([]); return; }
+      const data = await orderService.list(owner);
+      if (currentOwner.current === owner) setOrders(data);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [owner]);
 
   useEffect(() => {
-    refreshOrders();
+    setOrders([]);
+    void refreshOrders().catch(() => {});
   }, [refreshOrders]);
 
   const createOrder = async (input: CreateOrderInput): Promise<Order> => {
@@ -64,7 +71,7 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <OrderContext.Provider
       value={{
-        orders,
+        orders: currentOwner.current === owner && owner ? orders.filter(order => order.userId === owner) : [],
         isLoading,
         refreshOrders,
         createOrder,

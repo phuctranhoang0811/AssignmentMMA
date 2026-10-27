@@ -20,14 +20,10 @@ import {
   MapPin,
   ChevronRight,
   Plus,
-  ChevronUp,
   ChevronDown,
-  ShoppingBag,
-  Check,
 } from 'lucide-react-native';
 import { productService } from '../../services';
-import { Product, CategoryId } from '../../types/product';
-import { mockCategories } from '../../data/mockCategories';
+import { Product } from '../../types/product';
 import { mockProducts } from '../../data/mockProducts';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
@@ -144,20 +140,18 @@ const TermsDocsSvg = () => (
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { addItem, itemCount, subtotal } = useCart();
+  const { addItem, fulfillmentType: fulfillmentMode, setFulfillmentType: setFulfillmentMode } = useCart();
   const { showToast } = useToast();
   const { width: windowWidth } = useWindowDimensions();
   const bannerWidth = Math.min(windowWidth - 32, 450);
   const bannerScrollRef = useRef<any>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
   const [refreshing, setRefreshing] = useState(false);
 
   // Store Location / Address Autocomplete Modal
   const [showStoreLocationModal, setShowStoreLocationModal] = useState(false);
   const [currentAddress, setCurrentAddress] = useState('');
-  const [fulfillmentMode, setFulfillmentMode] = useState<'delivery' | 'takeaway'>('delivery');
 
   useEffect(() => {
     getSavedDeliveryAddress().then((saved) => {
@@ -167,7 +161,6 @@ export default function HomeScreen() {
 
   // Lunch Combo 3/4 Sheet State
   const [showLunchSheet, setShowLunchSheet] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Carousel banner index
   const [bannerIndex, setBannerIndex] = useState(0);
@@ -204,24 +197,22 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  const loadData = useCallback(async (cat: CategoryId = selectedCategory) => {
+  const loadData = useCallback(async () => {
     try {
-      const list = await productService.list({
-        categoryId: cat === 'all' ? undefined : cat,
-      });
+      const list = await productService.list();
       setProducts(list);
     } finally {
       setRefreshing(false);
     }
-  }, [selectedCategory]);
+  }, []);
 
   useEffect(() => {
-    loadData(selectedCategory);
-  }, [loadData, selectedCategory]);
+    loadData();
+  }, [loadData]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadData(selectedCategory);
+    loadData();
   };
 
   const favoritePizzas = products.slice(0, 4);

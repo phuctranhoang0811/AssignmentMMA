@@ -4,15 +4,20 @@ import { DemoUser } from '../types/user';
 import { authService } from '../services';
 import { demoUser } from '../data/mockUsers';
 import { auth, db } from '../services/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updatePassword } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, onSnapshot, runTransaction } from 'firebase/firestore';
 import { clearCustomerInfo } from '../services/addressStorage';
+import { isValidEmail } from '../utils/validators';
+import { signInWithGoogle } from '../services/googleSignIn';
+import { googleAccountProfile, googleLoginError } from '../utils/googleAccount';
+import type { GoogleLoginOptions } from '../types/googleLogin';
 
 interface AuthContextType {
   user: DemoUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   loginDemo: (email?: string, password?: string) => Promise<void>;
+  loginGoogle: (options?: GoogleLoginOptions) => Promise<boolean>;
   registerDemo: (
     name: string,
     email: string,
@@ -20,7 +25,7 @@ interface AuthContextType {
     password?: string,
     extra?: { gender?: string; birthday?: string }
   ) => Promise<void>;
-  resetPassword: (email: string, newPassword: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (name: string, phone: string, birthday?: string, gender?: string, email?: string) => Promise<void>;
@@ -34,15 +39,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<DemoUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const accountId = user?.isDemo ? undefined : user?.id;
+  useEffect(() => {
+    if (!accountId) return;
+    return onSnapshot(doc(db, 'users', accountId), snapshot => {
+      if (!snapshot.exists()) return;
+      const points = snapshot.data().rewardPoints ?? 0;
+      setUser(previous => previous?.id === accountId ? { ...previous, rewardPoints: points } : previous);
+    }, error => console.warn('Không thể đồng bộ điểm thưởng:', error.code));
+  }, [accountId]);
+
   useEffect(() => {
     (async () => {
       try {
+        await auth.authStateReady();
         const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (parsed && parsed.isLoggedOut) {
+          if (parsed && (parsed.isLoggedOut || (!parsed.isDemo && parsed.id !== auth.currentUser?.uid))) {
+            await signOut(auth);
             setUser(null);
           } else {
+            if (parsed?.isDemo) await signOut(auth);
             setUser(parsed);
           }
         } else {
@@ -98,45 +116,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (password) {
-        // 1. Kiểm tra trong Firestore xem tài khoản đã cập nhật mật khẩu mới chưa
-        try {
-          const q = query(collection(db, 'users'), where('email', '==', targetEmail));
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            const userDoc = snap.docs[0];
-            const userData = userDoc.data();
-
-            if (userData.password) {
-              if (userData.password !== password) {
-                throw new Error('Mật khẩu không chính xác.');
-              }
-
-              // Mật khẩu khớp chính xác với mật khẩu mới trong Database!
-              const u: DemoUser = {
-                id: userDoc.id,
-                fullname: userData.fullName || 'Khách hàng',
-                email: userData.email || targetEmail,
-                phone: userData.phone || (trimmed.includes('@') ? '' : trimmed),
-                gender: userData.gender,
-                birthday: userData.birthday,
-                role: userData.role || 'USER',
-                rewardPoints: userData.rewardPoints || 0,
-                isDemo: false,
-              };
-
-              setUser(u);
-              await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
-              return;
-            }
-          }
-        } catch (dbErr: any) {
-          if (dbErr.message === 'Mật khẩu không chính xác.') {
-            throw dbErr;
-          }
-          console.warn('Lỗi kiểm tra mật khẩu Firestore:', dbErr.message);
-        }
-
-        // 2. Fallback kiểm tra qua Firebase Auth (cho tài khoản chưa có trường password trong Firestore)
+        // Firebase Auth must establish the session used by the payment backend.
         try {
           const res = await signInWithEmailAndPassword(auth, targetEmail, password);
           const userDoc = await getDoc(doc(db, 'users', res.user.uid));
@@ -151,13 +131,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               birthday: data.birthday,
               role: data.role || 'USER',
               rewardPoints: data.rewardPoints || 0,
+              hasPassword: res.user.providerData.some(provider => provider.providerId === 'password'),
               isDemo: false,
             };
             setUser(u);
             await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
             return;
           }
+          throw new Error('Không tìm thấy hồ sơ tài khoản. Vui lòng liên hệ hỗ trợ.');
         } catch (e: any) {
+          await signOut(auth).catch(() => {});
+          setUser(null);
           if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
             throw new Error('Mật khẩu không chính xác.');
           } else if (e.code === 'auth/user-not-found') {
@@ -167,12 +151,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
+      await signOut(auth);
       const u = await authService.login(targetEmail);
       setUser(u);
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const loginGoogle = async (options?: GoogleLoginOptions) => {
+    setIsLoading(true);
+    let signedIn = false;
+    try {
+      const result = await signInWithGoogle(options);
+      if (!result) return false;
+      signedIn = true;
+      if (options?.signal?.aborted) throw new Error('Đã hủy đăng nhập Google.');
+      const identity = result.user;
+      googleAccountProfile(identity);
+      const profile = await runTransaction(db, async transaction => {
+        const ref = doc(db, 'users', identity.uid);
+        const existing = await transaction.get(ref);
+        const profile = googleAccountProfile(identity, existing.exists() ? existing.data() : undefined);
+        if (!existing.exists()) transaction.set(ref, {
+          uid: profile.id, email: profile.email, fullName: profile.fullname,
+          phone: profile.phone, role: 'USER', rewardPoints: profile.rewardPoints,
+          ...(profile.avatar ? { avatar: profile.avatar } : {}), createdAt: serverTimestamp(),
+        });
+        return profile;
+      });
+      if (auth.currentUser?.uid !== identity.uid) throw new Error('Phiên đăng nhập đã thay đổi. Vui lòng thử lại.');
+      if (options?.signal?.aborted) throw new Error('Đã hủy đăng nhập Google.');
+      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
+      setUser(profile);
+      return true;
+    } catch (error) {
+      if (signedIn) {
+        await signOut(auth).catch(() => {});
+        setUser(null);
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ isLoggedOut: true }));
+      }
+      throw new Error(googleLoginError(error));
+    } finally { setIsLoading(false); }
   };
 
   const registerDemo = async (
@@ -215,7 +236,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           birthday: extra?.birthday || '01/01/2000',
           role: 'USER',
           rewardPoints: 100,
-          password: password,
           createdAt: serverTimestamp(),
         },
         { merge: true }
@@ -231,6 +251,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role: 'USER',
         rewardPoints: 100,
         isDemo: false,
+        hasPassword: true,
       };
 
       setUser(newUser);
@@ -240,65 +261,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const resetPassword = async (email: string, newPassword: string) => {
-    setIsLoading(true);
+  const resetPassword = async (email: string) => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!isValidEmail(trimmedEmail)) throw new Error('Vui lòng nhập địa chỉ email hợp lệ.');
     try {
-      const trimmedEmail = email.trim().toLowerCase();
-      const q = query(collection(db, 'users'), where('email', '==', trimmedEmail));
-      const snap = await getDocs(q);
-      if (snap.empty) {
-        throw new Error('Không tìm thấy tài khoản với email này trên hệ thống.');
-      }
-      const userDoc = snap.docs[0];
-      await updateDoc(doc(db, 'users', userDoc.id), {
-        password: newPassword,
-        updatedAt: serverTimestamp(),
-      });
-    } finally {
-      setIsLoading(false);
+      auth.languageCode = 'vi';
+      await sendPasswordResetEmail(auth, trimmedEmail);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      // Keep the same confirmation for registered and unknown email addresses.
+      if (code === 'auth/user-not-found') return;
+      if (code === 'auth/too-many-requests') throw new Error('Bạn đã yêu cầu quá nhiều lần. Vui lòng thử lại sau.');
+      if (code === 'auth/network-request-failed') throw new Error('Không thể kết nối. Vui lòng kiểm tra mạng và thử lại.');
+      throw new Error('Chưa thể gửi email đặt lại mật khẩu. Vui lòng thử lại sau.');
     }
   };
 
   const changePassword = async (oldPassword: string, newPassword: string) => {
-    if (!user || !user.email) {
-      throw new Error('Vui lòng đăng nhập để thực hiện đổi mật khẩu.');
+    await auth.authStateReady();
+    const currentUser = auth.currentUser;
+    if (user?.hasPassword === false) throw new Error('Tài khoản này đăng nhập bằng Google. Vui lòng quản lý mật khẩu trong tài khoản Google của bạn.');
+    if (!user || user.isDemo || !currentUser?.email || currentUser.uid !== user.id) {
+      throw new Error('Vui lòng đăng nhập tài khoản thật để đổi mật khẩu.');
     }
     setIsLoading(true);
     try {
-      const trimmedEmail = user.email.trim().toLowerCase();
-      const q = query(collection(db, 'users'), where('email', '==', trimmedEmail));
-      const snap = await getDocs(q);
-      if (snap.empty) {
-        throw new Error('Không tìm thấy thông tin tài khoản trên hệ thống.');
-      }
-      const userDoc = snap.docs[0];
-      const data = userDoc.data();
-
-      // Kiểm tra mật khẩu hiện tại
-      if (data.password && data.password !== oldPassword) {
-        throw new Error('Mật khẩu hiện tại không chính xác.');
-      }
-
-      if (!data.password) {
-        try {
-          await signInWithEmailAndPassword(auth, trimmedEmail, oldPassword);
-        } catch {
-          throw new Error('Mật khẩu hiện tại không chính xác.');
-        }
-      }
-
-      // Cập nhật mật khẩu mới lên Firestore
-      await updateDoc(doc(db, 'users', userDoc.id), {
-        password: newPassword,
-        updatedAt: serverTimestamp(),
-      });
-
-      // Cập nhật Firebase Auth nếu session đang tồn tại
-      if (auth.currentUser) {
-        try {
-          await updatePassword(auth.currentUser, newPassword);
-        } catch {}
-      }
+      const credential = EmailAuthProvider.credential(currentUser.email, oldPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+      await updatePassword(currentUser, newPassword);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') throw new Error('Mật khẩu hiện tại không chính xác.');
+      if (code === 'auth/weak-password' || code === 'auth/password-does-not-meet-requirements') throw new Error('Mật khẩu mới chưa đáp ứng yêu cầu bảo mật.');
+      if (code === 'auth/network-request-failed') throw new Error('Không thể kết nối. Vui lòng kiểm tra mạng và thử lại.');
+      throw new Error('Chưa thể đổi mật khẩu. Vui lòng đăng nhập lại và thử lại.');
     } finally {
       setIsLoading(false);
     }
@@ -354,6 +350,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: !!user && !(user as any).isLoggedOut,
         isLoading,
         loginDemo,
+        loginGoogle,
         registerDemo,
         resetPassword,
         changePassword,

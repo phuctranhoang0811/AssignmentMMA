@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   ScrollView,
@@ -11,6 +11,7 @@ import {
   Text,
   ActivityIndicator,
   BackHandler,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -28,18 +29,29 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 import { styles } from '../../styles/login.styles';
+import type { GoogleBrowserSession } from '../../types/googleLogin';
 
 export default function LoginScreen() {
-  const { loginDemo } = useAuth();
+  const { loginDemo, loginGoogle, isLoading: authLoading } = useAuth();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const signingIn = useRef(false);
+  const googleController = useRef<AbortController | null>(null);
+  const [browserSession, setBrowserSession] = useState<GoogleBrowserSession | null>(null);
+  const busy = isLoading || googleLoading || authLoading;
+
+  useEffect(() => () => { googleController.current?.abort(); }, []);
 
   const handleBack = () => {
+    googleController.current?.abort();
     if (returnTo === 'profile') {
+      router.replace('/(tabs)/profile');
+    } else if (returnTo === 'rewards') {
       router.replace('/(tabs)/profile');
     } else if (returnTo === 'menu') {
       router.replace('/(tabs)/menu');
@@ -51,9 +63,10 @@ export default function LoginScreen() {
   };
 
   useEffect(() => {
-    if (returnTo === 'profile' || returnTo === 'menu' || returnTo === 'cart') {
+    if (returnTo === 'profile' || returnTo === 'rewards' || returnTo === 'menu' || returnTo === 'cart') {
       const onBackPress = () => {
-        if (returnTo === 'profile') router.replace('/(tabs)/profile');
+        googleController.current?.abort();
+        if (returnTo === 'profile' || returnTo === 'rewards') router.replace('/(tabs)/profile');
         else if (returnTo === 'menu') router.replace('/(tabs)/menu');
         else if (returnTo === 'cart') router.replace('/(tabs)/cart');
         return true;
@@ -64,8 +77,12 @@ export default function LoginScreen() {
   }, [returnTo]);
 
   const navigateAfterLogin = () => {
-    if (returnTo === 'profile') {
+    if (returnTo === 'checkout') {
+      router.back();
+    } else if (returnTo === 'profile') {
       router.replace('/(tabs)/profile');
+    } else if (returnTo === 'rewards') {
+      router.replace('/(tabs)/rewards');
     } else if (returnTo === 'menu') {
       router.replace('/(tabs)/menu');
     } else if (returnTo === 'cart') {
@@ -76,6 +93,7 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
+    if (signingIn.current || authLoading) return;
     setErrorMessage('');
     if (!identifier.trim()) {
       setErrorMessage('Vui lòng nhập email hoặc số điện thoại của bạn');
@@ -86,6 +104,7 @@ export default function LoginScreen() {
       return;
     }
 
+    signingIn.current = true;
     setIsLoading(true);
     try {
       await loginDemo(identifier.trim(), password);
@@ -93,17 +112,42 @@ export default function LoginScreen() {
     } catch (e: any) {
       Alert.alert('Đăng nhập thất bại', e.message || 'Tài khoản hoặc mật khẩu không đúng');
     } finally {
+      signingIn.current = false;
       setIsLoading(false);
     }
   };
 
   const handleQuickDemoLogin = async () => {
+    if (signingIn.current || authLoading) return;
+    signingIn.current = true;
     setIsLoading(true);
     try {
       await loginDemo('demo@pizzatime.local');
       navigateAfterLogin();
     } finally {
+      signingIn.current = false;
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    if (signingIn.current || authLoading) return;
+    signingIn.current = true;
+    setGoogleLoading(true);
+    setErrorMessage('');
+    const controller = new AbortController();
+    googleController.current = controller;
+    try {
+      if (await loginGoogle({ signal: controller.signal,
+        onBrowserSession: session => { if (!controller.signal.aborted) setBrowserSession(session); },
+      })) navigateAfterLogin();
+    } catch (error) {
+      if (!controller.signal.aborted) setErrorMessage(error instanceof Error ? error.message : 'Đăng nhập Google chưa thành công.');
+    } finally {
+      googleController.current = null;
+      setBrowserSession(null);
+      signingIn.current = false;
+      setGoogleLoading(false);
     }
   };
 
@@ -245,6 +289,7 @@ export default function LoginScreen() {
               {/* Quên mật khẩu link */}
               <TouchableOpacity
                 style={styles.forgotBtn}
+                disabled={busy}
                 onPress={() => router.push('/auth/forgot-password')}
                 activeOpacity={0.7}
               >
@@ -255,7 +300,7 @@ export default function LoginScreen() {
               <TouchableOpacity
                 style={styles.submitBtn}
                 onPress={handleLogin}
-                disabled={isLoading}
+                disabled={busy}
                 activeOpacity={0.88}
               >
                 {isLoading ? (
@@ -265,21 +310,54 @@ export default function LoginScreen() {
                 )}
               </TouchableOpacity>
 
+              <TouchableOpacity
+                style={[styles.googleBtn, busy && { opacity: 0.6 }]}
+                onPress={handleGoogleLogin}
+                disabled={busy}
+                accessibilityRole="button"
+                accessibilityLabel="Đăng nhập bằng tài khoản Gmail qua Google"
+                accessibilityState={{ disabled: busy, busy: googleLoading }}
+                activeOpacity={0.8}
+              >
+                {googleLoading ? <ActivityIndicator color="#1F1F1F" size="small" /> : <>
+                  <Mail size={18} color="#1F1F1F" />
+                  <Text style={styles.googleBtnText}>Đăng nhập với Google</Text>
+                </>}
+              </TouchableOpacity>
+
+              <Text style={styles.googleHint}>Dùng tài khoản @gmail.com, không cần tạo mật khẩu riêng.</Text>
+
+              {browserSession && <View style={styles.browserSession}>
+                <Text style={styles.googleHint}>Đối chiếu mã này trên trang đăng nhập:</Text>
+                <Text style={styles.pairingCode}>{browserSession.pairingCode}</Text>
+                <Text style={styles.googleHint}>Xác nhận trên trình duyệt rồi quay lại Expo Go để hoàn tất. Yêu cầu hết hạn sau 5 phút.</Text>
+                <TouchableOpacity style={styles.browserAction} accessibilityRole="button" onPress={() => {
+                  void Linking.openURL(browserSession.browserUrl).catch(() => setErrorMessage('Không mở được trình duyệt. Vui lòng thử lại.'));
+                }}><Text style={styles.googleBtnText}>Mở lại trang đăng nhập</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.browserAction} accessibilityRole="button" onPress={() => googleController.current?.abort()}>
+                  <Text style={styles.forgotText}>Hủy đăng nhập Google</Text>
+                </TouchableOpacity>
+              </View>}
+
               {/* Quick Demo Login Shortcut */}
+              {returnTo !== 'checkout' && (
               <TouchableOpacity
                 style={styles.demoLoginBtn}
                 onPress={handleQuickDemoLogin}
+                disabled={busy}
                 activeOpacity={0.7}
               >
                 <Sparkles size={14} color="#DE4525" />
                 <Text style={styles.demoLoginText}>Đăng nhập nhanh với tài khoản Demo</Text>
               </TouchableOpacity>
+              )}
 
               {/* Footer Register Navigation */}
               <View style={styles.footerRow}>
                 <Text style={styles.footerNormalText}>Bạn chưa có tài khoản? </Text>
                 <TouchableOpacity
                   onPress={() => router.push('/auth/register')}
+                  disabled={busy}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.footerLinkText}>Tạo tài khoản</Text>

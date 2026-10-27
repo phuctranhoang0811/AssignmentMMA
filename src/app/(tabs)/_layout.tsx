@@ -126,7 +126,7 @@ export default function TabsLayout() {
                 e.preventDefault();
                 router.push({
                   pathname: '/auth/login',
-                  params: { returnTo: 'profile' },
+                  params: { returnTo: 'rewards' },
                 });
               }
             },

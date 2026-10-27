@@ -17,7 +17,10 @@ export type CreateOrderInput = {
     email?: string;
   };
   fulfillmentType: FulfillmentType;
+  needCutlery?: boolean;
   address?: string;
+  deliveryNote?: string;
+  deliveryQuoteId?: string;
   items: CartItem[];
   promoCode?: string;
   paymentMethod: PaymentMethod;

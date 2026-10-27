@@ -1,0 +1,86 @@
+{
+  "info": {
+    "name": "Pizza FPT — Ahamove staging",
+    "description": "Local backend contract. Configure backend Ahamove staging, real catalog IDs, Firebase customer/staff tokens and Firestore rules/index first. Get a new quote when changing checkout or paymentMethod. Run COD or payOS path separately. Advancing/dispatching requires staffUid allowlist. payOS QR uses existing payment configuration and is not a simulated bank payment. Never store production secrets here.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001" },
+    { "key": "customerToken", "value": "" },
+    { "key": "staffToken", "value": "" },
+    { "key": "productId", "value": "" },
+    { "key": "variantId", "value": "small" },
+    { "key": "paymentMethod", "value": "COD" },
+    { "key": "checkoutKey", "value": "ahamove-checkout-test-0001" },
+    { "key": "quoteId", "value": "" },
+    { "key": "orderId", "value": "" },
+    { "key": "providerOrderId", "value": "" }
+  ],
+  "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }] },
+  "item": [
+    {
+      "name": "1. Get quote (COD or PAYOS)",
+      "request": {
+        "method": "POST", "url": "{{baseUrl}}/api/delivery/quotes",
+        "description": "Set paymentMethod to COD or PAYOS before this step. Use a product and variant that exist in Firestore. Omit variantId in this body for products without variants. Address is a demo destination; replace contact with your staging test recipient.",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "options": { "raw": { "language": "json" } }, "raw": "{\n  \"checkout\": {\n    \"customer\": { \"fullname\": \"Khach staging\", \"phone\": \"0900000000\" },\n    \"fulfillmentType\": \"DELIVERY\",\n    \"address\": \"8 Thu Khoa Huan, Ben Thanh, Quan 1, Thanh pho Ho Chi Minh, Viet Nam\",\n    \"deliveryNote\": \"Staging test\",\n    \"items\": [{ \"lineId\": \"line-1\", \"productId\": \"{{productId}}\", \"variantId\": \"{{variantId}}\", \"addonIds\": [], \"quantity\": 1 }]\n  },\n  \"paymentMethod\": \"{{paymentMethod}}\"\n}" }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Server quote includes delivery fee', () => { pm.response.to.have.status(200); const q = pm.response.json(); pm.expect(q.environment).to.eql('staging'); pm.expect(q.pricing.total).to.eql(q.pricing.subtotal + q.pricing.deliveryFee); pm.collectionVariables.set('quoteId', q.id); const input = JSON.parse(pm.variables.replaceIn(pm.request.body.raw)); pm.collectionVariables.set('payosCheckout', JSON.stringify({...input.checkout, deliveryQuoteId: q.id})); });"
+      ] } }]
+    },
+    {
+      "name": "2a. COD create/retry (same key)",
+      "request": { "method": "POST", "url": "{{baseUrl}}/api/delivery/orders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{checkoutKey}}" }],
+        "body": { "mode": "raw", "options": { "raw": { "language": "json" } }, "raw": "{\"quoteId\": \"{{quoteId}}\"}" }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('COD persisted', () => { pm.response.to.have.status(200); pm.collectionVariables.set('orderId', pm.response.json().id); });"
+      ] } }]
+    },
+    {
+      "name": "2b. payOS create/retry (use PAYOS quote; pay QR before staff steps)",
+      "request": { "method": "POST", "url": "{{baseUrl}}/api/payments/payos",
+        "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{checkoutKey}}" }],
+        "body": { "mode": "raw", "options": { "raw": { "language": "json" } }, "raw": "{{payosCheckout}}" }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('QR payment includes shipping', () => { pm.response.to.have.status(200); const order = pm.response.json(); pm.expect(order.total).to.eql(order.pricing.subtotal + order.pricing.deliveryFee); pm.collectionVariables.set('orderId', order.id); });"
+      ] } }]
+    },
+    {
+      "name": "3. Staff list (latest 50)",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/delivery/staff/orders",
+        "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{staffToken}}", "type": "string" }] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Staff can list orders', () => { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.be.an('array'); });"] } }]
+    },
+    {
+      "name": "4. Staff advance kitchen (run three times: CONFIRMED → PREPARING → READY)",
+      "request": { "method": "POST", "url": "{{baseUrl}}/api/delivery/orders/{{orderId}}/advance",
+        "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{staffToken}}", "type": "string" }] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Kitchen advanced', () => { pm.response.to.have.status(200); pm.expect(['CONFIRMED','PREPARING','READY']).to.include(pm.response.json().status); });"] } }]
+    },
+    {
+      "name": "5. Staff dispatch/recover trip",
+      "request": { "method": "POST", "url": "{{baseUrl}}/api/delivery/orders/{{orderId}}/dispatch",
+        "description": "First call creates a staging trip only when READY. Further calls only look up the existing tracking number, never repeat create POST. UNKNOWN booking requires portal reconciliation.",
+        "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{staffToken}}", "type": "string" }] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Staging trip linked', () => { pm.response.to.have.status(200); const d = pm.response.json().delivery; pm.expect(d.environment).to.eql('staging'); pm.collectionVariables.set('providerOrderId', d.providerOrderId); });"] } }]
+    },
+    {
+      "name": "6. Customer refresh trip",
+      "request": { "method": "POST", "url": "{{baseUrl}}/api/delivery/orders/{{orderId}}/refresh" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Customer reads authoritative delivery state', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().delivery.provider).to.eql('AHAMOVE'); });"] } }]
+    },
+    {
+      "name": "7. Customer cannot dispatch (403)",
+      "request": { "method": "POST", "url": "{{baseUrl}}/api/delivery/orders/{{orderId}}/dispatch" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Customer cannot book a driver', () => pm.response.to.have.status(403));"] } }]
+    }
+  ]
+}

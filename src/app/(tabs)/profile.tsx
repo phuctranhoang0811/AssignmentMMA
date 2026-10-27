@@ -25,6 +25,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 import { styles } from '../../styles/profile.styles';
+import { ahamoveEnabled } from '../../services/deliveryService';
 
 // Custom Pizza Reward Slice Badge Icon (exact match to user mockup)
 const PizzaRewardIcon = ({ size = 22, color = '#1E2024' }: { size?: number; color?: string }) => (
@@ -76,25 +77,6 @@ export default function ProfileScreen() {
       );
     }
   };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Xóa tài khoản',
-      'Bạn có chắc chắn muốn xóa tài khoản? Mọi thông tin và điểm thưởng sẽ không thể khôi phục.',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xóa vĩnh viễn',
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-            Alert.alert('Thông báo', 'Đã tiếp nhận yêu cầu xóa tài khoản thành công.');
-          },
-        },
-      ]
-    );
-  };
-
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -166,13 +148,13 @@ export default function ProfileScreen() {
                   <TouchableOpacity
                     style={styles.menuRow}
                     activeOpacity={0.7}
-                    onPress={() => router.push('/demo/staff-orders')}
+                    onPress={() => router.push(ahamoveEnabled ? '/staff/deliveries' : '/demo/staff-orders')}
                   >
                     <View style={styles.menuIconCol}>
                       <Sparkles size={22} color="#CF4226" strokeWidth={1.8} />
                     </View>
                     <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
-                      Quản lý đơn bếp (Staff Demo)
+                      {ahamoveEnabled ? 'Bếp & giao Ahamove' : 'Quản lý đơn bếp (Staff Demo)'}
                     </Text>
                   </TouchableOpacity>
                   <View style={styles.divider} />
@@ -233,6 +215,7 @@ export default function ProfileScreen() {
                 <Text style={styles.menuLabel}>Lịch sử đơn hàng</Text>
               </TouchableOpacity>
 
+              {user?.hasPassword !== false && <>
               <View style={styles.divider} />
 
               {/* Đổi mật khẩu */}
@@ -246,6 +229,7 @@ export default function ProfileScreen() {
                 </View>
                 <Text style={styles.menuLabel}>Đổi mật khẩu</Text>
               </TouchableOpacity>
+              </>}
             </View>
 
             {/* Menu Group 2: Đăng xuất */}
@@ -261,15 +245,6 @@ export default function ProfileScreen() {
                 <Text style={styles.menuLabel}>Đăng xuất</Text>
               </TouchableOpacity>
             </View>
-
-            {/* Xóa tài khoản */}
-            <TouchableOpacity
-              style={styles.deleteAccountBtn}
-              activeOpacity={0.6}
-              onPress={handleDeleteAccount}
-            >
-              <Text style={styles.deleteAccountText}>Xóa tài khoản</Text>
-            </TouchableOpacity>
           </View>
         ) : (
           /* ======================================================== */

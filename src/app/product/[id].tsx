@@ -19,15 +19,14 @@ import {
   PizzaSizeId,
 } from '../../types/pizzaCustomization';
 import { useCart } from '../../state/CartContext';
-import { useAuth } from '../../state/AuthContext';
 import { useFavorites } from '../../state/FavoritesContext';
 import { useToast } from '../../state/ToastContext';
+import { replaceCartItem } from '../../utils/cartOperations';
 import { triggerHaptic } from '../../utils/haptics';
 import { styles } from '../../styles/productDetail.styles';
-import { hasPromptedMemberDiscount } from '../../utils/sessionFlags';
 
 export default function ProductDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, lineId } = useLocalSearchParams<{ id: string; lineId?: string }>();
   const [product, setProduct] = useState<Product | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
@@ -48,15 +47,25 @@ export default function ProductDetailScreen() {
     specialInstructions: '',
   });
 
-  const { addItem } = useCart();
-  const { isAuthenticated } = useAuth();
+  const { items, addItem, updateItem } = useCart();
+  const editingItem = items.find(item => item.lineId === lineId);
   const { isFavorite, toggleFavorite } = useFavorites();
   const { showToast } = useToast();
 
   useEffect(() => {
+    let active = true;
     if (id) {
       productService.getById(id).then((p) => {
+        if (!active) return;
         setProduct(p);
+        if (editingItem && p) {
+          setSelectedVariant(p.variants?.find(v => v.id === editingItem.variantId) || null);
+          setSelectedAddonIds(editingItem.addonIds);
+          setSpecialInstructions(editingItem.specialInstructions || '');
+          setQuantity(editingItem.quantity);
+          if (editingItem.customization) setPizzaCustomization(editingItem.customization);
+          return;
+        }
         if (p?.variants && p.variants.length > 0) {
           // Pre-select first variant as default
           setSelectedVariant(p.variants[0]);
@@ -82,7 +91,8 @@ export default function ProductDetailScreen() {
         }
       });
     }
-  }, [id]);
+    return () => { active = false; };
+  }, [id, lineId, editingItem]);
 
   if (!product) {
     return (
@@ -122,50 +132,42 @@ export default function ProductDetailScreen() {
 
   const handleAddToCart = () => {
     if (!product.isAvailable) return;
-
+    if (lineId && !editingItem) {
+      Alert.alert('Món không còn trong giỏ', 'Vui lòng quay lại giỏ hàng để kiểm tra.');
+      return;
+    }
     if (product.variants && product.variants.length > 0 && !selectedVariant) {
       triggerHaptic('warning');
       Alert.alert('Vui lòng chọn kích cỡ', 'Bạn cần chọn kích cỡ trước khi thêm vào giỏ hàng.');
       return;
     }
 
-    if (isPizza) {
-      addItem({
-        productId: product.id,
-        variantId: selectedVariant?.id,
-        addonIds: [],
-        specialInstructions: pizzaCustomization.specialInstructions?.trim() || undefined,
-        quantity,
-        customization: pizzaCustomization,
-      });
-    } else {
-      addItem({
-        productId: product.id,
-        variantId: selectedVariant?.id,
-        addonIds: selectedAddonIds,
-        specialInstructions: specialInstructions.trim() || undefined,
-        quantity,
-      });
-    }
+    const item = {
+      productId: product.id,
+      variantId: selectedVariant?.id,
+      addonIds: isPizza ? [] : selectedAddonIds,
+      specialInstructions: (isPizza ? pizzaCustomization.specialInstructions : specialInstructions)?.trim() || undefined,
+      quantity,
+      ...(isPizza ? { customization: pizzaCustomization } : {}),
+    };
+    if (lineId) {
+      if (replaceCartItem(items, lineId, item) === items) {
+        Alert.alert('Vượt giới hạn số lượng', 'Cấu hình này đã có trong giỏ. Tổng số lượng tối đa là 20 phần.');
+        return;
+      }
+      updateItem(lineId, item);
+    } else addItem(item);
 
     triggerHaptic('success');
     showToast({
-      message: `Đã thêm ${quantity}x ${product.name} vào giỏ hàng`,
+      message: lineId ? 'Đã lưu thay đổi món' : `Đã thêm ${quantity}x ${product.name} vào giỏ hàng`,
+      actionText: 'Xem giỏ',
+      onAction: () => router.navigate('/(tabs)/cart'),
     });
-
-    // 2. Kiểm tra nếu thuộc 3 danh mục ưu đãi mà chưa đăng nhập và chưa hỏi phiên này
-    const isMemberDiscount =
-      product.categoryId === 'cheese_party' ||
-      product.categoryId === 'member_deals' ||
-      product.categoryId === 'hot_deals';
-
-    const shouldPrompt = !isAuthenticated && isMemberDiscount && !hasPromptedMemberDiscount();
-
-    // 3. Văng ra trang menu (kèm cờ prompt nếu cần hỏi trên menu)
-    router.replace({
-      pathname: '/(tabs)/menu',
-      params: shouldPrompt ? { promptMemberDiscount: '1' } : undefined,
-    });
+    if (lineId) {
+      if (router.canGoBack()) router.back();
+      else router.replace('/(tabs)/cart');
+    }
   };
 
   const handleToggleFavorite = () => {
@@ -290,7 +292,7 @@ export default function ProductDetailScreen() {
       </ScrollView>
 
       <BottomActionBar
-        title="Thêm vào giỏ"
+        title={lineId ? "Lưu thay đổi" : "Thêm vào giỏ"}
         price={totalPrice}
         priceLabel="Tổng cộng"
         onPress={handleAddToCart}

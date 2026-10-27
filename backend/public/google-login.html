@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Đăng nhập Google · Pizza FPT</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f5f5f3;color:#20242a;font-family:system-ui,sans-serif;padding:24px 16px}
+    main{max-width:440px;margin:32px auto;background:white;padding:28px;border-radius:20px;border:1px solid #e5e7eb}
+    .brand{color:#cf4226;font-weight:750;margin:0 0 24px}h1{font-size:25px;line-height:1.25}p{font-size:15px;line-height:1.6;color:#505966}
+    .code{font-size:30px;font-weight:750;letter-spacing:8px;text-align:center;background:#fff1eb;border-radius:12px;padding:18px;margin:20px 0;color:#9e301b}
+    button{width:100%;min-height:48px;border-radius:12px;background:#cf4226;color:white;border:0;padding:12px;font-size:16px;font-weight:650;cursor:pointer;margin:8px 0}
+    button:disabled{opacity:.55;cursor:default}button:focus-visible{outline:3px solid #1d4ed8;outline-offset:3px}.warning{font-size:13px;color:#6b4a14}
+    #message{padding-top:12px;overflow-wrap:anywhere}#account{font-weight:650;color:#20242a;overflow-wrap:anywhere}[hidden]{display:none!important}
+  </style>
+</head>
+<body>
+<main>
+  <p class="brand">Pizza FPT</p>
+  <h1>Đăng nhập Google cho Expo Go</h1>
+  <p>Kiểm tra mã dưới đây khớp với mã trên ứng dụng bạn vừa mở.</p>
+  <div class="code" id="pairing" aria-label="Mã đối chiếu">······</div>
+  <p class="warning">Chỉ tiếp tục nếu chính bạn vừa bấm đăng nhập trong Pizza FPT. Không xác nhận liên kết do người khác gửi.</p>
+  <button id="login" disabled>Tiếp tục với Google</button>
+  <p id="account" hidden></p>
+  <button id="approve" hidden>Xác nhận đăng nhập cho Expo Go</button>
+  <p id="message" role="status" aria-live="polite">Đang kiểm tra yêu cầu…</p>
+  <noscript>Vui lòng bật JavaScript để đăng nhập Google.</noscript>
+</main>
+<script type="module" src="/auth/google/client.js"></script>
+</body>
+</html>

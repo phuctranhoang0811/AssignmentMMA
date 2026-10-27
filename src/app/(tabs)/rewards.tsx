@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,13 @@ import {
   Image,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../state/AuthContext';
+import { rewardCatalog, type RewardWallet } from '../../data/rewards';
+import { getRewardWallet, redeemReward } from '../../services/rewardService';
 import { styles } from '../../styles/rewards.styles';
 
 // Header Right Receipt Icon (matches user screenshot)
@@ -26,64 +29,60 @@ interface RewardItem {
   id: string;
   title: string;
   points: number;
-  image: any;
+  image: import('react-native').ImageSourcePropType;
 }
 
-const REWARD_ITEMS: RewardItem[] = [
-  {
-    id: 'R01',
-    title: 'Đổi 01 Lon Pepsi 320ML miễn phí',
-    points: 30,
-    image: require('../../../assets/rewards/pepsi.png'),
-  },
-  {
-    id: 'R02',
-    title: 'Đổi 01 Lon 7Up 320ML miễn phí',
-    points: 30,
-    image: require('../../../assets/rewards/7up.png'),
-  },
-  {
-    id: 'R03',
-    title: 'Đổi 01 Lon Mirinda Cam 320ML miễn phí',
-    points: 30,
-    image: require('../../../assets/rewards/mirinda.png'),
-  },
-  {
-    id: 'R04',
-    title: 'Đổi 01 Xà Lách Cá Ngừ và Thịt Xông Khói miễn phí',
-    points: 70,
-    image: require('../../../assets/rewards/salad.png'),
-  },
-  {
-    id: 'R05',
-    title: 'Đổi 01 Mỳ Ý Bò Bằm Xốt Cà Chua miễn phí',
-    points: 100,
-    image: require('../../../assets/rewards/spaghetti.png'),
-  },
-  {
-    id: 'R06',
-    title: 'Đổi 01 Pizza Phô Mai Cao Cấp Đế Dày Cỡ Vừa miễn phí',
-    points: 120,
-    image: require('../../../assets/rewards/pizza_cheese.png'),
-  },
-  {
-    id: 'R07',
-    title: 'Đổi 01 Pizza Thập Cẩm Đế Dày Cỡ Vừa miễn phí',
-    points: 180,
-    image: require('../../../assets/rewards/pizza_supreme.png'),
-  },
+const REWARD_IMAGES = [
+  require('../../../assets/rewards/pepsi.png'),
+  require('../../../assets/rewards/7up.png'),
+  require('../../../assets/rewards/mirinda.png'),
+  require('../../../assets/rewards/salad.png'),
+  require('../../../assets/rewards/spaghetti.png'),
+  require('../../../assets/rewards/pizza_cheese.png'),
+  require('../../../assets/rewards/pizza_supreme.png'),
 ];
+const REWARD_ITEMS: RewardItem[] = rewardCatalog.map((item, index) => ({ ...item, image: REWARD_IMAGES[index] }));
+const notify = (title: string, message: string) => Platform.OS === 'web' ? alert(message) : Alert.alert(title, message);
 
 export default function RewardsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const userId = user?.id;
+  const isDemo = user?.isDemo;
   const [activeTab, setActiveTab] = useState<'list' | 'my_gifts' | 'history'>('list');
-  const [userPoints, setUserPoints] = useState(0);
+  const [wallet, setWallet] = useState<RewardWallet | null>(null);
+  const [walletOwner, setWalletOwner] = useState<string>();
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [redeeming, setRedeeming] = useState(false);
+  const busy = useRef(false);
+  const owner = useRef(user?.id);
+  owner.current = user?.id;
+  const [attempt, setAttempt] = useState(0);
+  const currentWallet = walletOwner === user?.id ? wallet : null;
+  const userPoints = currentWallet?.points ?? user?.rewardPoints ?? 0;
+  const gifts = currentWallet?.gifts ?? [];
+
+  useEffect(() => {
+    let active = true;
+    setWallet(null);
+    setWalletOwner(undefined);
+    setError('');
+    setLoading(false);
+    if (!userId || isDemo) return;
+    setLoading(true);
+    getRewardWallet().then(value => {
+      if (active) { setWallet(value); setWalletOwner(userId); }
+    }).catch(() => {
+      if (active) setError('Không thể tải điểm và quà. Vui lòng thử lại.');
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [userId, isDemo, attempt]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.replace({ pathname: '/auth/login', params: { returnTo: 'profile' } });
+      router.replace({ pathname: '/auth/login', params: { returnTo: 'rewards' } });
     }
   }, [isLoading, isAuthenticated, router]);
 
@@ -91,23 +90,23 @@ export default function RewardsScreen() {
     return null;
   }
 
-  const handleRedeem = (item: RewardItem) => {
-    if (userPoints < item.points) {
-      const msg = `Bạn cần ${item.points} điểm để đổi món này. Điểm hiện tại của bạn là ${userPoints} điểm.\nHãy tích điểm bằng cách đặt các món ăn ngon tại Pizza FPT nhé!`;
-      if (Platform.OS === 'web') {
-        alert(msg);
-      } else {
-        Alert.alert('Chưa đủ điểm', msg);
+  const handleRedeem = async (item: RewardItem) => {
+    if (busy.current || !currentWallet) return;
+    busy.current = true;
+    setRedeeming(true);
+    const uid = user?.id;
+    try {
+      const updated = await redeemReward(item.id);
+      if (owner.current !== uid) return;
+      setWallet(updated);
+      setActiveTab('my_gifts');
+      notify('Đổi quà thành công', `Bạn đã đổi: ${item.title}.`);
+    } catch (error) {
+      if (owner.current === uid) {
+        notify('Chưa thể đổi quà', error instanceof Error ? error.message : 'Vui lòng thử lại.');
+        setAttempt(value => value + 1);
       }
-    } else {
-      const msg = `Chúc mừng! Bạn đã đổi thành công: ${item.title}. Quà đã được chuyển vào mục "Quà của tôi".`;
-      setUserPoints((prev) => prev - item.points);
-      if (Platform.OS === 'web') {
-        alert(msg);
-      } else {
-        Alert.alert('Đổi quà thành công', msg);
-      }
-    }
+    } finally { busy.current = false; setRedeeming(false); }
   };
 
   return (
@@ -120,6 +119,8 @@ export default function RewardsScreen() {
         <Text style={styles.headerTitle}>FPT rewards</Text>
         <TouchableOpacity
           style={styles.headerRightBtn}
+          onPress={() => setActiveTab('history')}
+          accessibilityLabel="Lịch sử đổi quà"
           activeOpacity={0.7}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -148,7 +149,7 @@ export default function RewardsScreen() {
             </View>
             <View style={styles.cardTitleWrap}>
               <Text style={styles.cardTierTitle}>Thành viên Thường</Text>
-              <Text style={styles.cardExpireSub}>Ngày hết hạn 30/11/2027</Text>
+              <Text style={styles.cardExpireSub}>Tích điểm và đổi quà cùng Pizza FPT</Text>
             </View>
           </View>
 
@@ -168,7 +169,7 @@ export default function RewardsScreen() {
         </View>
 
         {/* ======================================================== */}
-        {/* 3 SEGMENTED TABS: Danh sách | Quà của tôi (1) | Lịch sử   */}
+        {/* 3 SEGMENTED TABS: Danh sách | Quà của tôi ({gifts.length}) | Lịch sử   */}
         {/* ======================================================== */}
         <View style={styles.segmentedContainer}>
           <TouchableOpacity
@@ -197,7 +198,7 @@ export default function RewardsScreen() {
                 activeTab === 'my_gifts' && styles.segmentTextActive,
               ]}
             >
-              Quà của tôi (1)
+              Quà của tôi ({gifts.length})
             </Text>
           </TouchableOpacity>
 
@@ -220,6 +221,19 @@ export default function RewardsScreen() {
         {/* ======================================================== */}
         {/* CONTENT BASED ON ACTIVE TAB                             */}
         {/* ======================================================== */}
+        {loading && <ActivityIndicator style={{ marginTop: 16 }} color="#CF4226" />}
+        {!!error && <View style={{ padding: 16 }}>
+          <Text>{error}</Text>
+          <TouchableOpacity onPress={() => setAttempt(value => value + 1)} style={{ paddingVertical: 12 }} accessibilityRole="button">
+            <Text>Thử lại</Text>
+          </TouchableOpacity>
+        </View>}
+        {user?.isDemo && <View style={{ padding: 16 }}>
+          <Text>Đăng nhập tài khoản thật để tải điểm và đổi quà.</Text>
+          <TouchableOpacity onPress={() => router.push({ pathname: '/auth/login', params: { returnTo: 'rewards' } })} style={{ paddingVertical: 12 }}>
+            <Text>Đăng nhập</Text>
+          </TouchableOpacity>
+        </View>}
         {activeTab === 'list' && (
           <View style={styles.itemsListContainer}>
             {REWARD_ITEMS.map((item) => (
@@ -243,7 +257,8 @@ export default function RewardsScreen() {
 
                 {/* Redeem Button */}
                 <TouchableOpacity
-                  style={styles.redeemButton}
+                  style={[styles.redeemButton, { opacity: !currentWallet || redeeming || userPoints < item.points ? 0.45 : 1 }]}
+                  disabled={!currentWallet || redeeming || userPoints < item.points}
                   activeOpacity={0.75}
                   onPress={() => handleRedeem(item)}
                 >
@@ -254,30 +269,19 @@ export default function RewardsScreen() {
           </View>
         )}
 
-        {activeTab === 'my_gifts' && (
+        {(activeTab === 'my_gifts' || activeTab === 'history') && (
           <View style={styles.giftTabContainer}>
-            <View style={styles.voucherCard}>
-              <View style={styles.voucherLeft}>
-                <Text style={styles.voucherPercent}>40K</Text>
-                <Text style={styles.voucherOffText}>GIẢM GIÁ</Text>
-              </View>
+            {gifts.length === 0 && !loading && !error && <View style={styles.emptyHistoryBox}>
+              <Text style={styles.emptyHistoryTitle}>{activeTab === 'history' ? 'Chưa có lịch sử đổi quà' : 'Bạn chưa có quà đã đổi'}</Text>
+              <Text style={styles.emptyHistorySub}>Đổi quà trong Danh sách khi bạn có đủ điểm.</Text>
+            </View>}
+            {gifts.map(gift => <View key={gift.id} style={[styles.voucherCard, { marginBottom: 12 }]}>
               <View style={styles.voucherRight}>
-                <Text style={styles.voucherTitle}>Voucher Chào Mừng Thành Viên Mới</Text>
-                <Text style={styles.voucherDesc}>Giảm 40.000đ cho đơn hàng từ 150.000đ</Text>
-                <Text style={styles.voucherExpiry}>Hạn dùng: 30/11/2026</Text>
+                <Text style={styles.voucherTitle}>{gift.title}</Text>
+                <Text style={styles.voucherDesc}>{activeTab === 'history' ? `Đã dùng ${gift.points} điểm` : `Mã quà: ${gift.id}`}</Text>
+                <Text style={styles.voucherExpiry}>{new Date(gift.redeemedAt).toLocaleString('vi-VN')}</Text>
               </View>
-            </View>
-          </View>
-        )}
-
-        {activeTab === 'history' && (
-          <View style={styles.historyTabContainer}>
-            <View style={styles.emptyHistoryBox}>
-              <Text style={styles.emptyHistoryTitle}>Chưa có lịch sử tích đổi điểm</Text>
-              <Text style={styles.emptyHistorySub}>
-                Lịch sử tích điểm và quà bạn đã đổi sẽ hiển thị tại đây.
-              </Text>
-            </View>
+            </View>)}
           </View>
         )}
       </ScrollView>

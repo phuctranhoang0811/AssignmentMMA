@@ -4,11 +4,20 @@ import { CartItem } from '../types/order';
 import { generateCartLineKey } from '../utils/cartLineKey';
 import { mockProducts } from '../data/mockProducts';
 import { getItemLineUnitPrice } from '../utils/calculateTotals';
+import { replaceCartItem } from '../utils/cartOperations';
 
 interface CartContextType {
   items: CartItem[];
   itemCount: number;
   subtotal: number;
+  isLoaded: boolean;
+  needCutlery: boolean;
+  setNeedCutlery: (value: boolean) => void;
+  promoCode: string;
+  setPromoCode: (code: string) => void;
+  fulfillmentType: 'delivery' | 'takeaway';
+  setFulfillmentType: (mode: 'delivery' | 'takeaway') => void;
+  updateItem: (lineId: string, item: Omit<CartItem, 'lineId'>) => void;
   addItem: (item: Omit<CartItem, 'lineId'>) => void;
   updateQuantity: (lineId: string, quantity: number) => void;
   removeItem: (lineId: string) => void;
@@ -16,6 +25,7 @@ interface CartContextType {
 }
 
 const CART_STORAGE_KEY = '@pizza_time_cart_v1';
+const CHECKOUT_STORAGE_KEY = '@pizza_checkout_preferences_v1';
 
 const productsMap = mockProducts.reduce((acc, p) => {
   acc[p.id] = p;
@@ -27,10 +37,22 @@ const CartContext = createContext<CartContextType>({} as CartContextType);
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<CartItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [needCutlery, setNeedCutlery] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'takeaway'>('delivery');
 
   useEffect(() => {
     (async () => {
       try {
+        const preferences = await AsyncStorage.getItem(CHECKOUT_STORAGE_KEY);
+        if (preferences) {
+          try {
+            const saved = JSON.parse(preferences);
+            if (typeof saved?.promoCode === 'string') setPromoCode(saved.promoCode);
+            if (typeof saved?.needCutlery === 'boolean') setNeedCutlery(saved.needCutlery);
+            if (saved?.fulfillmentType === 'delivery' || saved?.fulfillmentType === 'takeaway') setFulfillmentType(saved.fulfillmentType);
+          } catch { /* Invalid preferences must not prevent restoring the cart. */ }
+        }
         const stored = await AsyncStorage.getItem(CART_STORAGE_KEY);
         if (stored) {
           const parsed = JSON.parse(stored);
@@ -71,6 +93,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       AsyncStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items)).catch(() => {});
     }
   }, [items, isLoaded]);
+
+  useEffect(() => {
+    if (isLoaded) {
+      AsyncStorage.setItem(CHECKOUT_STORAGE_KEY, JSON.stringify({ promoCode, fulfillmentType, needCutlery })).catch(() => {});
+    }
+  }, [promoCode, fulfillmentType, needCutlery, isLoaded]);
 
   const addItem = (item: any) => {
     const productId = item.productId || item.id;
@@ -126,6 +154,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearCart = () => {
     setItems([]);
+    setPromoCode('');
+    setNeedCutlery(false);
+  };
+
+  const updateItem = (lineId: string, item: Omit<CartItem, 'lineId'>) => {
+    setItems(prev => replaceCartItem(prev, lineId, item));
   };
 
   const itemCount = useMemo(() => {
@@ -147,6 +181,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         items,
         itemCount,
         subtotal,
+        isLoaded, needCutlery, setNeedCutlery,
+        promoCode, setPromoCode, fulfillmentType, setFulfillmentType, updateItem,
         addItem,
         updateQuantity,
         removeItem,

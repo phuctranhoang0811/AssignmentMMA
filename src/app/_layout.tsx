@@ -62,6 +62,7 @@ export default function RootLayout() {
       <Stack.Screen name="search" options={{ headerShown: false }} />
       <Stack.Screen name="checkout/index" options={{ headerShown: false }} />
       <Stack.Screen name="checkout/payment" options={{ headerShown: false }} />
+      <Stack.Screen name="checkout/payos" options={{ headerShown: false }} />
       <Stack.Screen name="checkout/review" options={{ headerShown: false }} />
       <Stack.Screen name="order/success" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="order/[id]" options={{ headerShown: false }} />
@@ -74,6 +75,7 @@ export default function RootLayout() {
       <Stack.Screen name="favorites" options={{ headerShown: false }} />
       <Stack.Screen name="offers" options={{ headerShown: false }} />
       <Stack.Screen name="demo/staff-orders" options={{ headerShown: false }} />
+      <Stack.Screen name="staff/deliveries" options={{ headerShown: false }} />
     </Stack>
   );
 

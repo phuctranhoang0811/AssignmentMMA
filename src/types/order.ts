@@ -12,13 +12,14 @@ export type OrderStatus =
 export type PaymentStatus =
   | 'UNPAID'
   | 'PENDING'
+  | 'PAID'
   | 'PAID_DEMO'
   | 'FAILED'
   | 'REFUND_PENDING'
   | 'REFUNDED_DEMO';
 
 export type FulfillmentType = 'DELIVERY' | 'PICKUP';
-export type PaymentMethod = 'COD' | 'MOCK_WALLET';
+export type PaymentMethod = 'COD' | 'PAYOS';
 
 export type CartItem = {
   lineId: string;
@@ -65,6 +66,7 @@ export type Order = {
     email?: string;
   };
   fulfillmentType: FulfillmentType;
+  needCutlery?: boolean;
   address?: string;
   items: OrderItemSnapshot[];
   status: OrderStatus;

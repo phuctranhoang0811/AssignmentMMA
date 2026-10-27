@@ -49,7 +49,6 @@ export function StoreLocationModal({
   const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'takeaway'>(initialFulfillment);
   const [manualAddressInput, setManualAddressInput] = useState(currentAddress);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
 
   useEffect(() => {
@@ -74,13 +73,10 @@ export function StoreLocationModal({
 
     const timer = setTimeout(async () => {
       try {
-        setIsSearching(true);
         const results = await searchVietnamAddresses(query);
         setAddressSuggestions(results);
       } catch {
         setAddressSuggestions([]);
-      } finally {
-        setIsSearching(false);
       }
     }, 200);
 

@@ -3,6 +3,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { initializeAuth, getAuth, getReactNativePersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // Cấu hình Firebase Console của dự án PizzaStore (pizzastore-59bad)
 const firebaseConfig = {
@@ -21,7 +22,7 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 // Khởi tạo Auth với cơ chế lưu phiên đăng nhập cục bộ trên thiết bị (tránh crash khi hot-reload)
 let auth: ReturnType<typeof initializeAuth>;
 try {
-  auth = initializeAuth(app, {
+  auth = Platform.OS === 'web' ? getAuth(app) : initializeAuth(app, {
     persistence: getReactNativePersistence(AsyncStorage),
   });
 } catch {

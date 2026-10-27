@@ -7,17 +7,15 @@ import {
   Image,
   TextInput,
   ActivityIndicator,
-  Modal,
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { Search, Plus, X } from 'lucide-react-native';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { triggerHaptic } from '../../utils/haptics';
-import { hasPromptedMemberDiscount, setPromptedMemberDiscount } from '../../utils/sessionFlags';
 import { productService } from '../../services';
 import { Product, CategoryId } from '../../types/product';
 import { mockCategories } from '../../data/mockCategories';
@@ -223,38 +221,11 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
 };
 
 export default function MenuScreen() {
-  const { promptMemberDiscount } = useLocalSearchParams<{ promptMemberDiscount?: string }>();
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('cheese_party');
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchActive, setIsSearchActive] = useState(false);
-  const [showMemberModal, setShowMemberModal] = useState(false);
-
-  // Khi thêm món ưu đãi từ trang chi tiết và quay lại menu, hiển thị popup hỏi đăng nhập
-  useEffect(() => {
-    if (promptMemberDiscount === '1' && !hasPromptedMemberDiscount()) {
-      const timer = setTimeout(() => {
-        setShowMemberModal(true);
-      }, 350);
-      return () => clearTimeout(timer);
-    }
-  }, [promptMemberDiscount]);
-
-  const handleConfirmLogin = () => {
-    setPromptedMemberDiscount(true);
-    setShowMemberModal(false);
-    router.push({
-      pathname: '/auth/login',
-      params: { returnTo: 'menu' },
-    });
-  };
-
-  const handleCancelModal = () => {
-    setPromptedMemberDiscount(true);
-    setShowMemberModal(false);
-  };
-
   const mainScrollRef = useRef<any>(null);
   const tabsScrollRef = useRef<any>(null);
   const isManualScrolling = useRef(false);
@@ -436,6 +407,9 @@ export default function MenuScreen() {
             return (
               <TouchableOpacity
                 key={cat.id}
+                accessibilityLabel={cat.name}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isActive }}
                 activeOpacity={0.7}
                 onLayout={(e) => {
                   tabOffsets.current[cat.id] = e.nativeEvent.layout.x;
@@ -453,7 +427,7 @@ export default function MenuScreen() {
                   ]}
                   numberOfLines={1}
                 >
-                  {cat.name.toUpperCase()}
+                  {({ member_deals: 'Thành viên', hot_deals: 'Deal hot', starters: 'Khai vị', drinks: 'Đồ uống' } as Record<string, string>)[cat.id] || cat.name}
                 </Text>
                 {isActive && <View style={styles.activeTabUnderline} />}
               </TouchableOpacity>
@@ -571,38 +545,6 @@ export default function MenuScreen() {
         </ScrollView>
       )}
 
-      {/* Pop-up Ưu Đãi Thành Viên */}
-      <Modal
-        visible={showMemberModal}
-        transparent
-        animationType="fade"
-        onRequestClose={handleCancelModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Ưu Đãi Thành Viên</Text>
-            <Text style={styles.modalMessage}>
-              Sản phẩm có giá ưu đãi đặc biệt dành cho thành viên. Bạn có muốn đăng nhập để nhận ưu đãi này không?
-            </Text>
-            <View style={styles.modalButtonsRow}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalCancelButton]}
-                onPress={handleCancelModal}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.modalCancelText}>Hủy</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalConfirmButton]}
-                onPress={handleConfirmLogin}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.modalConfirmText}>Xác nhận</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }

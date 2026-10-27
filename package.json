@@ -7,9 +7,12 @@
     "@expo/metro-runtime": "~58.0.15",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-google-signin/google-signin": "16.1.5",
     "@types/nodemailer": "^8.0.2",
     "expo": "^58.0.0",
     "expo-constants": "~58.0.13",
+    "expo-crypto": "~58.0.7",
+    "expo-dev-client": "~58.0.15",
     "expo-font": "~58.0.10",
     "expo-haptics": "~58.0.0",
     "expo-linking": "~58.0.14",
@@ -22,11 +25,13 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.0",
+    "react-native-qrcode-svg": "^6.3.28",
     "react-native-safe-area-context": "~5.10.1",
     "react-native-screens": "~4.30.0",
     "react-native-svg": "15.16.0",
     "react-native-web": "^0.21.4",
-    "react-native-webview": "14.0.1"
+    "react-native-webview": "14.0.1",
+    "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
     "@expo/ngrok": "^4.1.3",
@@ -44,7 +49,9 @@
     "seed:firebase": "npx tsx scripts/seed-firebase-products.ts",
     "seed:accounts": "npx tsx scripts/create-admin-employee-accounts.ts",
     "view:firebase": "npx tsx scripts/view-firebase-data.ts",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "dev:client": "expo start --dev-client",
+    "google:expo-go": "node scripts/start-google-bridge.mjs"
   },
   "private": true
 }

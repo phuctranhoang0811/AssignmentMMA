@@ -8,7 +8,7 @@ import { AppText } from '../components/ui/AppText';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { styles } from '../styles/offers.styles';
 import { mockCoupons } from '../data/mockPromotions';
-import { updateCheckoutDraft } from '../state/checkoutDraft';
+import { useCart } from '../state/CartContext';
 import { useToast } from '../state/ToastContext';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -16,10 +16,11 @@ export default function OffersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
+  const { setPromoCode } = useCart();
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const handleCopyCode = (code: string) => {
-    updateCheckoutDraft({ promoCode: code });
+    setPromoCode(code);
     setCopiedCode(code);
     triggerHaptic('success');
     showToast({

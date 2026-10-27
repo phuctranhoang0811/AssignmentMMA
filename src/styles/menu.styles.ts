@@ -61,7 +61,7 @@ export const styles = StyleSheet.create({
     marginBottom: 4,
   },
   tabText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
     color: '#4A4A4A',
     letterSpacing: 0.2,

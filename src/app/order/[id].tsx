@@ -256,14 +256,6 @@ export default function OrderDetailScreen() {
             </View>
           )}
 
-          <View style={styles.summaryRow}>
-            <AppText variant="body" color={colors.textSecondary}>
-              Phí giao hàng
-            </AppText>
-            <AppText variant="bodyMedium">
-              {order.deliveryFee === 0 ? 'Miễn phí' : formatCurrency(order.deliveryFee)}
-            </AppText>
-          </View>
 
           <View style={styles.summaryRow}>
             <AppText variant="body" color={colors.textSecondary}>

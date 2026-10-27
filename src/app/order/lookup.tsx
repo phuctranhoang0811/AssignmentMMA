@@ -166,6 +166,9 @@ export default function OrderLookupScreen() {
             <Text style={styles.infoText}>{selectedOrder.customer?.fullname || 'Khách hàng'}</Text>
             <Text style={styles.infoText}>{selectedOrder.customer?.phone || ''}</Text>
             <Text style={styles.infoText}>{selectedOrder.address || ''}</Text>
+            {typeof selectedOrder.needCutlery === 'boolean' && <Text style={styles.infoText}>
+              Muỗng nĩa nhựa: {selectedOrder.needCutlery ? 'Có' : 'Không'}
+            </Text>}
           </View>
 
           {/* Card 2: Phương thức thanh toán */}
@@ -237,15 +240,6 @@ export default function OrderLookupScreen() {
               </View>
             )}
 
-            <View style={styles.pricingRow}>
-              <View style={styles.infoLabelWrap}>
-                <Text style={styles.pricingLabel}>Phí giao hàng</Text>
-                <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
-              </View>
-              <Text style={styles.pricingValue}>
-                {formatCurrency(selectedOrder.deliveryFee || 22000)}
-              </Text>
-            </View>
 
             <View style={styles.pricingDivider} />
 
@@ -257,7 +251,7 @@ export default function OrderLookupScreen() {
                   <Text style={{ fontWeight: '700', color: '#111827' }}>
                     {selectedOrder.earnedPoints || Math.floor((selectedOrder.total || 0) / 10000)} điểm
                   </Text>{' '}
-                  Hut rewards
+                  FPT Rewards
                 </Text>
               </View>
               <Text style={styles.totalValue}>

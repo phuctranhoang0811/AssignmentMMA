@@ -11,6 +11,9 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { useOrders } from '../../state/OrderContext';
 import { Order } from '../../types/order';
 import { styles } from '../../styles/staffOrders.styles';
+import { router } from 'expo-router';
+import { AppButton } from '../../components/ui/AppButton';
+import { ahamoveEnabled } from '../../services/deliveryService';
 
 export default function StaffOrdersScreen() {
   const { orders, advanceOrderStatus, cancelOrder } = useOrders();
@@ -70,6 +73,7 @@ export default function StaffOrdersScreen() {
         showBack
       />
 
+      {ahamoveEnabled && <AppButton title="Bếp & giao Ahamove staging" onPress={() => router.push('/staff/deliveries')} />}
       {/* Tabs */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
