@@ -55,3 +55,16 @@ export async function lookupOrder(phone: string, code: string): Promise<LookupOr
   if (!response.ok) throw new Error('Chưa thể tra cứu đơn. Vui lòng thử lại.');
   return response.json();
 }
+
+/** Phone + password → Firebase custom token, verified by the backend (no client access to other profiles). */
+export async function phoneLoginToken(phone: string, password: string) {
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl()}/api/auth/phone-login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, password }),
+    });
+  } catch { throw new Error('Không kết nối được máy chủ. Vui lòng thử lại hoặc đăng nhập bằng email.'); }
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(response.status === 429 ? 'Bạn thử quá nhiều lần. Vui lòng chờ 15 phút.' : body?.error || 'Đăng nhập không thành công.');
+  return body.token as string;
+}

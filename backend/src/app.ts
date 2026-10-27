@@ -12,9 +12,11 @@ import type { RewardStore } from './rewards';
 import { googleBridgeRouter, type GoogleBridgeOptions } from './googleBridge';
 import { deliveryQuoteInput, verifyAhaWebhook, type DeliveryStore } from './delivery';
 import { cashOrderInput, type OrderOpsStore } from './orders';
+import { phoneLoginInput } from './phoneLogin';
 
 type Options = {
   delivery?: Pick<DeliveryStore, 'quote' | 'createCod' | 'dispatch' | 'refresh' | 'webhook' | 'assertStaff' | 'config'>;
+  phoneLogin?: (phone: string, password: string) => Promise<{ token: string }>;
   orders?: Pick<OrderOpsStore, 'list' | 'advance' | 'reject' | 'cancel' | 'createCash' | 'lookup'>;
   googleBridge?: GoogleBridgeOptions;
   rewards?: Pick<RewardStore, 'wallet' | 'redeem'>;
@@ -88,6 +90,12 @@ export function createPaymentServer(options: Options) {
   app.get('/api/orders/lookup', rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false }), async (req, res) => {
     const { phone, code } = z.object({ phone: z.string().regex(/^\+?[0-9 .-]{9,20}$/), code: z.string().trim().min(4).max(40) }).parse(req.query);
     res.json(await orders().lookup(phone, code.replace(/^#/, '').toUpperCase()));
+  });
+  // Public: phone + password → Firebase custom token. Strict per-IP limit against password guessing.
+  app.post('/api/auth/phone-login', rateLimit({ windowMs: 15 * 60_000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false }), async (req, res) => {
+    if (!options.phoneLogin) throw new HttpError(503, 'Đăng nhập bằng số điện thoại chưa được cấu hình.');
+    const { phone, password } = phoneLoginInput.parse(req.body);
+    res.json(await options.phoneLogin(phone, password));
   });
   app.use('/api', async (req, res, next) => {
     try {

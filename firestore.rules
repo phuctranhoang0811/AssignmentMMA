@@ -1,0 +1,39 @@
+rules_version = '2';
+
+// The backend (Admin SDK) bypasses these rules. The app may only:
+// read the menu, read its own orders, and create/edit its own profile without touching role or points.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if false; // seed with `cd backend && npm run seed:catalog`
+    }
+
+    match /orders/{orderId} {
+      // Orders are created and moved by the backend only (prices, status, payment).
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.role == 'USER'
+        && request.resource.data.rewardPoints == 100;
+      allow update: if request.auth != null && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'rewardPoints', 'uid']);
+      allow delete: if false;
+
+      match /reward_gifts/{giftId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+    }
+
+    // payment_orders, payment_codes, payment_system, delivery_*: backend only.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

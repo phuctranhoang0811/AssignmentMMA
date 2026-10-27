@@ -4,9 +4,10 @@ import { DemoUser } from '../types/user';
 import { authService } from '../services';
 import { demoUser } from '../data/mockUsers';
 import { auth, db } from '../services/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, onSnapshot, runTransaction } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, signInWithCustomToken, signInWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { doc, setDoc, getDoc, serverTimestamp, onSnapshot, runTransaction } from 'firebase/firestore';
 import { clearCustomerInfo } from '../services/addressStorage';
+import { phoneLoginToken } from '../services/orderApi';
 import { isValidEmail } from '../utils/validators';
 import { signInWithGoogle } from '../services/googleSignIn';
 import { googleAccountProfile, googleLoginError } from '../utils/googleAccount';
@@ -80,45 +81,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       const trimmed = identifier.trim();
-      let targetEmail = trimmed.toLowerCase();
-
-      // Nếu người dùng nhập Số điện thoại (chỉ chứa số hoặc không chứa ký tự '@')
-      if (!trimmed.includes('@')) {
-        try {
-          const cleanPhone = trimmed.replace(/[\s.-]/g, '');
-          const q = query(collection(db, 'users'), where('phone', '==', cleanPhone));
-          const querySnap = await getDocs(q);
-
-          if (!querySnap.empty) {
-            const matchedData = querySnap.docs[0].data();
-            if (matchedData.email) {
-              targetEmail = matchedData.email.toLowerCase();
-            }
-          } else {
-            // Thử truy vấn phone theo dạng chuỗi gốc
-            const qRaw = query(collection(db, 'users'), where('phone', '==', trimmed));
-            const querySnapRaw = await getDocs(qRaw);
-            if (!querySnapRaw.empty) {
-              const matchedData = querySnapRaw.docs[0].data();
-              if (matchedData.email) {
-                targetEmail = matchedData.email.toLowerCase();
-              }
-            } else {
-              throw new Error('Số điện thoại này chưa được đăng ký tài khoản.');
-            }
-          }
-        } catch (e: any) {
-          if (e.message && e.message.includes('chưa được đăng ký')) {
-            throw e;
-          }
-          console.warn('Tra cứu số điện thoại thất bại:', e.message);
-        }
-      }
+      const targetEmail = trimmed.toLowerCase();
 
       if (password) {
         // Firebase Auth must establish the session used by the payment backend.
         try {
-          const res = await signInWithEmailAndPassword(auth, targetEmail, password);
+          // Phone numbers are resolved by the backend, so the app never reads other users' profiles.
+          const res = trimmed.includes('@')
+            ? await signInWithEmailAndPassword(auth, targetEmail, password)
+            : await signInWithCustomToken(auth, await phoneLoginToken(trimmed, password));
           const userDoc = await getDoc(doc(db, 'users', res.user.uid));
           if (userDoc.exists()) {
             const data = userDoc.data();
@@ -224,10 +195,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // Lưu hồ sơ người dùng vào Cloud Firestore collection 'users'
-      await setDoc(
-        doc(db, 'users', uid),
-        {
+      // Create the profile only once: an existing account (email already registered) keeps its points and role.
+      const userRef = doc(db, 'users', uid);
+      const stored = await runTransaction(db, async transaction => {
+        const existing = await transaction.get(userRef);
+        if (existing.exists()) return existing.data();
+        transaction.set(userRef, {
           uid,
           email: trimmedEmail,
           fullName: name.trim(),
@@ -237,19 +210,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           role: 'USER',
           rewardPoints: 100,
           createdAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+        });
+        return null;
+      });
 
       const newUser: DemoUser = {
         id: uid,
-        fullname: name.trim(),
+        fullname: stored?.fullName ?? name.trim(),
         email: trimmedEmail,
-        phone: phone.trim(),
-        gender: extra?.gender || 'Nam',
-        birthday: extra?.birthday || '01/01/2000',
-        role: 'USER',
-        rewardPoints: 100,
+        phone: stored?.phone ?? phone.trim(),
+        gender: stored?.gender ?? (extra?.gender || 'Nam'),
+        birthday: stored?.birthday ?? (extra?.birthday || '01/01/2000'),
+        role: stored?.role ?? 'USER',
+        rewardPoints: stored?.rewardPoints ?? 100,
         isDemo: false,
         hasPassword: true,
       };

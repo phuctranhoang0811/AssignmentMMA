@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { OrderOpsStore, nextStatus } from '../src/orders';
 import { checkoutSchema, HttpError } from '../src/domain';
 import { database } from './fakeDb';
+import { phoneLogin } from '../src/phoneLogin';
 
 const sized = { name: 'Pizza Size', categoryId: 'pizza', basePrice: 100000, addons: [], isAvailable: true,
   variants: [{ id: 'medium', name: 'Cỡ Vừa', price: 200000 }] };
@@ -75,4 +76,24 @@ test('customer cancels only their own pending order; staff reject flags paid ord
   assert.equal(order.status, 'CANCELLED');
   assert.equal(order.paymentStatus, 'REFUND_PENDING');
   assert.equal(docs.get('users/customer')!.rewardPoints, 5);
+});
+
+test('phone login verifies the password server-side and never reveals whether a number exists', async () => {
+  const users = [{ id: 'uid-1', data: () => ({ email: 'a@b.vn', phone: '0900000000' }) }];
+  const db = { collection: () => ({ where: (_f: string, _op: string, forms: string[]) => ({ limit: () => ({
+    get: async () => ({ docs: users.filter(u => forms.includes(u.data().phone)) }) }) }) }) } as unknown as Parameters<typeof phoneLogin>[0]['db'];
+  const calls: string[] = [];
+  const deps = { db, apiKey: 'k', createCustomToken: async (uid: string) => `token-${uid}`,
+    fetch: (async (_url: string, init: RequestInit) => {
+      const { password } = JSON.parse(init.body as string);
+      calls.push(password);
+      return new Response(JSON.stringify(password === 'right' ? { localId: 'uid-1' } : { error: {} }), { status: password === 'right' ? 200 : 400 });
+    }) as typeof fetch };
+  assert.deepEqual(await phoneLogin(deps, '+84 900 000 000', 'right'), { token: 'token-uid-1' });
+  const wrong = await phoneLogin(deps, '0900000000', 'wrong').catch(e => e);
+  const unknown = await phoneLogin(deps, '0911111111', 'right').catch(e => e);
+  assert.equal(wrong.status, 401);
+  assert.equal(unknown.status, 401);
+  assert.equal(wrong.message, unknown.message);
+  assert.deepEqual(calls, ['right', 'wrong']);
 });

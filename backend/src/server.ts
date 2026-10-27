@@ -8,6 +8,7 @@ import { createPaymentServer } from './app';
 import { OrderStore } from './store';
 import { RewardStore } from './rewards';
 import { OrderOpsStore } from './orders';
+import { phoneLogin } from './phoneLogin';
 import { GoogleBridgeStore } from './googleBridgeStore';
 
 let env: ReturnType<typeof readConfig>;
@@ -30,6 +31,9 @@ const { server, io } = createPaymentServer({
   store: new OrderStore(db, !!ahamoveConfig),
   delivery: ahamoveConfig ? new DeliveryStore(db, ahamoveConfig) : undefined,
   rewards: new RewardStore(db),
+  phoneLogin: env.FIREBASE_WEB_API_KEY
+    ? (phone, password) => phoneLogin({ db, apiKey: env.FIREBASE_WEB_API_KEY!, createCustomToken: uid => getAuth().createCustomToken(uid) }, phone, password)
+    : undefined,
   // Staff accounts: STAFF_UIDS, falling back to the Ahamove staff list.
   orders: new OrderOpsStore(db, (env.STAFF_UIDS || process.env.AHAMOVE_STAFF_UIDS || '').split(',').map(s => s.trim()).filter(Boolean)),
   googleBridge: env.GOOGLE_BRIDGE_ORIGIN ? {
