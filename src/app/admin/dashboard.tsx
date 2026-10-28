@@ -368,10 +368,10 @@ export default function AdminDashboardScreen() {
               </View>
               <View style={styles.moduleTextBox}>
                 <AppText variant="cardTitle" color={colors.textPrimary}>
-                  Quản Lý User & Phân Quyền (RBAC)
+                  Quản Lý Tài Khoản & Phân Quyền
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
-                  Cấp quyền Quản lý, Bếp, Shipper, Thu ngân & chặn (Blacklist).
+                  Phân quyền Admin, Quản lý, Bếp, Rider & Khách hàng.
                 </AppText>
               </View>
             </View>

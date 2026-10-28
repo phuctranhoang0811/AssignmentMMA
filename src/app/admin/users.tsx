@@ -26,11 +26,11 @@ import { styles } from '../../styles/adminUsers.styles';
 import { DemoUser } from '../../types/user';
 
 const ROLE_OPTIONS = [
-  { key: 'SUPER_ADMIN', label: 'Quản trị tối cao (SUPER_ADMIN)', desc: 'Toàn quyền cấu hình hệ thống' },
-  { key: 'STORE_MANAGER', label: 'Cửa hàng trưởng (STORE_MANAGER)', desc: 'Quản lý thực đơn và vận hành' },
-  { key: 'EMPLOYEE', label: 'Nhân viên bếp (ROLE_KITCHEN)', desc: 'Duyệt đơn và chuyển trạng thái nấu' },
-  { key: 'ROLE_RIDER', label: 'Tài xế giao hàng (ROLE_RIDER)', desc: 'Nhận đơn và cập nhật giao hàng' },
-  { key: 'USER', label: 'Khách hàng (CUSTOMER)', desc: 'Đặt món và tích điểm FPT Reward' },
+  { key: 'SUPER_ADMIN', label: 'Admin', desc: 'Toàn quyền cấu hình và quản trị hệ thống' },
+  { key: 'STORE_MANAGER', label: 'Manager (Quản lý)', desc: 'Quản lý thực đơn, tồn kho và vận hành ca' },
+  { key: 'EMPLOYEE', label: 'Kitchen (Nhân viên bếp)', desc: 'Nhận đơn, nấu món và bàn giao shipper' },
+  { key: 'ROLE_RIDER', label: 'Rider (Tài xế giao hàng)', desc: 'Nhận đơn và giao hàng tận nơi' },
+  { key: 'USER', label: 'User (Khách hàng)', desc: 'Đặt món và tích điểm thành viên' },
 ];
 
 export default function AdminUsersScreen() {
@@ -170,6 +170,25 @@ export default function AdminUsersScreen() {
     );
   });
 
+  const formatRoleLabel = (role?: string) => {
+    switch (role) {
+      case 'SUPER_ADMIN':
+      case 'ADMIN':
+        return 'Admin';
+      case 'STORE_MANAGER':
+        return 'Manager';
+      case 'EMPLOYEE':
+      case 'ROLE_KITCHEN':
+        return 'Kitchen';
+      case 'ROLE_RIDER':
+        return 'Rider';
+      case 'BLACKLISTED':
+        return 'Đã khóa';
+      default:
+        return 'User';
+    }
+  };
+
   const getRoleBadgeColor = (role?: string) => {
     if (role === 'SUPER_ADMIN') return { bg: colors.primarySoft, text: colors.primary };
     if (role === 'STORE_MANAGER') return { bg: colors.warningSoft, text: colors.warning };
@@ -181,8 +200,8 @@ export default function AdminUsersScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScreenHeader
-        title="Quản Lý Người Dùng & RBAC"
-        subtitle="Cấp quyền nhân sự & Giám sát khách hàng"
+        title="Quản Lý Người Dùng"
+        subtitle="Phân quyền tài khoản & Giám sát khách hàng"
         showBack={true}
         onBack={() => router.back()}
       />
@@ -239,7 +258,7 @@ export default function AdminUsersScreen() {
 
                   <View style={[styles.roleBadge, { backgroundColor: badgeStyle.bg }]}>
                     <AppText variant="small" color={badgeStyle.text}>
-                      {item.role || 'USER'}
+                      {formatRoleLabel(item.role)}
                     </AppText>
                   </View>
                 </View>
@@ -296,7 +315,7 @@ export default function AdminUsersScreen() {
           <View style={styles.modalContent}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <AppText variant="h3" color={colors.textPrimary} style={styles.modalTitle}>
-                Cấp Quyền Tài Khoản (RBAC)
+                Cấp Quyền Tài Khoản
               </AppText>
               <TouchableOpacity onPress={() => setRoleModalVisible(false)}>
                 <X size={20} color={colors.textSecondary} />
