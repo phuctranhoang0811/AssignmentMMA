@@ -64,7 +64,9 @@ export default function LoginScreen() {
   }, [returnTo]);
 
   const navigateAfterLogin = () => {
-    if (returnTo === 'staff' || identifier.trim().toLowerCase().includes('employee@')) {
+    if (returnTo === 'admin' || identifier.trim().toLowerCase().includes('admin@')) {
+      router.replace('/admin/dashboard');
+    } else if (returnTo === 'staff' || identifier.trim().toLowerCase().includes('employee@')) {
       router.replace('/staff/orders');
     } else if (returnTo === 'profile') {
       router.replace('/(tabs)/profile');

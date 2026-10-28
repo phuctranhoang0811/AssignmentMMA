@@ -22,13 +22,18 @@ export default function SplashScreen() {
       useNativeDriver: true,
     }).start(() => {
       if (!isLoading && user) {
+        const isAdmin =
+          user.role === 'SUPER_ADMIN' ||
+          user.role === 'STORE_MANAGER' ||
+          user.role === 'ADMIN';
         const isStaff =
           user.role === 'EMPLOYEE' ||
-          user.role === 'STORE_MANAGER' ||
-          user.role === 'SUPER_ADMIN' ||
-          user.role === 'ADMIN';
+          user.role === 'ROLE_KITCHEN' ||
+          user.role === 'ROLE_RIDER';
 
-        if (isStaff) {
+        if (isAdmin) {
+          router.replace('/admin/dashboard');
+        } else if (isStaff) {
           router.replace('/staff/orders');
         } else {
           router.replace('/(tabs)/home');
