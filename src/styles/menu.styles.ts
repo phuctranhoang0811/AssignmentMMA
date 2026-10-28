@@ -1,4 +1,5 @@
 import { StyleSheet } from 'react-native';
+import { FLOATING_CART_CLEARANCE } from './tabsLayout.styles';
 
 export const ACTIVE_TAB_RED = '#C62828';
 export const BRAND_RED = ACTIVE_TAB_RED;
@@ -108,7 +109,7 @@ export const styles = StyleSheet.create({
 
   /* 4. Continuous Category Section */
   listContent: {
-    paddingBottom: 50,
+    paddingBottom: FLOATING_CART_CLEARANCE,
   },
   categorySection: {
     marginBottom: 20,

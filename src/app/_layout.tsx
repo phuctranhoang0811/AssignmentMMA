@@ -18,10 +18,11 @@ import { FavoritesProvider } from '../state/FavoritesContext';
 import { ToastProvider } from '../state/ToastContext';
 import { colors } from '../theme/colors';
 import { styles } from '../styles/rootLayout.styles';
+import { layoutMode } from '../utils/layout';
 
 export default function RootLayout() {
   const { width } = useWindowDimensions();
-  const isDesktopWeb = Platform.OS === 'web' && width > 600;
+  const mode = layoutMode(width);
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
@@ -86,7 +87,7 @@ export default function RootLayout() {
             <FavoritesProvider>
               <ToastProvider>
                 <StatusBar style="dark" />
-                {isDesktopWeb ? (
+                {mode === 'webFrame' ? (
                   <View style={styles.desktopCanvas}>
                     <View style={styles.phoneFrame}>
                       <View style={styles.notchContainer}>
@@ -96,7 +97,9 @@ export default function RootLayout() {
                     </View>
                   </View>
                 ) : (
-                  <View style={styles.mobileContainer}>{stackContent}</View>
+                  <View style={[styles.mobileContainer, mode === 'nativeColumn' && styles.tabletCanvas]}>
+                    <View style={[styles.mobileContent, mode === 'nativeColumn' && styles.tabletColumn]}>{stackContent}</View>
+                  </View>
                 )}
               </ToastProvider>
             </FavoritesProvider>

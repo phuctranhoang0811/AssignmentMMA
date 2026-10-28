@@ -19,6 +19,7 @@ import { formatCurrency } from '../../utils/formatCurrency';
 import { triggerHaptic } from '../../utils/haptics';
 import { CouchIllustration } from '../../components/ui/CouchIllustration';
 import { styles, BRAND_RED } from '../../styles/orderTracking.styles';
+import { FLOATING_CART_CLEARANCE } from '../../styles/tabsLayout.styles';
 import { DeliveryDetails } from './DeliveryDetails';
 import { OrderTimeline } from './OrderTimeline';
 import { AppButton } from '../ui/AppButton';
@@ -354,7 +355,8 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
           keyExtractor={(item) => item.id}
           contentContainerStyle={[
             styles.listContainer,
-            { paddingBottom: Math.max(insets.bottom + 24, 40) },
+            // Clear the floating cart shown on the Orders tab.
+            { paddingBottom: Math.max(insets.bottom + 24, FLOATING_CART_CLEARANCE) },
           ]}
           showsVerticalScrollIndicator={false}
           refreshControl={

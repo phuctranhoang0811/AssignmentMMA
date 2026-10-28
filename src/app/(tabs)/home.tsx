@@ -8,13 +8,13 @@ import {
   RefreshControl,
   Modal,
   Pressable,
-  useWindowDimensions,
   Alert,
   Linking,
 } from 'react-native';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useContentWidth } from '../../utils/layout';
 import {
   Bell,
   MapPin,
@@ -142,8 +142,8 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const { addItem, fulfillmentType: fulfillmentMode, setFulfillmentType: setFulfillmentMode } = useCart();
   const { showToast } = useToast();
-  const { width: windowWidth } = useWindowDimensions();
-  const bannerWidth = Math.min(windowWidth - 32, 450);
+  // Width of the screen's own column (phone, desktop-web frame or tablet column), minus side padding.
+  const bannerWidth = useContentWidth() - 32;
   const bannerScrollRef = useRef<any>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
