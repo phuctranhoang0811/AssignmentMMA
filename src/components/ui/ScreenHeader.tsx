@@ -41,16 +41,23 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
             <ArrowLeft size={22} color={colors.textPrimary} />
           </TouchableOpacity>
         )}
-        <View>
-          <AppText variant="h3">{title}</AppText>
+        <View style={styles.titleWrapper}>
+          <AppText variant="h3" numberOfLines={1}>
+            {title}
+          </AppText>
           {subtitle && (
-            <AppText variant="caption" color={colors.textSecondary}>
+            <AppText
+              variant="caption"
+              color={colors.textSecondary}
+              numberOfLines={1}
+              style={styles.subtitle}
+            >
               {subtitle}
             </AppText>
           )}
         </View>
       </View>
-      {rightAction && <View>{rightAction}</View>}
+      {rightAction && <View style={styles.rightAction}>{rightAction}</View>}
     </View>
   );
 };
@@ -60,18 +67,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   leftRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
+  titleWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  subtitle: {
+    marginTop: 2,
+  },
   backButton: {
-    marginRight: spacing.md,
+    marginRight: spacing.sm,
     padding: spacing.xs,
+  },
+  rightAction: {
+    marginLeft: spacing.sm,
   },
 });

@@ -152,7 +152,7 @@ export default function AdminDashboardScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScreenHeader
-        title="Bảng Quản Trị Hệ Thống"
+        title="Quản Trị Hệ Thống"
         subtitle="Pizza FPT Manager Portal"
         showBack={true}
         onBack={() => router.replace('/(tabs)/profile')}
