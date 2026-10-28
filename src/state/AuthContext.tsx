@@ -2,11 +2,10 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DemoUser } from '../types/user';
 import { authService } from '../services';
-import { demoUser } from '../data/mockUsers';
 import { auth, db } from '../services/firebase';
 import { createUserWithEmailAndPassword, signInWithCustomToken, signInWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp, onSnapshot, runTransaction } from 'firebase/firestore';
-import { clearCustomerInfo } from '../services/addressStorage';
+import { clearCustomerInfo, clearDeliveryAddress } from '../services/addressStorage';
 import { phoneLoginToken } from '../services/orderApi';
 import { isValidEmail } from '../utils/validators';
 import { signInWithGoogle } from '../services/googleSignIn';
@@ -65,9 +64,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(parsed);
           }
         } else {
-          // Start as demoUser or null if guest
-          setUser(demoUser);
-          await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(demoUser));
+          // First launch: a real guest (null), who sees Welcome and guest screens.
+          // The demo account is only used when chosen via "Đăng nhập nhanh với tài khoản Demo".
+          setUser(null);
         }
       } catch {
         setUser(null);
@@ -279,7 +278,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {}
     setUser(null);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ isLoggedOut: true }));
+    // The next person on this device must not see this account's contact details or home address.
     await clearCustomerInfo();
+    await clearDeliveryAddress();
   };
 
   const updateProfile = async (name: string, phone: string, birthday?: string, gender?: string, email?: string) => {

@@ -214,7 +214,7 @@ export default function ProfileScreen() {
                 <Text style={styles.menuLabel}>Lịch sử đơn hàng</Text>
               </TouchableOpacity>
 
-              {user?.hasPassword !== false && <>
+              {user?.hasPassword !== false && !user?.isDemo && <>
               <View style={styles.divider} />
 
               {/* Đổi mật khẩu */}

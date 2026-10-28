@@ -153,11 +153,10 @@ export default function HomeScreen() {
   const [showStoreLocationModal, setShowStoreLocationModal] = useState(false);
   const [currentAddress, setCurrentAddress] = useState('');
 
+  // Re-read when the account changes: logging out clears the saved address.
   useEffect(() => {
-    getSavedDeliveryAddress().then((saved) => {
-      if (saved) setCurrentAddress(saved);
-    });
-  }, []);
+    getSavedDeliveryAddress().then((saved) => setCurrentAddress(saved || ''));
+  }, [user?.id]);
 
   // Lunch Combo 3/4 Sheet State
   const [showLunchSheet, setShowLunchSheet] = useState(false);
@@ -338,7 +337,11 @@ export default function HomeScreen() {
         {/* GREETING & LOCATION (Chào mừng bạn trở lại)              */}
         {/* ======================================================== */}
         <View style={styles.greetingSection}>
-          <Text style={styles.greetingTitle}>Chào mừng bạn trở lại</Text>
+          <Text style={styles.greetingTitle} numberOfLines={1}>
+            {user && !user.isDemo && user.fullname
+              ? `Chào ${user.fullname.trim().split(/\s+/).pop()}, mừng bạn trở lại`
+              : 'Chào mừng bạn đến Pizza FPT'}
+          </Text>
           <Text style={styles.greetingSubtitle}>
             Chọn địa chỉ nhận hàng để bắt đầu đặt món
           </Text>

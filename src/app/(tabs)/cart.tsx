@@ -21,6 +21,7 @@ import {
 } from 'lucide-react-native';
 import Svg, { Path, Polygon } from 'react-native-svg';
 import { useCart } from '../../state/CartContext';
+import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
 import { triggerHaptic } from '../../utils/haptics';
 import { mockProducts } from '../../data/mockProducts';
@@ -146,8 +147,16 @@ export default function CartScreen() {
     });
   }, []);
 
+  const { user } = useAuth();
+  // Ordering needs a real account; say so here instead of after the guest has filled in checkout.
+  const mustSignIn = !user || user.isDemo;
+
   const handleProceedToCheckout = async () => {
     if (isProceeding) return;
+    if (mustSignIn) {
+      router.push({ pathname: '/auth/login', params: { returnTo: 'cart-checkout' } });
+      return;
+    }
     setIsProceeding(true);
     try {
     const hasChosen = await checkHasChosenAddress();
@@ -534,7 +543,7 @@ export default function CartScreen() {
           activeOpacity={0.88}
         >
           {isProceeding ? <ActivityIndicator color="#FFFFFF" /> :
-            <Text style={styles.checkoutBtnText}>Thanh toán • {formatCurrency(total)}</Text>}
+            <Text style={styles.checkoutBtnText}>{mustSignIn ? 'Đăng nhập để thanh toán' : 'Thanh toán'} • {formatCurrency(total)}</Text>}
         </TouchableOpacity>
       </View>
 

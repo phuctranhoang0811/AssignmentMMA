@@ -55,7 +55,7 @@ export default function LoginScreen() {
       router.replace('/(tabs)/profile');
     } else if (returnTo === 'menu') {
       router.replace('/(tabs)/menu');
-    } else if (returnTo === 'cart') {
+    } else if (returnTo === 'cart' || returnTo === 'cart-checkout') {
       router.replace('/(tabs)/cart');
     } else {
       router.back();
@@ -63,12 +63,12 @@ export default function LoginScreen() {
   };
 
   useEffect(() => {
-    if (returnTo === 'profile' || returnTo === 'rewards' || returnTo === 'menu' || returnTo === 'cart') {
+    if (returnTo === 'profile' || returnTo === 'rewards' || returnTo === 'menu' || returnTo === 'cart' || returnTo === 'cart-checkout') {
       const onBackPress = () => {
         googleController.current?.abort();
         if (returnTo === 'profile' || returnTo === 'rewards') router.replace('/(tabs)/profile');
         else if (returnTo === 'menu') router.replace('/(tabs)/menu');
-        else if (returnTo === 'cart') router.replace('/(tabs)/cart');
+        else if (returnTo === 'cart' || returnTo === 'cart-checkout') router.replace('/(tabs)/cart');
         return true;
       };
       const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
@@ -79,6 +79,9 @@ export default function LoginScreen() {
   const navigateAfterLogin = () => {
     if (returnTo === 'checkout') {
       router.back();
+    } else if (returnTo === 'cart-checkout') {
+      // Signed in from the cart's checkout button: continue to checkout with the same cart.
+      router.replace('/checkout');
     } else if (returnTo === 'profile') {
       router.replace('/(tabs)/profile');
     } else if (returnTo === 'rewards') {

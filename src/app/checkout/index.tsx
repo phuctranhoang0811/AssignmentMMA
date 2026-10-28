@@ -105,7 +105,7 @@ const contactError = (field: ContactField, value: string) => {
 export default function CheckoutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { items, clearCart, promoCode, setPromoCode, fulfillmentType, setFulfillmentType, needCutlery } = useCart();
+  const { items, isLoaded: cartLoaded, clearCart, promoCode, setPromoCode, fulfillmentType, setFulfillmentType, needCutlery } = useCart();
   const { user } = useAuth();
 
   // Address & Notes
@@ -252,6 +252,12 @@ export default function CheckoutScreen() {
     earnedPoints: number;
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Opened with an empty cart (e.g. a direct link): send the user to the menu. Placing an order also
+  // empties the cart, so never redirect while submitting or once the confirmation is showing.
+  useEffect(() => {
+    if (cartLoaded && items.length === 0 && !isSubmitting && !orderConfirmed) router.replace('/(tabs)/menu');
+  }, [cartLoaded, items.length, isSubmitting, orderConfirmed, router]);
   const [shippingQuote, setShippingQuote] = useState<{ value: DeliveryQuote; signature: string } | null>(null);
   const [isQuoting, setIsQuoting] = useState(false);
   const [shippingError, setShippingError] = useState('');

@@ -348,6 +348,10 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
           <Text style={styles.emptyText}>{!owner ? 'Đăng nhập để xem đơn hàng của bạn' : tab === 'history' ? 'Chưa có đơn hàng hoàn thành hoặc đã hủy' : 'Không có đơn hàng đang xử lý'}</Text>
           <AppButton title={!owner ? 'Đăng nhập' : 'Đặt món ngay'} style={{ marginTop: 16, alignSelf: 'center', paddingHorizontal: 32 }}
             onPress={() => router.push(!owner ? '/auth/login' : '/(tabs)/menu')} />
+          {!owner && (
+            <AppButton title="Tra cứu đơn bằng SĐT và mã đơn" variant="ghost" style={{ marginTop: 8, alignSelf: 'center' }}
+              onPress={() => router.push('/order/lookup')} />
+          )}
         </View>
       ) : (
         <FlatList
