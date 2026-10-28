@@ -273,7 +273,7 @@ export default function AdminDashboardScreen() {
         </AppText>
 
         <View style={styles.modulesContainer}>
-          {/* Module 1: Quản trị Thực đơn & Tồn kho (Mục 4.1) */}
+          {/* CỘT 1: QUẢN TRỊ THỰC ĐƠN (Mục 4.1) */}
           <TouchableOpacity
             style={styles.moduleCard}
             activeOpacity={0.8}
@@ -288,11 +288,11 @@ export default function AdminDashboardScreen() {
                   Quản Trị Thực Đơn & Tồn Kho
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
-                  Bật/tắt In-Stock tức thì, cập nhật giá, thêm món & tùy chọn size/đế.
+                  CRUD món, cấu hình Size & Đế (Crust), bật/tắt In-Stock và giá bán.
                 </AppText>
                 <View style={[styles.moduleBadge, { backgroundColor: colors.primarySoft }]}>
                   <AppText variant="small" color={colors.primary}>
-                    Đặc tả Mục 4.1
+                    Cột 1: Thực đơn (Mục 4.1)
                   </AppText>
                 </View>
               </View>
@@ -300,87 +300,7 @@ export default function AdminDashboardScreen() {
             <ChevronRight size={22} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* Module 2: Giám sát Vận hành & Bếp (Mục 4.2) */}
-          <TouchableOpacity
-            style={styles.moduleCard}
-            activeOpacity={0.8}
-            onPress={() => router.push('/admin/orders')}
-          >
-            <View style={styles.moduleLeft}>
-              <View style={[styles.moduleIconBox, { backgroundColor: colors.warningSoft }]}>
-                <ChefHat size={24} color={colors.warning} />
-              </View>
-              <View style={styles.moduleTextBox}>
-                <AppText variant="cardTitle" color={colors.textPrimary}>
-                  Giám Sát Vận Hành & Live Orders
-                </AppText>
-                <AppText variant="caption" color={colors.textSecondary}>
-                  Theo dõi đơn hàng thời gian thực, can thiệp hủy/hoàn tiền và phân chia bếp.
-                </AppText>
-                <View style={[styles.moduleBadge, { backgroundColor: colors.warningSoft }]}>
-                  <AppText variant="small" color={colors.warning}>
-                    Đặc tả Mục 4.2
-                  </AppText>
-                </View>
-              </View>
-            </View>
-            <ChevronRight size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
-
-          {/* Module 3: Marketing & FPT Reward (Mục 4.3) */}
-          <TouchableOpacity
-            style={styles.moduleCard}
-            activeOpacity={0.8}
-            onPress={() => router.push('/admin/promotions')}
-          >
-            <View style={styles.moduleLeft}>
-              <View style={[styles.moduleIconBox, { backgroundColor: colors.successSoft }]}>
-                <Ticket size={24} color={colors.success} />
-              </View>
-              <View style={styles.moduleTextBox}>
-                <AppText variant="cardTitle" color={colors.textPrimary}>
-                  Khuyến Mãi & FPT Reward
-                </AppText>
-                <AppText variant="caption" color={colors.textSecondary}>
-                  Phát hành mã giảm giá Voucher, cấu hình tỷ lệ tích điểm khách hàng.
-                </AppText>
-                <View style={[styles.moduleBadge, { backgroundColor: colors.successSoft }]}>
-                  <AppText variant="small" color={colors.success}>
-                    Đặc tả Mục 4.3
-                  </AppText>
-                </View>
-              </View>
-            </View>
-            <ChevronRight size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
-
-          {/* Module 4: Phân quyền & Nhân sự (Mục 4.4) */}
-          <TouchableOpacity
-            style={styles.moduleCard}
-            activeOpacity={0.8}
-            onPress={() => router.push('/admin/users')}
-          >
-            <View style={styles.moduleLeft}>
-              <View style={[styles.moduleIconBox, { backgroundColor: colors.surfaceAlt }]}>
-                <Users size={24} color={colors.textPrimary} />
-              </View>
-              <View style={styles.moduleTextBox}>
-                <AppText variant="cardTitle" color={colors.textPrimary}>
-                  Người Dùng & Phân Quyền RBAC
-                </AppText>
-                <AppText variant="caption" color={colors.textSecondary}>
-                  Danh sách tài khoản, cấp vai trò Kitchen, Shipper, Thu ngân & Quản lý.
-                </AppText>
-                <View style={[styles.moduleBadge, { backgroundColor: colors.surfaceAlt }]}>
-                  <AppText variant="small" color={colors.textSecondary}>
-                    Đặc tả Mục 4.4
-                  </AppText>
-                </View>
-              </View>
-            </View>
-            <ChevronRight size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
-          {/* Module 5: Giám sát Đơn hàng & Override/Hoàn tiền (Mục 4.2) */}
+          {/* CỘT 2: GIÁM SÁT VẬN HÀNH (Mục 4.2) */}
           <TouchableOpacity
             style={styles.moduleCard}
             activeOpacity={0.8}
@@ -392,14 +312,14 @@ export default function AdminDashboardScreen() {
               </View>
               <View style={styles.moduleTextBox}>
                 <AppText variant="cardTitle" color={colors.textPrimary}>
-                  Giám Sát Đơn Hàng (Live Orders)
+                  Giám Sát Vận Hành (Live Orders)
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
-                  Override huỷ đơn, xử lý Khiếu nại & Hoàn tiền theo thời gian thực.
+                  Theo dõi đơn thời gian thực, can thiệp hủy (Override) và hoàn tiền.
                 </AppText>
                 <View style={[styles.moduleBadge, { backgroundColor: colors.warningSoft }]}>
                   <AppText variant="small" color={colors.warning}>
-                    Đặc tả Mục 4.2
+                    Cột 2: Vận hành (Mục 4.2)
                   </AppText>
                 </View>
               </View>
@@ -407,7 +327,88 @@ export default function AdminDashboardScreen() {
             <ChevronRight size={22} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* Module 6: Phân tích Doanh thu & BI/Report (Mục 4.5) */}
+          {/* MÀN HÌNH BẾP LIÊN KẾT (Kitchen Demo) */}
+          <TouchableOpacity
+            style={styles.moduleCard}
+            activeOpacity={0.8}
+            onPress={() => router.push('/demo/staff-orders')}
+          >
+            <View style={styles.moduleLeft}>
+              <View style={[styles.moduleIconBox, { backgroundColor: '#F3E8FF' }]}>
+                <ChefHat size={24} color="#7C3AED" />
+              </View>
+              <View style={styles.moduleTextBox}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Vận Hành Bếp & Giao Nhận (Staff)
+                </AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Màn hình dành cho đầu bếp nhận đơn, làm món và bàn giao shipper.
+                </AppText>
+                <View style={[styles.moduleBadge, { backgroundColor: '#F3E8FF' }]}>
+                  <AppText variant="small" color="#7C3AED">
+                    Vận hành Bếp & Shipper
+                  </AppText>
+                </View>
+              </View>
+            </View>
+            <ChevronRight size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {/* CỘT 3.1: QUẢN LÝ VOUCHER & FPT REWARD (Mục 4.3) */}
+          <TouchableOpacity
+            style={styles.moduleCard}
+            activeOpacity={0.8}
+            onPress={() => router.push('/admin/promotions')}
+          >
+            <View style={styles.moduleLeft}>
+              <View style={[styles.moduleIconBox, { backgroundColor: colors.successSoft }]}>
+                <Ticket size={24} color={colors.success} />
+              </View>
+              <View style={styles.moduleTextBox}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Quản Lý Voucher & FPT Reward
+                </AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Phát hành coupon giảm giá và cấu hình 4 hạng thành viên loyalty.
+                </AppText>
+                <View style={[styles.moduleBadge, { backgroundColor: colors.successSoft }]}>
+                  <AppText variant="small" color={colors.success}>
+                    Cột 3: Marketing (Mục 4.3)
+                  </AppText>
+                </View>
+              </View>
+            </View>
+            <ChevronRight size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {/* CỘT 3.2: QUẢN LÝ USER & PHÂN QUYỀN (Mục 4.4) */}
+          <TouchableOpacity
+            style={styles.moduleCard}
+            activeOpacity={0.8}
+            onPress={() => router.push('/admin/users')}
+          >
+            <View style={styles.moduleLeft}>
+              <View style={[styles.moduleIconBox, { backgroundColor: colors.surfaceAlt }]}>
+                <Users size={24} color={colors.textPrimary} />
+              </View>
+              <View style={styles.moduleTextBox}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Quản Lý User & Phân Quyền (RBAC)
+                </AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Cấp quyền Quản lý, Bếp, Shipper, Thu ngân & chặn (Blacklist).
+                </AppText>
+                <View style={[styles.moduleBadge, { backgroundColor: colors.surfaceAlt }]}>
+                  <AppText variant="small" color={colors.textSecondary}>
+                    Cột 3: Nhân sự (Mục 4.4)
+                  </AppText>
+                </View>
+              </View>
+            </View>
+            <ChevronRight size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {/* CỘT 3.3: PHÂN TÍCH DOANH THU & BI/REPORT (Mục 4.5) */}
           <TouchableOpacity
             style={styles.moduleCard}
             activeOpacity={0.8}
@@ -426,14 +427,13 @@ export default function AdminDashboardScreen() {
                 </AppText>
                 <View style={[styles.moduleBadge, { backgroundColor: colors.successSoft }]}>
                   <AppText variant="small" color={colors.success}>
-                    Đặc tả Mục 4.5
+                    Cột 3: Báo cáo (Mục 4.5)
                   </AppText>
                 </View>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
+          </TouchableOpacity></View>
       </ScrollView>
     </SafeAreaView>
   );
