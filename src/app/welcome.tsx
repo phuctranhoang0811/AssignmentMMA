@@ -18,7 +18,17 @@ export default function WelcomeScreen() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      router.replace('/(tabs)/home');
+      const isStaff =
+        user.role === 'EMPLOYEE' ||
+        user.role === 'STORE_MANAGER' ||
+        user.role === 'SUPER_ADMIN' ||
+        user.role === 'ADMIN';
+
+      if (isStaff) {
+        router.replace('/staff/orders');
+      } else {
+        router.replace('/(tabs)/home');
+      }
     }
   }, [user, isLoading, router]);
 

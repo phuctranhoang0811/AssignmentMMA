@@ -188,13 +188,13 @@ export default function ProfileScreen() {
                   <TouchableOpacity
                     style={styles.menuRow}
                     activeOpacity={0.7}
-                    onPress={() => router.push('/demo/staff-orders')}
+                    onPress={() => router.push('/staff/orders')}
                   >
                     <View style={styles.menuIconCol}>
                       <Sparkles size={22} color="#CF4226" strokeWidth={1.8} />
                     </View>
                     <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
-                      Quản lý đơn bếp (Staff Demo)
+                      Quản lý đơn hàng (Khu Vực Nhân Viên)
                     </Text>
                   </TouchableOpacity>
                   <View style={styles.divider} />
