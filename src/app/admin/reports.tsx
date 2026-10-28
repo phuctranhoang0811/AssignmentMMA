@@ -231,7 +231,7 @@ export default function AdminReportsScreen() {
               <TrendingUp size={18} color={colors.success} />
             </View>
             <AppText variant="small" color={colors.textSecondary}>Doanh thu</AppText>
-            <AppText variant="price" color={colors.success}>{formatCurrency(data.totalRevenue)}</AppText>
+            <AppText variant="price" color={colors.success} numberOfLines={1}>{formatCurrency(data.totalRevenue)}</AppText>
           </View>
 
           <View style={styles.summaryCard}>
@@ -239,7 +239,7 @@ export default function AdminReportsScreen() {
               <ShoppingBag size={18} color={colors.primary} />
             </View>
             <AppText variant="small" color={colors.textSecondary}>Tổng đơn</AppText>
-            <AppText variant="price" color={colors.primary}>{data.totalOrders} đơn</AppText>
+            <AppText variant="price" color={colors.primary} numberOfLines={1}>{data.totalOrders} đơn</AppText>
           </View>
 
           <View style={styles.summaryCard}>
@@ -247,7 +247,7 @@ export default function AdminReportsScreen() {
               <BarChart2 size={18} color={colors.warning} />
             </View>
             <AppText variant="small" color={colors.textSecondary}>Giá trị TB (AOV)</AppText>
-            <AppText variant="price" color={colors.warning}>{formatCurrency(data.avgOrderValue)}</AppText>
+            <AppText variant="price" color={colors.warning} numberOfLines={1}>{formatCurrency(data.avgOrderValue)}</AppText>
           </View>
 
           <View style={styles.summaryCard}>
@@ -255,7 +255,7 @@ export default function AdminReportsScreen() {
               <XCircle size={18} color={colors.error} />
             </View>
             <AppText variant="small" color={colors.textSecondary}>Tỷ lệ hủy đơn</AppText>
-            <AppText variant="price" color={colors.error}>{data.cancelRate}%</AppText>
+            <AppText variant="price" color={colors.error} numberOfLines={1}>{data.cancelRate}%</AppText>
           </View>
         </View>
 

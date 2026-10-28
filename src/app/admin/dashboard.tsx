@@ -199,7 +199,7 @@ export default function AdminDashboardScreen() {
                 <TrendingUp size={20} color={colors.success} />
               </View>
             </View>
-            <AppText variant="price" color={colors.success} style={styles.statValue}>
+            <AppText variant="price" color={colors.success} style={styles.statValue} numberOfLines={1}>
               {formatCurrency(stats.totalRevenue || 1250000)}
             </AppText>
             <AppText variant="small" color={colors.textSecondary}>
@@ -217,7 +217,7 @@ export default function AdminDashboardScreen() {
                 <Clock size={20} color={colors.warning} />
               </View>
             </View>
-            <AppText variant="price" color={colors.warning} style={styles.statValue}>
+            <AppText variant="price" color={colors.warning} style={styles.statValue} numberOfLines={1}>
               {stats.pendingOrdersCount} đơn
             </AppText>
             <AppText variant="small" color={colors.textSecondary}>
@@ -235,7 +235,7 @@ export default function AdminDashboardScreen() {
                 <PackageCheck size={20} color={colors.primary} />
               </View>
             </View>
-            <AppText variant="price" color={colors.primary} style={styles.statValue}>
+            <AppText variant="price" color={colors.primary} style={styles.statValue} numberOfLines={1}>
               {stats.activeProductsCount || mockProducts.length} món
             </AppText>
             <AppText variant="small" color={colors.textSecondary}>
@@ -253,7 +253,7 @@ export default function AdminDashboardScreen() {
                 <CheckCircle size={20} color={colors.textSecondary} />
               </View>
             </View>
-            <AppText variant="price" color={colors.textPrimary} style={styles.statValue}>
+            <AppText variant="price" color={colors.textPrimary} style={styles.statValue} numberOfLines={1}>
               {stats.completedOrdersCount} đơn
             </AppText>
             <AppText variant="small" color={colors.textSecondary}>

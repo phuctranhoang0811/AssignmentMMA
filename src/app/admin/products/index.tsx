@@ -20,6 +20,7 @@ import {
   X,
   Package,
   Trash2,
+  ChevronRight,
 } from 'lucide-react-native';
 import {
   collection,
@@ -305,13 +306,9 @@ export default function AdminProductsScreen() {
         </ScrollView>
       </View>
 
-      {/* Products List */}
       {loading ? (
         <View style={styles.emptyContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <AppText variant="caption" color={colors.textSecondary}>
-            Đang tải danh mục thực đơn...
-          </AppText>
         </View>
       ) : (
         <FlatList
@@ -329,11 +326,14 @@ export default function AdminProductsScreen() {
           }
           renderItem={({ item }) => {
             const isStock = item.isAvailable !== false;
-
             return (
               <View style={styles.productCard}>
-                {/* Product Info Row */}
-                <View style={styles.cardMainRow}>
+                {/* Clickable top row → navigates to /admin/products/[id] */}
+                <TouchableOpacity
+                  style={styles.cardMainRow}
+                  activeOpacity={0.7}
+                  onPress={() => router.push(`/admin/products/${item.id}`)}
+                >
                   <Image
                     source={{ uri: item.image }}
                     style={styles.productImage}
@@ -351,7 +351,8 @@ export default function AdminProductsScreen() {
                       {formatCurrency(item.basePrice)}
                     </AppText>
                   </View>
-                </View>
+                  <ChevronRight size={18} color={colors.textDisabled} />
+                </TouchableOpacity>
 
                 {/* Stock Control Row - Mục 4.1 In-Stock Toggle */}
                 <View style={styles.stockControlRow}>
@@ -370,12 +371,12 @@ export default function AdminProductsScreen() {
                       variant="captionMedium"
                       color={isStock ? colors.success : colors.error}
                     >
-                      {isStock ? 'Đang bán (In-Stock)' : 'Tạm hết món (Out-of-Stock)'}
+                      {isStock ? 'Đang bán' : 'Hết món'}
                     </AppText>
                   </View>
 
                   <View style={styles.actionBtnsRow}>
-                    {/* Nút sửa */}
+                    {/* Nút sửa nhanh */}
                     <TouchableOpacity
                       style={styles.editBtn}
                       activeOpacity={0.7}
