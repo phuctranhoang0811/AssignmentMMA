@@ -275,7 +275,7 @@ export default function AdminProductsScreen() {
       </View>
 
       {/* Category Pills Filter */}
-      <View>
+      <View style={{ height: 56, justifyContent: 'center', backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border }}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}

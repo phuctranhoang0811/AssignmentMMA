@@ -11,6 +11,8 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    height: 56,
+    justifyContent: 'center',
   },
   filterRow: {
     flexDirection: 'row',
