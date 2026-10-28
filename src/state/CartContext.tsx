@@ -33,7 +33,30 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const stored = await AsyncStorage.getItem(CART_STORAGE_KEY);
         if (stored) {
-          setItems(JSON.parse(stored));
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            setItems(
+              parsed
+                .filter((item: any) => item && (item.productId || item.id))
+                .map((item: any) => {
+                  const pid = item.productId || item.id;
+                  const addons = Array.isArray(item.addonIds) ? item.addonIds : [];
+                  const lid =
+                    item.lineId && !item.lineId.startsWith('undefined')
+                      ? item.lineId
+                      : generateCartLineKey(pid, item.variantId, addons, item.specialInstructions, item.customization);
+                  return {
+                    productId: pid,
+                    variantId: item.variantId,
+                    addonIds: addons,
+                    specialInstructions: item.specialInstructions,
+                    quantity: Number(item.quantity) || 1,
+                    customization: item.customization,
+                    lineId: lid,
+                  };
+                })
+            );
+          }
         }
       } catch {
         // Fallback
@@ -49,23 +72,40 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [items, isLoaded]);
 
-  const addItem = (item: Omit<CartItem, 'lineId'>) => {
+  const addItem = (item: any) => {
+    const productId = item.productId || item.id;
+    if (!productId) return;
+    const qty = Number(item.quantity) || 1;
+    const addonIds = Array.isArray(item.addonIds) ? item.addonIds : [];
     const lineId = generateCartLineKey(
-      item.productId,
+      productId,
       item.variantId,
-      item.addonIds,
-      item.specialInstructions
+      addonIds,
+      item.specialInstructions,
+      item.customization
     );
 
     setItems((prev) => {
       const existingIndex = prev.findIndex((i) => i.lineId === lineId);
       if (existingIndex > -1) {
         const updated = [...prev];
-        const newQty = Math.min(20, updated[existingIndex].quantity + item.quantity);
+        const currentQty = Number(updated[existingIndex].quantity) || 1;
+        const newQty = Math.min(20, currentQty + qty);
         updated[existingIndex] = { ...updated[existingIndex], quantity: newQty };
         return updated;
       }
-      return [...prev, { ...item, lineId }];
+      return [
+        ...prev,
+        {
+          productId,
+          variantId: item.variantId,
+          addonIds,
+          specialInstructions: item.specialInstructions,
+          quantity: qty,
+          customization: item.customization,
+          lineId,
+        },
+      ];
     });
   };
 
@@ -89,14 +129,15 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const itemCount = useMemo(() => {
-    return items.reduce((acc, i) => acc + i.quantity, 0);
+    return items.reduce((acc, i) => acc + (Number(i.quantity) || 1), 0);
   }, [items]);
 
   const subtotal = useMemo(() => {
     return items.reduce((acc, item) => {
       const product = productsMap[item.productId];
-      const unitPrice = getItemLineUnitPrice(item, product);
-      return acc + unitPrice * item.quantity;
+      const unitPrice = getItemLineUnitPrice(item, product) || 0;
+      const qty = Number(item.quantity) || 1;
+      return acc + unitPrice * qty;
     }, 0);
   }, [items]);
 

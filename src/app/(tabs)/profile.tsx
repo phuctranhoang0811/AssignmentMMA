@@ -22,7 +22,10 @@ import {
   LogOut,
   X,
   Sparkles,
+<<<<<<< HEAD
   ShieldCheck,
+=======
+>>>>>>> feature/firebase-auth-database
 } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 import { styles } from '../../styles/profile.styles';
@@ -159,6 +162,7 @@ export default function ProfileScreen() {
 
             {/* Menu Group 1 */}
             <View style={styles.cardGroup}>
+<<<<<<< HEAD
               {/* Bảng điều khiển Quản trị viên (Admin Portal) */}
               {(user?.role === 'SUPER_ADMIN' ||
                 user?.role === 'ADMIN' ||
@@ -180,6 +184,8 @@ export default function ProfileScreen() {
                 </>
               )}
 
+=======
+>>>>>>> feature/firebase-auth-database
               {/* Quản lý đơn bếp (dành riêng cho Admin / Employee) */}
               {(user?.role === 'EMPLOYEE' ||
                 user?.role === 'SUPER_ADMIN' ||

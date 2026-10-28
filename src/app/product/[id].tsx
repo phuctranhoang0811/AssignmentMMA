@@ -1,27 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  ScrollView,
-  Image,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
+import { View, ScrollView, Image, TouchableOpacity, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Heart, CheckCircle2 } from 'lucide-react-native';
+import { ArrowLeft, Heart } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
 import { AppText } from '../../components/ui/AppText';
 import { AppInput } from '../../components/ui/AppInput';
 import { QuantityStepper } from '../../components/ui/QuantityStepper';
 import { BottomActionBar } from '../../components/ui/BottomActionBar';
 import { VariantSelector } from '../../components/product/VariantSelector';
 import { AddonSelector } from '../../components/product/AddonSelector';
+import { PizzaCustomizer } from '../../components/product/pizza/PizzaCustomizer';
 import { productService } from '../../services';
 import { Product, ProductVariant } from '../../types/product';
+import {
+  PizzaCustomizationState,
+  calculateCustomizationExtra,
+  PizzaSizeId,
+} from '../../types/pizzaCustomization';
 import { useCart } from '../../state/CartContext';
+import { useAuth } from '../../state/AuthContext';
 import { useFavorites } from '../../state/FavoritesContext';
+import { useToast } from '../../state/ToastContext';
+import { triggerHaptic } from '../../utils/haptics';
+import { styles } from '../../styles/productDetail.styles';
+import { hasPromptedMemberDiscount } from '../../utils/sessionFlags';
 
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -30,10 +33,25 @@ export default function ProductDetailScreen() {
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [quantity, setQuantity] = useState(1);
-  const [showAddedToast, setShowAddedToast] = useState(false);
+
+  // Pizza Customization State
+  const [pizzaCustomization, setPizzaCustomization] = useState<PizzaCustomizationState>({
+    sizeId: 'small',
+    crustId: 'classic-hand-tossed',
+    sauceId: 'classic-tomato',
+    hasExtraSauce: false,
+    toppings: [],
+    spiceLevel: 'none',
+    bakingPreference: 'standard',
+    cutPreference: '6-slices',
+    removedIngredients: [],
+    specialInstructions: '',
+  });
 
   const { addItem } = useCart();
+  const { isAuthenticated } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (id) {
@@ -42,6 +60,25 @@ export default function ProductDetailScreen() {
         if (p?.variants && p.variants.length > 0) {
           // Pre-select first variant as default
           setSelectedVariant(p.variants[0]);
+        }
+
+        // Set initial default sauce based on pizza recipe if applicable
+        if (p?.categoryId === 'pizza') {
+          let defaultSauceId = 'classic-tomato';
+          const lowerName = p.name.toLowerCase();
+          if (lowerName.includes('bbq')) {
+            defaultSauceId = 'smoky-bbq';
+          } else if (lowerName.includes('carbonara') || lowerName.includes('white') || lowerName.includes('hải sản')) {
+            defaultSauceId = 'creamy-white';
+          } else if (lowerName.includes('pesto')) {
+            defaultSauceId = 'basil-pesto';
+          }
+
+          setPizzaCustomization((prev) => ({
+            ...prev,
+            sauceId: defaultSauceId,
+            sizeId: (p.variants?.[0]?.id as PizzaSizeId) || 'small',
+          }));
         }
       });
     }
@@ -60,6 +97,7 @@ export default function ProductDetailScreen() {
   }
 
   const favorited = isFavorite(product.id);
+  const isPizza = product.categoryId === 'pizza';
 
   const handleToggleAddon = (addonId: string) => {
     setSelectedAddonIds((prev) =>
@@ -67,35 +105,72 @@ export default function ProductDetailScreen() {
     );
   };
 
-  // Calculate unit price = (variantPrice || basePrice) + addons
+  // Calculate unit price:
+  // For Pizza: variantPrice + customizationExtra
+  // For other items: (variantPrice || basePrice) + addonsTotal
   const baseOrVariantPrice = selectedVariant ? selectedVariant.price : product.basePrice;
   const addonsTotal = selectedAddonIds.reduce((sum, aId) => {
     const addon = product.addons.find((a) => a.id === aId);
     return sum + (addon ? addon.price : 0);
   }, 0);
-  const unitPrice = baseOrVariantPrice + addonsTotal;
+
+  const unitPrice = isPizza
+    ? baseOrVariantPrice + calculateCustomizationExtra(pizzaCustomization)
+    : baseOrVariantPrice + addonsTotal;
+
   const totalPrice = unitPrice * quantity;
 
   const handleAddToCart = () => {
     if (!product.isAvailable) return;
 
     if (product.variants && product.variants.length > 0 && !selectedVariant) {
+      triggerHaptic('warning');
       Alert.alert('Vui lòng chọn kích cỡ', 'Bạn cần chọn kích cỡ trước khi thêm vào giỏ hàng.');
       return;
     }
 
-    addItem({
-      productId: product.id,
-      variantId: selectedVariant?.id,
-      addonIds: selectedAddonIds,
-      specialInstructions: specialInstructions.trim() || undefined,
-      quantity,
+    if (isPizza) {
+      addItem({
+        productId: product.id,
+        variantId: selectedVariant?.id,
+        addonIds: [],
+        specialInstructions: pizzaCustomization.specialInstructions?.trim() || undefined,
+        quantity,
+        customization: pizzaCustomization,
+      });
+    } else {
+      addItem({
+        productId: product.id,
+        variantId: selectedVariant?.id,
+        addonIds: selectedAddonIds,
+        specialInstructions: specialInstructions.trim() || undefined,
+        quantity,
+      });
+    }
+
+    triggerHaptic('success');
+    showToast({
+      message: `Đã thêm ${quantity}x ${product.name} vào giỏ hàng`,
     });
 
-    setShowAddedToast(true);
-    setTimeout(() => {
-      setShowAddedToast(false);
-    }, 2800);
+    // 2. Kiểm tra nếu thuộc 3 danh mục ưu đãi mà chưa đăng nhập và chưa hỏi phiên này
+    const isMemberDiscount =
+      product.categoryId === 'cheese_party' ||
+      product.categoryId === 'member_deals' ||
+      product.categoryId === 'hot_deals';
+
+    const shouldPrompt = !isAuthenticated && isMemberDiscount && !hasPromptedMemberDiscount();
+
+    // 3. Văng ra trang menu (kèm cờ prompt nếu cần hỏi trên menu)
+    router.replace({
+      pathname: '/(tabs)/menu',
+      params: shouldPrompt ? { promptMemberDiscount: '1' } : undefined,
+    });
+  };
+
+  const handleToggleFavorite = () => {
+    triggerHaptic('medium');
+    toggleFavorite(product.id);
   };
 
   return (
@@ -117,7 +192,7 @@ export default function ProductDetailScreen() {
 
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={() => toggleFavorite(product.id)}
+              onPress={handleToggleFavorite}
               style={styles.circleButton}
             >
               <Heart
@@ -142,7 +217,7 @@ export default function ProductDetailScreen() {
           {product.ingredients && product.ingredients.length > 0 && (
             <View style={styles.ingredientsBox}>
               <AppText variant="captionMedium" color={colors.textSecondary}>
-                Thành phần chính:
+                Thành phần công thức chuẩn:
               </AppText>
               <AppText variant="caption" color={colors.textPrimary} style={styles.ingredientsText}>
                 {product.ingredients.join(' • ')}
@@ -150,42 +225,56 @@ export default function ProductDetailScreen() {
             </View>
           )}
 
-          {/* Size Variant Selector */}
-          {product.variants && product.variants.length > 0 && (
-            <VariantSelector
+          {/* PIZZA CUSTOMIZATION (5 GROUPS) FOR PIZZA ITEMS */}
+          {isPizza && product.variants && product.variants.length > 0 ? (
+            <PizzaCustomizer
               variants={product.variants}
-              selectedId={selectedVariant?.id}
-              onSelect={setSelectedVariant}
+              selectedVariant={selectedVariant}
+              onSelectVariant={setSelectedVariant}
+              customization={pizzaCustomization}
+              onChangeCustomization={setPizzaCustomization}
+              ingredients={product.ingredients}
             />
-          )}
+          ) : (
+            <>
+              {/* Standard Size Variant Selector for other items */}
+              {product.variants && product.variants.length > 0 && (
+                <VariantSelector
+                  variants={product.variants}
+                  selectedId={selectedVariant?.id}
+                  onSelect={setSelectedVariant}
+                />
+              )}
 
-          {/* Add-ons Selector */}
-          {product.addons && product.addons.length > 0 && (
-            <AddonSelector
-              addons={product.addons}
-              selectedIds={selectedAddonIds}
-              onToggle={handleToggleAddon}
-            />
-          )}
+              {/* Standard Add-ons Selector */}
+              {product.addons && product.addons.length > 0 && (
+                <AddonSelector
+                  addons={product.addons}
+                  selectedIds={selectedAddonIds}
+                  onToggle={handleToggleAddon}
+                />
+              )}
 
-          {/* Special Instructions Note */}
-          <View style={styles.noteContainer}>
-            <AppText variant="h3" style={styles.noteTitle}>
-              Ghi chú cho bếp
-            </AppText>
-            <AppInput
-              placeholder="Ví dụ: Ít cay, không lấy hành tây, tương ớt riêng..."
-              value={specialInstructions}
-              onChangeText={(text) => {
-                if (text.length <= 200) {
-                  setSpecialInstructions(text);
-                }
-              }}
-              multiline
-              numberOfLines={2}
-              helperText={`${specialInstructions.length}/200 ký tự`}
-            />
-          </View>
+              {/* Standard Special Instructions Note */}
+              <View style={styles.noteContainer}>
+                <AppText variant="h3" style={styles.noteTitle}>
+                  Ghi chú cho bếp
+                </AppText>
+                <AppInput
+                  placeholder="Ví dụ: Ít đá, không đường, tương ớt riêng..."
+                  value={specialInstructions}
+                  onChangeText={(text) => {
+                    if (text.length <= 150) {
+                      setSpecialInstructions(text);
+                    }
+                  }}
+                  multiline
+                  numberOfLines={2}
+                  helperText={`${specialInstructions.length}/150 ký tự`}
+                />
+              </View>
+            </>
+          )}
 
           {/* Quantity Stepper */}
           <View style={styles.quantityRow}>
@@ -200,26 +289,6 @@ export default function ProductDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Added Toast Feedback */}
-      {showAddedToast && (
-        <View style={styles.toast}>
-          <CheckCircle2 size={18} color={colors.white} />
-          <AppText variant="captionMedium" color={colors.white} style={styles.toastText}>
-            Đã thêm vào giỏ hàng
-          </AppText>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/cart')}>
-            <AppText
-              variant="captionMedium"
-              color={colors.white}
-              style={{ textDecorationLine: 'underline', marginLeft: spacing.sm }}
-            >
-              Xem giỏ
-            </AppText>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Sticky Bottom Action Bar */}
       <BottomActionBar
         title="Thêm vào giỏ"
         price={totalPrice}
@@ -230,115 +299,3 @@ export default function ProductDetailScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollContent: {
-    paddingBottom: spacing['4xl'],
-  },
-  imageContainer: {
-    width: '100%',
-    height: 300,
-    backgroundColor: colors.surfaceAlt,
-    position: 'relative',
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-  floatingNav: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  circleButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  bodyContent: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.sheet,
-    borderTopRightRadius: radius.sheet,
-    marginTop: -20,
-  },
-  title: {
-    marginBottom: spacing.xs,
-  },
-  description: {
-    marginBottom: spacing.md,
-    lineHeight: 22,
-  },
-  ingredientsBox: {
-    backgroundColor: colors.surfaceAlt,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    marginBottom: spacing.md,
-  },
-  ingredientsText: {
-    marginTop: 2,
-  },
-  noteContainer: {
-    marginTop: spacing.md,
-  },
-  noteTitle: {
-    marginBottom: spacing.xs,
-  },
-  quantityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.base,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.border,
-    marginTop: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  toast: {
-    position: 'absolute',
-    bottom: 95,
-    alignSelf: 'center',
-    backgroundColor: colors.success,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  toastText: {
-    marginLeft: spacing.xs,
-  },
-});

@@ -1,4 +1,14 @@
-export type CategoryId = 'all' | 'pizza' | 'pasta' | 'sushi' | 'drinks' | 'offers';
+export type CategoryId =
+  | 'all'
+  | 'cheese_party'
+  | 'member_deals'
+  | 'hot_deals'
+  | 'pizza'
+  | 'starters'
+  | 'drinks'
+  | 'pasta'
+  | 'sushi'
+  | 'offers';
 
 export type ProductVariant = {
   id: string;
@@ -19,6 +29,10 @@ export type Product = {
   description: string;
   image: string;
   basePrice: number;
+  originalPrice?: number;
+  memberDiscountTag?: string;
+  isNew?: boolean;
+  isSpicy?: boolean;
   variants: ProductVariant[];
   addons: ProductAddon[];
   isAvailable: boolean;

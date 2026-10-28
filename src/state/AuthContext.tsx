@@ -3,15 +3,27 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DemoUser } from '../types/user';
 import { authService } from '../services';
 import { demoUser } from '../data/mockUsers';
+import { auth, db } from '../services/firebase';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updatePassword } from 'firebase/auth';
+import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { clearCustomerInfo } from '../services/addressStorage';
 
 interface AuthContextType {
   user: DemoUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  loginDemo: (email?: string) => Promise<void>;
-  registerDemo: (name: string, email: string, phone: string) => Promise<void>;
+  loginDemo: (email?: string, password?: string) => Promise<void>;
+  registerDemo: (
+    name: string,
+    email: string,
+    phone: string,
+    password?: string,
+    extra?: { gender?: string; birthday?: string }
+  ) => Promise<void>;
+  resetPassword: (email: string, newPassword: string) => Promise<void>;
+  changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
-  updateProfile: (name: string, phone: string) => Promise<void>;
+  updateProfile: (name: string, phone: string, birthday?: string, gender?: string, email?: string) => Promise<void>;
 }
 
 const AUTH_STORAGE_KEY = '@pizza_time_auth_v1';
@@ -27,24 +39,135 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
         if (stored) {
-          setUser(JSON.parse(stored));
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.isLoggedOut) {
+            setUser(null);
+          } else {
+            setUser(parsed);
+          }
         } else {
-          // Pre-populate with default demo user for frictionless testing if preferred
+          // Start as demoUser or null if guest
           setUser(demoUser);
           await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(demoUser));
         }
       } catch {
-        // Fallback
+        setUser(null);
       } finally {
         setIsLoading(false);
       }
     })();
   }, []);
 
-  const loginDemo = async (email: string = 'demo@pizzatime.local') => {
+  const loginDemo = async (identifier: string = 'demo@pizzatime.local', password?: string) => {
     setIsLoading(true);
     try {
-      const u = await authService.login(email);
+      const trimmed = identifier.trim();
+      let targetEmail = trimmed.toLowerCase();
+
+      // Nếu người dùng nhập Số điện thoại (chỉ chứa số hoặc không chứa ký tự '@')
+      if (!trimmed.includes('@')) {
+        try {
+          const cleanPhone = trimmed.replace(/[\s.-]/g, '');
+          const q = query(collection(db, 'users'), where('phone', '==', cleanPhone));
+          const querySnap = await getDocs(q);
+
+          if (!querySnap.empty) {
+            const matchedData = querySnap.docs[0].data();
+            if (matchedData.email) {
+              targetEmail = matchedData.email.toLowerCase();
+            }
+          } else {
+            // Thử truy vấn phone theo dạng chuỗi gốc
+            const qRaw = query(collection(db, 'users'), where('phone', '==', trimmed));
+            const querySnapRaw = await getDocs(qRaw);
+            if (!querySnapRaw.empty) {
+              const matchedData = querySnapRaw.docs[0].data();
+              if (matchedData.email) {
+                targetEmail = matchedData.email.toLowerCase();
+              }
+            } else {
+              throw new Error('Số điện thoại này chưa được đăng ký tài khoản.');
+            }
+          }
+        } catch (e: any) {
+          if (e.message && e.message.includes('chưa được đăng ký')) {
+            throw e;
+          }
+          console.warn('Tra cứu số điện thoại thất bại:', e.message);
+        }
+      }
+
+      if (password) {
+        // 1. Kiểm tra trong Firestore xem tài khoản đã cập nhật mật khẩu mới chưa
+        try {
+          const q = query(collection(db, 'users'), where('email', '==', targetEmail));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            const userDoc = snap.docs[0];
+            const userData = userDoc.data();
+
+            if (userData.password) {
+              if (userData.password !== password) {
+                throw new Error('Mật khẩu không chính xác.');
+              }
+
+              // Mật khẩu khớp chính xác với mật khẩu mới trong Database!
+              const u: DemoUser = {
+                id: userDoc.id,
+                fullname: userData.fullName || 'Khách hàng',
+                email: userData.email || targetEmail,
+                phone: userData.phone || (trimmed.includes('@') ? '' : trimmed),
+                gender: userData.gender,
+                birthday: userData.birthday,
+                role: userData.role || 'USER',
+                rewardPoints: userData.rewardPoints || 0,
+                isDemo: false,
+              };
+
+              setUser(u);
+              await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
+              return;
+            }
+          }
+        } catch (dbErr: any) {
+          if (dbErr.message === 'Mật khẩu không chính xác.') {
+            throw dbErr;
+          }
+          console.warn('Lỗi kiểm tra mật khẩu Firestore:', dbErr.message);
+        }
+
+        // 2. Fallback kiểm tra qua Firebase Auth (cho tài khoản chưa có trường password trong Firestore)
+        try {
+          const res = await signInWithEmailAndPassword(auth, targetEmail, password);
+          const userDoc = await getDoc(doc(db, 'users', res.user.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            const u: DemoUser = {
+              id: res.user.uid,
+              fullname: data.fullName || 'Khách hàng',
+              email: data.email || targetEmail,
+              phone: data.phone || (trimmed.includes('@') ? '' : trimmed),
+              gender: data.gender,
+              birthday: data.birthday,
+              role: data.role || 'USER',
+              rewardPoints: data.rewardPoints || 0,
+              isDemo: false,
+            };
+            setUser(u);
+            await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
+            return;
+          }
+        } catch (e: any) {
+          if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
+            throw new Error('Mật khẩu không chính xác.');
+          } else if (e.code === 'auth/user-not-found') {
+            throw new Error('Tài khoản không tồn tại.');
+          }
+          throw new Error(e.message || 'Đăng nhập không thành công.');
+        }
+      }
+
+      const u = await authService.login(targetEmail);
       setUser(u);
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
     } finally {
@@ -52,25 +175,174 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const registerDemo = async (name: string, email: string, phone: string) => {
+  const registerDemo = async (
+    name: string,
+    email: string,
+    phone: string,
+    password: string = 'Password123!',
+    extra?: { gender?: string; birthday?: string }
+  ) => {
     setIsLoading(true);
     try {
-      const u = await authService.register(name, email, phone);
-      setUser(u);
-      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
+      const trimmedEmail = email.trim().toLowerCase();
+      let uid = `USR-${Date.now().toString().slice(-4)}`;
+
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
+        uid = userCredential.user.uid;
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/email-already-in-use') {
+          try {
+            const loginRes = await signInWithEmailAndPassword(auth, trimmedEmail, password);
+            uid = loginRes.user.uid;
+          } catch {
+            throw new Error('Email này đã được sử dụng. Vui lòng đăng nhập hoặc dùng email khác.');
+          }
+        } else {
+          throw new Error(authErr.message || 'Không thể tạo tài khoản trên Firebase.');
+        }
+      }
+
+      // Lưu hồ sơ người dùng vào Cloud Firestore collection 'users'
+      await setDoc(
+        doc(db, 'users', uid),
+        {
+          uid,
+          email: trimmedEmail,
+          fullName: name.trim(),
+          phone: phone.trim(),
+          gender: extra?.gender || 'Nam',
+          birthday: extra?.birthday || '01/01/2000',
+          role: 'USER',
+          rewardPoints: 100,
+          password: password,
+          createdAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      const newUser: DemoUser = {
+        id: uid,
+        fullname: name.trim(),
+        email: trimmedEmail,
+        phone: phone.trim(),
+        gender: extra?.gender || 'Nam',
+        birthday: extra?.birthday || '01/01/2000',
+        role: 'USER',
+        rewardPoints: 100,
+        isDemo: false,
+      };
+
+      setUser(newUser);
+      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newUser));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resetPassword = async (email: string, newPassword: string) => {
+    setIsLoading(true);
+    try {
+      const trimmedEmail = email.trim().toLowerCase();
+      const q = query(collection(db, 'users'), where('email', '==', trimmedEmail));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        throw new Error('Không tìm thấy tài khoản với email này trên hệ thống.');
+      }
+      const userDoc = snap.docs[0];
+      await updateDoc(doc(db, 'users', userDoc.id), {
+        password: newPassword,
+        updatedAt: serverTimestamp(),
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const changePassword = async (oldPassword: string, newPassword: string) => {
+    if (!user || !user.email) {
+      throw new Error('Vui lòng đăng nhập để thực hiện đổi mật khẩu.');
+    }
+    setIsLoading(true);
+    try {
+      const trimmedEmail = user.email.trim().toLowerCase();
+      const q = query(collection(db, 'users'), where('email', '==', trimmedEmail));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        throw new Error('Không tìm thấy thông tin tài khoản trên hệ thống.');
+      }
+      const userDoc = snap.docs[0];
+      const data = userDoc.data();
+
+      // Kiểm tra mật khẩu hiện tại
+      if (data.password && data.password !== oldPassword) {
+        throw new Error('Mật khẩu hiện tại không chính xác.');
+      }
+
+      if (!data.password) {
+        try {
+          await signInWithEmailAndPassword(auth, trimmedEmail, oldPassword);
+        } catch {
+          throw new Error('Mật khẩu hiện tại không chính xác.');
+        }
+      }
+
+      // Cập nhật mật khẩu mới lên Firestore
+      await updateDoc(doc(db, 'users', userDoc.id), {
+        password: newPassword,
+        updatedAt: serverTimestamp(),
+      });
+
+      // Cập nhật Firebase Auth nếu session đang tồn tại
+      if (auth.currentUser) {
+        try {
+          await updatePassword(auth.currentUser, newPassword);
+        } catch {}
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch {}
     setUser(null);
-    await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ isLoggedOut: true }));
+    await clearCustomerInfo();
   };
 
-  const updateProfile = async (name: string, phone: string) => {
+  const updateProfile = async (name: string, phone: string, birthday?: string, gender?: string, email?: string) => {
     if (!user) return;
-    const updated = { ...user, fullname: name, phone };
+    const updated: DemoUser = {
+      ...user,
+      fullname: name,
+      phone,
+      birthday: birthday !== undefined ? birthday : user.birthday,
+      gender: gender !== undefined ? gender : user.gender,
+      email: email !== undefined ? email : user.email,
+    };
+
+    // Cập nhật lên Firestore nếu user có id hợp lệ
+    try {
+      if (user.id && !user.isDemo) {
+        await setDoc(
+          doc(db, 'users', user.id),
+          {
+            fullName: name,
+            phone,
+            ...(birthday !== undefined ? { birthday } : {}),
+            ...(gender !== undefined ? { gender } : {}),
+            ...(email !== undefined ? { email } : {}),
+          },
+          { merge: true }
+        );
+      }
+    } catch (err) {
+      console.warn('Lỗi đồng bộ cập nhật lên Firestore:', err);
+    }
+
     setUser(updated);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated));
   };
@@ -79,10 +351,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         user,
-        isAuthenticated: !!user,
+        isAuthenticated: !!user && !(user as any).isLoggedOut,
         isLoading,
         loginDemo,
         registerDemo,
+        resetPassword,
+        changePassword,
         logout,
         updateProfile,
       }}
@@ -91,5 +365,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </AuthContext.Provider>
   );
 };
+
 
 export const useAuth = () => useContext(AuthContext);

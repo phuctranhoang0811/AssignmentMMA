@@ -1,17 +1,18 @@
 import React from 'react';
-import { View, FlatList, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, FlatList } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Heart } from 'lucide-react-native';
 import { colors } from '../theme/colors';
-import { spacing } from '../theme/spacing';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { ProductCard } from '../components/product/ProductCard';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useFavorites } from '../state/FavoritesContext';
 import { mockProducts } from '../data/mockProducts';
+import { styles } from '../styles/favorites.styles';
 
 export default function FavoritesScreen() {
+  const insets = useSafeAreaInsets();
   const { favoriteIds } = useFavorites();
 
   const favoriteProducts = mockProducts.filter((p) => favoriteIds.includes(p.id));
@@ -34,7 +35,10 @@ export default function FavoritesScreen() {
           data={favoriteProducts}
           keyExtractor={(item) => item.id}
           numColumns={2}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: Math.max(insets.bottom + 20, 40) },
+          ]}
           columnWrapperStyle={styles.columnWrapper}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
@@ -47,21 +51,3 @@ export default function FavoritesScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  listContent: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing['4xl'],
-  },
-  columnWrapper: {
-    justifyContent: 'space-between',
-  },
-  cardWrapper: {
-    width: '48%',
-  },
-});
