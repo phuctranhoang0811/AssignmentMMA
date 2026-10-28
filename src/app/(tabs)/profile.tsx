@@ -1,346 +1,451 @@
-import React from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Image, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import React, { useState } from 'react';
 import {
-  User,
-  MapPin,
-  Heart,
-  Tag,
-  Settings,
-  LogOut,
-  ChevronRight,
-  Shield,
-  ChefHat,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Modal,
+  Alert,
+  Platform,
+  Pressable,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import {
   LogIn,
   UserPlus,
+  MapPin,
+  User as UserIcon,
+  FileText,
+  Lock,
+  LogOut,
+  X,
+  Sparkles,
+  ShieldCheck,
 } from 'lucide-react-native';
-import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
-import { AppText } from '../../components/ui/AppText';
-import { AppButton } from '../../components/ui/AppButton';
 import { useAuth } from '../../state/AuthContext';
+import { styles } from '../../styles/profile.styles';
+
+// Custom Pizza Reward Slice Badge Icon (exact match to user mockup)
+const PizzaRewardIcon = ({ size = 22, color = '#1E2024' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M12 21L3 6a18 18 0 0 1 18 0L12 21z" />
+    <Path d="M4.5 7.5a16 16 0 0 1 15 0" />
+    <Circle cx="12" cy="11.5" r="1" fill={color} />
+    <Circle cx="9.5" cy="14.5" r="0.75" fill={color} />
+    <Circle cx="14.5" cy="14.5" r="0.75" fill={color} />
+  </Svg>
+);
+
+// Custom Membership Badge Icon on Red Card
+const CardBadgeIcon = () => (
+  <Svg width={32} height={32} viewBox="0 0 28 28" fill="none">
+    {/* Fanned cards design */}
+    <Path d="M6 21L12 5l5 2-6 16z" fill="rgba(255,255,255,0.3)" />
+    <Path d="M12 5l6 1l4 15-7-2z" fill="rgba(255,255,255,0.5)" />
+    <Path d="M9 19l4-12 5 2-4 12z" stroke="#FFFFFF" strokeWidth={1.6} fill="#CF4226" />
+    <Circle cx="13" cy="11" r="1.2" fill="#FFFFFF" />
+    <Circle cx="15.5" cy="14" r="1" fill="#FFFFFF" />
+    <Circle cx="11.5" cy="14" r="1" fill="#FFFFFF" />
+  </Svg>
+);
 
 export default function ProfileScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user, isAuthenticated, logout } = useAuth();
+  const [showQRModal, setShowQRModal] = useState(false);
 
-  const handleLogoutConfirm = () => {
-    Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất khỏi phiên demo không?', [
-      { text: 'Hủy', style: 'cancel' },
-      { text: 'Đăng xuất', style: 'destructive', onPress: logout },
-    ]);
+  const handleLogoutConfirm = async () => {
+    if (Platform.OS === 'web') {
+      await logout();
+    } else {
+      Alert.alert(
+        'Đăng xuất',
+        'Bạn có chắc chắn muốn đăng xuất khỏi tài khoản?',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          {
+            text: 'Đăng xuất',
+            style: 'destructive',
+            onPress: async () => {
+              await logout();
+            },
+          },
+        ]
+      );
+    }
   };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Xóa tài khoản',
+      'Bạn có chắc chắn muốn xóa tài khoản? Mọi thông tin và điểm thưởng sẽ không thể khôi phục.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa vĩnh viễn',
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+            Alert.alert('Thông báo', 'Đã tiếp nhận yêu cầu xóa tài khoản thành công.');
+          },
+        },
+      ]
+    );
+  };
+
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Header */}
+      {/* Header Title */}
       <View style={styles.header}>
-        <AppText variant="h1">Tài khoản</AppText>
+        <Text style={styles.headerTitle}>Tài khoản</Text>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* User Card */}
-        {isAuthenticated && user ? (
-          <View style={styles.userCard}>
-            <View style={styles.avatarWrapper}>
-              {user.avatar ? (
-                <Image source={{ uri: user.avatar }} style={styles.avatar} />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <User size={32} color={colors.primary} />
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(insets.bottom + 90, 110) },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {isAuthenticated ? (
+          /* ======================================================== */
+          /* KHI ĐÃ ĐĂNG NHẬP (Authenticated View)                    */
+          /* ======================================================== */
+          <View>
+            {/* Membership Card (Màu đỏ chủ đạo Pizza FPT) */}
+            <View style={styles.memberCard}>
+              <View style={styles.memberCardTop}>
+                <View style={styles.memberBadgeWrap}>
+                  <CardBadgeIcon />
                 </View>
-              )}
-            </View>
-
-            <View style={styles.userInfo}>
-              <View style={styles.nameRow}>
-                <AppText variant="h3">{user.fullname}</AppText>
-                <View style={styles.demoBadge}>
-                  <AppText variant="captionMedium" color={colors.primary}>
-                    Tài khoản Demo
-                  </AppText>
+                <View style={styles.memberInfo}>
+                  <Text style={styles.memberTier}>
+                    {user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN'
+                      ? 'Quản trị viên (Admin)'
+                      : user?.role === 'EMPLOYEE'
+                      ? 'Nhân viên (Staff)'
+                      : 'Thành viên Thường'}
+                  </Text>
+                  <Text style={styles.memberExpiry}>Ngày hết hạn 30/11/2027</Text>
                 </View>
               </View>
-              <AppText variant="caption" color={colors.textSecondary}>
-                {user.email}
-              </AppText>
-              <AppText variant="caption" color={colors.textSecondary}>
-                {user.phone}
-              </AppText>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.guestCard}>
-            <AppText variant="h3">Chào bạn!</AppText>
-            <AppText variant="body" color={colors.textSecondary} style={{ marginVertical: spacing.xs }}>
-              Đăng nhập để lưu danh sách địa chỉ và theo dõi đơn hàng của bạn thuận tiện hơn.
-            </AppText>
-            <View style={styles.guestBtnRow}>
-              <AppButton
-                title="Đăng nhập"
-                size="sm"
-                onPress={() => router.push('/auth/login')}
-                style={{ flex: 1, marginRight: spacing.sm }}
-              />
-              <AppButton
-                title="Đăng ký"
-                variant="outline"
-                size="sm"
-                onPress={() => router.push('/auth/register')}
-                style={{ flex: 1 }}
-              />
-            </View>
-          </View>
-        )}
 
-        {/* Menu Items Group 1: Account Features */}
-        <View style={styles.section}>
-          <AppText variant="captionMedium" color={colors.textSecondary} style={styles.sectionTitle}>
-            Tùy chọn tài khoản
-          </AppText>
+              <View style={styles.memberCardBottom}>
+                <View style={styles.statCol}>
+                  <Text style={styles.statNumber}>{user?.rewardPoints ?? 0}</Text>
+                  <Text style={styles.statUnit}> điểm</Text>
+                </View>
+                <View style={[styles.statCol, { alignItems: 'flex-end' }]}>
+                  <Text style={styles.statNumber}>
+                    {user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' ? '15%' : '0%'}
+                  </Text>
+                  <Text style={styles.statUnit}> giảm giá</Text>
+                </View>
+              </View>
+            </View>
 
-          <View style={styles.menuGroup}>
-            {isAuthenticated && (
+            {/* Button: Hiển thị mã QR */}
+            <TouchableOpacity
+              style={styles.qrOutlineBtn}
+              activeOpacity={0.8}
+              onPress={() => setShowQRModal(true)}
+            >
+              <Text style={styles.qrOutlineBtnText}>Hiển thị mã QR</Text>
+            </TouchableOpacity>
+
+            {/* Menu Group 1 */}
+            <View style={styles.cardGroup}>
+              {/* Bảng điều khiển Quản trị viên (Admin Portal) */}
+              {(user?.role === 'SUPER_ADMIN' ||
+                user?.role === 'ADMIN' ||
+                user?.role === 'STORE_MANAGER') && (
+                <>
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.7}
+                    onPress={() => router.push('/admin/dashboard')}
+                  >
+                    <View style={styles.menuIconCol}>
+                      <ShieldCheck size={22} color="#CF4226" strokeWidth={1.8} />
+                    </View>
+                    <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
+                      Bảng Quản trị Hệ thống (Admin)
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.divider} />
+                </>
+              )}
+
+              {/* Quản lý đơn bếp (dành riêng cho Admin / Employee) */}
+              {(user?.role === 'EMPLOYEE' ||
+                user?.role === 'SUPER_ADMIN' ||
+                user?.role === 'ADMIN') && (
+                <>
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.7}
+                    onPress={() => router.push('/demo/staff-orders')}
+                  >
+                    <View style={styles.menuIconCol}>
+                      <Sparkles size={22} color="#CF4226" strokeWidth={1.8} />
+                    </View>
+                    <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
+                      Quản lý đơn bếp (Staff Demo)
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.divider} />
+                </>
+              )}
+
+              {/* Hồ sơ của tôi */}
               <TouchableOpacity
+                style={styles.menuRow}
                 activeOpacity={0.7}
                 onPress={() => router.push('/profile/edit')}
-                style={styles.menuItem}
               >
-                <View style={styles.menuLeft}>
-                  <View style={styles.iconCircle}>
-                    <User size={18} color={colors.textPrimary} />
-                  </View>
-                  <AppText variant="bodyMedium">Chỉnh sửa hồ sơ</AppText>
+                <View style={styles.menuIconCol}>
+                  <UserIcon size={22} color="#1E2024" strokeWidth={1.8} />
                 </View>
-                <ChevronRight size={18} color={colors.textDisabled} />
+                <Text style={styles.menuLabel}>Hồ sơ của tôi</Text>
               </TouchableOpacity>
-            )}
 
+              <View style={styles.divider} />
+
+              {/* Theo dõi đơn hàng */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.7}
+                onPress={() => router.push('/order/tracking')}
+              >
+                <View style={styles.menuIconCol}>
+                  <MapPin size={22} color="#1E2024" strokeWidth={1.8} />
+                </View>
+                <Text style={styles.menuLabel}>Theo dõi đơn hàng</Text>
+              </TouchableOpacity>
+
+              <View style={styles.divider} />
+
+              {/* FPT reward / Hut reward */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.7}
+                onPress={() => router.push('/(tabs)/rewards')}
+              >
+                <View style={styles.menuIconCol}>
+                  <PizzaRewardIcon size={22} color="#1E2024" />
+                </View>
+                <Text style={styles.menuLabel}>FPT reward</Text>
+              </TouchableOpacity>
+
+              <View style={styles.divider} />
+
+              {/* Lịch sử đơn hàng */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.7}
+                onPress={() => router.push('/(tabs)/orders')}
+              >
+                <View style={styles.menuIconCol}>
+                  <FileText size={22} color="#1E2024" strokeWidth={1.8} />
+                </View>
+                <Text style={styles.menuLabel}>Lịch sử đơn hàng</Text>
+              </TouchableOpacity>
+
+              <View style={styles.divider} />
+
+              {/* Đổi mật khẩu */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.7}
+                onPress={() => router.push('/profile/change-password')}
+              >
+                <View style={styles.menuIconCol}>
+                  <Lock size={22} color="#1E2024" strokeWidth={1.8} />
+                </View>
+                <Text style={styles.menuLabel}>Đổi mật khẩu</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Menu Group 2: Đăng xuất */}
+            <View style={styles.cardGroup}>
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.7}
+                onPress={handleLogoutConfirm}
+              >
+                <View style={styles.menuIconCol}>
+                  <LogOut size={22} color="#1E2024" strokeWidth={1.8} />
+                </View>
+                <Text style={styles.menuLabel}>Đăng xuất</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Xóa tài khoản */}
             <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => router.push('/profile/addresses')}
-              style={styles.menuItem}
+              style={styles.deleteAccountBtn}
+              activeOpacity={0.6}
+              onPress={handleDeleteAccount}
             >
-              <View style={styles.menuLeft}>
-                <View style={styles.iconCircle}>
-                  <MapPin size={18} color={colors.textPrimary} />
-                </View>
-                <AppText variant="bodyMedium">Sổ địa chỉ nhận hàng</AppText>
-              </View>
-              <ChevronRight size={18} color={colors.textDisabled} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => router.push('/favorites')}
-              style={styles.menuItem}
-            >
-              <View style={styles.menuLeft}>
-                <View style={styles.iconCircle}>
-                  <Heart size={18} color={colors.primary} />
-                </View>
-                <AppText variant="bodyMedium">Món ăn yêu thích</AppText>
-              </View>
-              <ChevronRight size={18} color={colors.textDisabled} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => router.push('/offers')}
-              style={styles.menuItem}
-            >
-              <View style={styles.menuLeft}>
-                <View style={styles.iconCircle}>
-                  <Tag size={18} color={colors.warning} />
-                </View>
-                <AppText variant="bodyMedium">Mã ưu đãi & Voucher</AppText>
-              </View>
-              <ChevronRight size={18} color={colors.textDisabled} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Menu Items Group 2: Demo & System */}
-        <View style={styles.section}>
-          <AppText variant="captionMedium" color={colors.textSecondary} style={styles.sectionTitle}>
-            Quản trị & Cài đặt hệ thống
-          </AppText>
-
-          <View style={styles.menuGroup}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => router.push('/demo/staff-orders')}
-              style={styles.menuItem}
-            >
-              <View style={styles.menuLeft}>
-                <View style={[styles.iconCircle, { backgroundColor: colors.primarySoft }]}>
-                  <ChefHat size={18} color={colors.primary} />
-                </View>
-                <View>
-                  <AppText variant="bodyMedium" color={colors.primary}>
-                    Bếp & Giao hàng (Staff Demo)
-                  </AppText>
-                  <AppText variant="caption" color={colors.textSecondary}>
-                    Xác nhận và chuyển trạng thái đơn hàng
-                  </AppText>
-                </View>
-              </View>
-              <ChevronRight size={18} color={colors.primary} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => router.push('/profile/settings')}
-              style={styles.menuItem}
-            >
-              <View style={styles.menuLeft}>
-                <View style={styles.iconCircle}>
-                  <Settings size={18} color={colors.textPrimary} />
-                </View>
-                <AppText variant="bodyMedium">Cài đặt & Developer Demo</AppText>
-              </View>
-              <ChevronRight size={18} color={colors.textDisabled} />
+              <Text style={styles.deleteAccountText}>Xóa tài khoản</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        ) : (
+          /* ======================================================== */
+          /* KHI CHƯA ĐĂNG NHẬP (Guest / Unauthenticated View)        */
+          /* ======================================================== */
+          <View>
+            {/* Card 1: Đăng nhập & Đăng ký */}
+            <View style={styles.cardGroup}>
+              {/* Đăng nhập */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.7}
+                onPress={() => router.push('/auth/login')}
+              >
+                <View style={styles.menuIconCol}>
+                  <LogIn size={22} color="#1E2024" strokeWidth={1.8} />
+                </View>
+                <Text style={styles.menuLabel}>Đăng nhập</Text>
+              </TouchableOpacity>
 
-        {/* Logout Button */}
-        {isAuthenticated && (
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={handleLogoutConfirm}
-            style={styles.logoutBtn}
-          >
-            <LogOut size={18} color={colors.error} />
-            <AppText variant="bodyMedium" color={colors.error} style={{ marginLeft: spacing.sm }}>
-              Đăng xuất
-            </AppText>
-          </TouchableOpacity>
+              <View style={styles.divider} />
+
+              {/* Đăng ký */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.7}
+                onPress={() => router.push('/auth/register')}
+              >
+                <View style={styles.menuIconCol}>
+                  <UserPlus size={22} color="#1E2024" strokeWidth={1.8} />
+                </View>
+                <Text style={styles.menuLabel}>Đăng ký</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Card 2: Tiện ích chung */}
+            <View style={styles.cardGroup}>
+              {/* Theo dõi đơn hàng */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.7}
+                onPress={() => router.push('/order/lookup')}
+              >
+                <View style={styles.menuIconCol}>
+                  <MapPin size={22} color="#1E2024" strokeWidth={1.8} />
+                </View>
+                <Text style={styles.menuLabel}>Theo dõi đơn hàng</Text>
+              </TouchableOpacity>
+
+              <View style={styles.divider} />
+
+              {/* FPT reward / Hut reward */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.7}
+                onPress={() =>
+                  router.push({
+                    pathname: '/auth/login',
+                    params: { returnTo: 'profile' },
+                  })
+                }
+              >
+                <View style={styles.menuIconCol}>
+                  <PizzaRewardIcon size={22} color="#1E2024" />
+                </View>
+                <Text style={styles.menuLabel}>FPT reward</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Footer Copyright */}
+            <View style={styles.footer}>
+              <Text style={styles.copyrightText}>
+                Copyright © Pizza FPT Co., Ltd
+              </Text>
+              <Text style={styles.versionText}>Phiên bản: v3.1.10</Text>
+            </View>
+          </View>
         )}
-
-        <AppText variant="caption" color={colors.textDisabled} align="center" style={styles.versionText}>
-          Pizza Time Mobile v1.0.0 (Front-first Demo)
-        </AppText>
       </ScrollView>
+
+      {/* QR Code Modal */}
+      <Modal
+        visible={showQRModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowQRModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowQRModal(false)}
+        >
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => setShowQRModal(false)}
+            >
+              <X size={20} color="#666666" />
+            </TouchableOpacity>
+
+            <Text style={styles.modalTitle}>Mã Thành Viên</Text>
+            <Text style={styles.modalSubtitle}>
+              {user?.fullname || 'Khách hàng thân thiết'}
+            </Text>
+
+            {/* QR Code Canvas Mockup */}
+            <View style={styles.qrContainer}>
+              <Svg width={180} height={180} viewBox="0 0 180 180">
+                <Rect x="0" y="0" width="180" height="180" fill="#FFFFFF" />
+                {/* Outer corners */}
+                <Rect x="15" y="15" width="45" height="45" fill="#CF4226" />
+                <Rect x="23" y="23" width="29" height="29" fill="#FFFFFF" />
+                <Rect x="29" y="29" width="17" height="17" fill="#CF4226" />
+
+                <Rect x="120" y="15" width="45" height="45" fill="#CF4226" />
+                <Rect x="128" y="23" width="29" height="29" fill="#FFFFFF" />
+                <Rect x="134" y="29" width="17" height="17" fill="#CF4226" />
+
+                <Rect x="15" y="120" width="45" height="45" fill="#CF4226" />
+                <Rect x="23" y="128" width="29" height="29" fill="#FFFFFF" />
+                <Rect x="29" y="134" width="17" height="17" fill="#CF4226" />
+
+                {/* Pattern dots */}
+                <Rect x="75" y="20" width="10" height="10" fill="#1E2024" />
+                <Rect x="95" y="35" width="12" height="12" fill="#1E2024" />
+                <Rect x="75" y="55" width="14" height="14" fill="#1E2024" />
+                <Rect x="30" y="75" width="12" height="12" fill="#1E2024" />
+                <Rect x="55" y="85" width="16" height="16" fill="#CF4226" />
+                <Rect x="85" y="85" width="18" height="18" fill="#1E2024" />
+                <Rect x="120" y="75" width="14" height="14" fill="#1E2024" />
+                <Rect x="145" y="90" width="12" height="12" fill="#CF4226" />
+                <Rect x="75" y="120" width="14" height="14" fill="#1E2024" />
+                <Rect x="100" y="130" width="16" height="16" fill="#1E2024" />
+                <Rect x="130" y="140" width="14" height="14" fill="#1E2024" />
+              </Svg>
+            </View>
+
+            <Text style={styles.memberIdText}>
+              {user?.phone ? 'FPT-' + user.phone.slice(-6) : 'FPT-889923'}
+            </Text>
+
+            <Text style={styles.modalInstruction}>
+              Đưa mã này cho nhân viên thu ngân tại quầy Pizza FPT để tích điểm và áp dụng khuyến mãi
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalActionBtn}
+              onPress={() => setShowQRModal(false)}
+            >
+              <Text style={styles.modalActionBtnText}>Đóng</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing['4xl'],
-  },
-  userCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.base,
-    marginBottom: spacing.xl,
-  },
-  avatarWrapper: {
-    marginRight: spacing.base,
-  },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-  },
-  avatarPlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: colors.primarySoft,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  userInfo: {
-    flex: 1,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    marginBottom: 2,
-  },
-  demoBadge: {
-    backgroundColor: colors.primarySoft,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 1,
-    borderRadius: radius.xs,
-    marginLeft: spacing.xs,
-  },
-  guestCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.base,
-    marginBottom: spacing.xl,
-  },
-  guestBtnRow: {
-    flexDirection: 'row',
-    marginTop: spacing.sm,
-  },
-  section: {
-    marginBottom: spacing.xl,
-  },
-  sectionTitle: {
-    marginBottom: spacing.sm,
-    marginLeft: spacing.xs,
-  },
-  menuGroup: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  menuLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceAlt,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  logoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.errorSoft,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    marginTop: spacing.sm,
-    marginBottom: spacing.xl,
-  },
-  versionText: {
-    marginBottom: spacing.xl,
-  },
-});
