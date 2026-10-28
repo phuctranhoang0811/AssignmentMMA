@@ -18,6 +18,8 @@ import {
   PackageCheck,
   ChevronRight,
   ExternalLink,
+  ClipboardList,
+  BarChart2,
 } from 'lucide-react-native';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -302,7 +304,7 @@ export default function AdminDashboardScreen() {
           <TouchableOpacity
             style={styles.moduleCard}
             activeOpacity={0.8}
-            onPress={() => router.push('/demo/staff-orders')}
+            onPress={() => router.push('/admin/orders')}
           >
             <View style={styles.moduleLeft}>
               <View style={[styles.moduleIconBox, { backgroundColor: colors.warningSoft }]}>
@@ -322,7 +324,7 @@ export default function AdminDashboardScreen() {
                 </View>
               </View>
             </View>
-            <ExternalLink size={20} color={colors.textSecondary} />
+            <ChevronRight size={22} color={colors.textSecondary} />
           </TouchableOpacity>
 
           {/* Module 3: Marketing & FPT Reward (Mục 4.3) */}
@@ -372,6 +374,59 @@ export default function AdminDashboardScreen() {
                 <View style={[styles.moduleBadge, { backgroundColor: colors.surfaceAlt }]}>
                   <AppText variant="small" color={colors.textSecondary}>
                     Đặc tả Mục 4.4
+                  </AppText>
+                </View>
+              </View>
+            </View>
+            <ChevronRight size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+          {/* Module 5: Giám sát Đơn hàng & Override/Hoàn tiền (Mục 4.2) */}
+          <TouchableOpacity
+            style={styles.moduleCard}
+            activeOpacity={0.8}
+            onPress={() => router.push('/admin/orders')}
+          >
+            <View style={styles.moduleLeft}>
+              <View style={[styles.moduleIconBox, { backgroundColor: colors.warningSoft }]}>
+                <ClipboardList size={24} color={colors.warning} />
+              </View>
+              <View style={styles.moduleTextBox}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Giám Sát Đơn Hàng (Live Orders)
+                </AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Override huỷ đơn, xử lý Khiếu nại & Hoàn tiền theo thời gian thực.
+                </AppText>
+                <View style={[styles.moduleBadge, { backgroundColor: colors.warningSoft }]}>
+                  <AppText variant="small" color={colors.warning}>
+                    Đặc tả Mục 4.2
+                  </AppText>
+                </View>
+              </View>
+            </View>
+            <ChevronRight size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {/* Module 6: Phân tích Doanh thu & BI/Report (Mục 4.5) */}
+          <TouchableOpacity
+            style={styles.moduleCard}
+            activeOpacity={0.8}
+            onPress={() => router.push('/admin/reports')}
+          >
+            <View style={styles.moduleLeft}>
+              <View style={[styles.moduleIconBox, { backgroundColor: colors.successSoft }]}>
+                <BarChart2 size={24} color={colors.success} />
+              </View>
+              <View style={styles.moduleTextBox}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Phân Tích Doanh Thu (BI/Report)
+                </AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Biểu đồ doanh thu theo ngày, AOV, tỷ lệ hủy & top 5 sản phẩm bán chạy.
+                </AppText>
+                <View style={[styles.moduleBadge, { backgroundColor: colors.successSoft }]}>
+                  <AppText variant="small" color={colors.success}>
+                    Đặc tả Mục 4.5
                   </AppText>
                 </View>
               </View>
