@@ -176,11 +176,6 @@ export default function AdminDashboardScreen() {
             <AppText variant="h3" color={colors.textPrimary}>
               Xin chào, {user?.fullname || 'Quản trị viên'}
             </AppText>
-            <View style={styles.adminBadge}>
-              <AppText variant="captionSemiBold" color={colors.primary}>
-                {user?.role || 'SUPER_ADMIN'}
-              </AppText>
-            </View>
           </View>
           <AppText variant="caption" color={colors.textSecondary}>
             Hệ thống giám sát và quản lý vận hành chuỗi Pizza FPT theo tài liệu đặc tả System Flows.
@@ -290,11 +285,6 @@ export default function AdminDashboardScreen() {
                 <AppText variant="caption" color={colors.textSecondary}>
                   CRUD món, cấu hình Size & Đế (Crust), bật/tắt In-Stock và giá bán.
                 </AppText>
-                <View style={[styles.moduleBadge, { backgroundColor: colors.primarySoft }]}>
-                  <AppText variant="small" color={colors.primary}>
-                    Cột 1: Thực đơn (Mục 4.1)
-                  </AppText>
-                </View>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
@@ -317,11 +307,6 @@ export default function AdminDashboardScreen() {
                 <AppText variant="caption" color={colors.textSecondary}>
                   Theo dõi đơn thời gian thực, can thiệp hủy (Override) và hoàn tiền.
                 </AppText>
-                <View style={[styles.moduleBadge, { backgroundColor: colors.warningSoft }]}>
-                  <AppText variant="small" color={colors.warning}>
-                    Cột 2: Vận hành (Mục 4.2)
-                  </AppText>
-                </View>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
@@ -344,11 +329,6 @@ export default function AdminDashboardScreen() {
                 <AppText variant="caption" color={colors.textSecondary}>
                   Màn hình dành cho đầu bếp nhận đơn, làm món và bàn giao shipper.
                 </AppText>
-                <View style={[styles.moduleBadge, { backgroundColor: '#F3E8FF' }]}>
-                  <AppText variant="small" color="#7C3AED">
-                    Vận hành Bếp & Shipper
-                  </AppText>
-                </View>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
@@ -371,11 +351,6 @@ export default function AdminDashboardScreen() {
                 <AppText variant="caption" color={colors.textSecondary}>
                   Phát hành coupon giảm giá và cấu hình 4 hạng thành viên loyalty.
                 </AppText>
-                <View style={[styles.moduleBadge, { backgroundColor: colors.successSoft }]}>
-                  <AppText variant="small" color={colors.success}>
-                    Cột 3: Marketing (Mục 4.3)
-                  </AppText>
-                </View>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
@@ -398,11 +373,6 @@ export default function AdminDashboardScreen() {
                 <AppText variant="caption" color={colors.textSecondary}>
                   Cấp quyền Quản lý, Bếp, Shipper, Thu ngân & chặn (Blacklist).
                 </AppText>
-                <View style={[styles.moduleBadge, { backgroundColor: colors.surfaceAlt }]}>
-                  <AppText variant="small" color={colors.textSecondary}>
-                    Cột 3: Nhân sự (Mục 4.4)
-                  </AppText>
-                </View>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
@@ -425,11 +395,6 @@ export default function AdminDashboardScreen() {
                 <AppText variant="caption" color={colors.textSecondary}>
                   Biểu đồ doanh thu theo ngày, AOV, tỷ lệ hủy & top 5 sản phẩm bán chạy.
                 </AppText>
-                <View style={[styles.moduleBadge, { backgroundColor: colors.successSoft }]}>
-                  <AppText variant="small" color={colors.success}>
-                    Cột 3: Báo cáo (Mục 4.5)
-                  </AppText>
-                </View>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
