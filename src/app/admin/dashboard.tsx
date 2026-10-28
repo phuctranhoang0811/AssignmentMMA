@@ -268,7 +268,7 @@ export default function AdminDashboardScreen() {
         </AppText>
 
         <View style={styles.modulesContainer}>
-          {/* CỘT 1: QUẢN TRỊ THỰC ĐƠN (Mục 4.1) */}
+          {/* Module 1: Quản trị Thực đơn & Tồn kho */}
           <TouchableOpacity
             style={styles.moduleCard}
             activeOpacity={0.8}
@@ -283,14 +283,14 @@ export default function AdminDashboardScreen() {
                   Quản Trị Thực Đơn & Tồn Kho
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
-                  CRUD món, cấu hình Size & Đế (Crust), bật/tắt In-Stock và giá bán.
+                  Thêm món, cập nhật giá bán, bật/tắt In-Stock & cấu hình Size/Đế.
                 </AppText>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* CỘT 2: GIÁM SÁT VẬN HÀNH (Mục 4.2) */}
+          {/* Module 2: Giám sát Đơn hàng & Can thiệp */}
           <TouchableOpacity
             style={styles.moduleCard}
             activeOpacity={0.8}
@@ -302,39 +302,17 @@ export default function AdminDashboardScreen() {
               </View>
               <View style={styles.moduleTextBox}>
                 <AppText variant="cardTitle" color={colors.textPrimary}>
-                  Giám Sát Vận Hành (Live Orders)
+                  Giám Sát Đơn Hàng (Live Orders)
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
-                  Theo dõi đơn thời gian thực, can thiệp hủy (Override) và hoàn tiền.
+                  Theo dõi đơn theo thời gian thực, can thiệp hủy đơn & hoàn tiền.
                 </AppText>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* MÀN HÌNH BẾP LIÊN KẾT (Kitchen Demo) */}
-          <TouchableOpacity
-            style={styles.moduleCard}
-            activeOpacity={0.8}
-            onPress={() => router.push('/demo/staff-orders')}
-          >
-            <View style={styles.moduleLeft}>
-              <View style={[styles.moduleIconBox, { backgroundColor: '#F3E8FF' }]}>
-                <ChefHat size={24} color="#7C3AED" />
-              </View>
-              <View style={styles.moduleTextBox}>
-                <AppText variant="cardTitle" color={colors.textPrimary}>
-                  Vận Hành Bếp & Giao Nhận (Staff)
-                </AppText>
-                <AppText variant="caption" color={colors.textSecondary}>
-                  Màn hình dành cho đầu bếp nhận đơn, làm món và bàn giao shipper.
-                </AppText>
-              </View>
-            </View>
-            <ChevronRight size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
-
-          {/* CỘT 3.1: QUẢN LÝ VOUCHER & FPT REWARD (Mục 4.3) */}
+          {/* Module 3: Khuyến mãi & FPT Reward */}
           <TouchableOpacity
             style={styles.moduleCard}
             activeOpacity={0.8}
@@ -346,17 +324,17 @@ export default function AdminDashboardScreen() {
               </View>
               <View style={styles.moduleTextBox}>
                 <AppText variant="cardTitle" color={colors.textPrimary}>
-                  Quản Lý Voucher & FPT Reward
+                  Khuyến Mãi & FPT Reward
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
-                  Phát hành coupon giảm giá và cấu hình 4 hạng thành viên loyalty.
+                  Phát hành mã Voucher giảm giá & cấu hình tích điểm hạng thành viên.
                 </AppText>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* CỘT 3.2: QUẢN LÝ USER & PHÂN QUYỀN (Mục 4.4) */}
+          {/* Module 4: Quản lý Người dùng & Phân quyền */}
           <TouchableOpacity
             style={styles.moduleCard}
             activeOpacity={0.8}
@@ -371,14 +349,14 @@ export default function AdminDashboardScreen() {
                   Quản Lý Tài Khoản & Phân Quyền
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
-                  Phân quyền Admin, Quản lý, Bếp, Rider & Khách hàng.
+                  Phân quyền Admin, Manager, Bếp, Rider & chặn tài khoản.
                 </AppText>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* CỘT 3.3: PHÂN TÍCH DOANH THU & BI/REPORT (Mục 4.5) */}
+          {/* Module 5: Báo cáo Doanh thu & Thống kê */}
           <TouchableOpacity
             style={styles.moduleCard}
             activeOpacity={0.8}
@@ -390,15 +368,16 @@ export default function AdminDashboardScreen() {
               </View>
               <View style={styles.moduleTextBox}>
                 <AppText variant="cardTitle" color={colors.textPrimary}>
-                  Phân Tích Doanh Thu (BI/Report)
+                  Báo Cáo Doanh Thu (BI & Thống Kê)
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
-                  Biểu đồ doanh thu theo ngày, AOV, tỷ lệ hủy & top 5 sản phẩm bán chạy.
+                  Biểu đồ doanh thu theo ngày/tuần/tháng, chỉ số AOV & top 5 món bán chạy.
                 </AppText>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
-          </TouchableOpacity></View>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
