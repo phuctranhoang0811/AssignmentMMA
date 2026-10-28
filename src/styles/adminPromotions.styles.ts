@@ -64,10 +64,10 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    height: 36,
     borderRadius: radius.md,
     gap: spacing.xs,
-    marginTop: spacing.xs,
   },
 
   // Loyalty Config Styles

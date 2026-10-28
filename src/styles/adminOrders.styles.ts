@@ -7,20 +7,26 @@ export const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  filterRow: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
-    gap: spacing.xs,
+  filterContainer: {
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
+  },
   filterPill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingHorizontal: spacing.base,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceAlt,
+    marginRight: spacing.xs,
   },
   filterPillActive: {
     backgroundColor: colors.primary,
@@ -125,4 +131,3 @@ export const styles = StyleSheet.create({
     gap: spacing.sm,
   },
 });
-

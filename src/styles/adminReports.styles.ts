@@ -26,13 +26,15 @@ export const styles = StyleSheet.create({
   // Period Selector
   periodRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
   periodBtn: {
     flex: 1,
-    paddingVertical: spacing.sm,
+    height: 38,
     alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: radius.md,
     backgroundColor: colors.surfaceAlt,
   },

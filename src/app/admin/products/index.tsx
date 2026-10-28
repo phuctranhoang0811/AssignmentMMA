@@ -278,6 +278,7 @@ export default function AdminProductsScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0 }}
           contentContainerStyle={styles.categoryScroll}
         >
           {CATEGORIES.map((cat) => {

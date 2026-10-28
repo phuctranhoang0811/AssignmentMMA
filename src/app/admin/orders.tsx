@@ -209,26 +209,30 @@ export default function AdminOrdersScreen() {
       />
 
       {/* Filter Tabs */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        {STATUS_FILTERS.map(f => (
-          <TouchableOpacity
-            key={f.key}
-            style={[styles.filterPill, filterStatus === f.key && styles.filterPillActive]}
-            onPress={() => setFilterStatus(f.key)}
-          >
-            <AppText
-              variant="captionMedium"
-              color={filterStatus === f.key ? colors.white : colors.textPrimary}
+      <View style={styles.filterContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0 }}
+          contentContainerStyle={styles.filterRow}
+        >
+          {STATUS_FILTERS.map(f => (
+            <TouchableOpacity
+              key={f.key}
+              style={[styles.filterPill, filterStatus === f.key && styles.filterPillActive]}
+              activeOpacity={0.7}
+              onPress={() => setFilterStatus(f.key)}
             >
-              {f.label}
-            </AppText>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+              <AppText
+                variant="captionSemiBold"
+                color={filterStatus === f.key ? colors.white : colors.textPrimary}
+              >
+                {f.label}
+              </AppText>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
       {loading ? (
         <View style={styles.emptyContainer}>
@@ -248,128 +252,132 @@ export default function AdminOrdersScreen() {
             </View>
           }
           renderItem={({ item }) => (
-            <View style={[
-              styles.orderCard,
-              item.status === 'PENDING_CONFIRMATION' && styles.orderCardUrgent,
-            ]}>
-              {/* Header */}
+            <View
+              style={[
+                styles.orderCard,
+                item.status === 'PENDING_CONFIRMATION' && styles.orderCardUrgent,
+              ]}
+            >
+              {/* Card Header: Order ID & Status */}
               <View style={styles.orderHeader}>
                 <View style={styles.orderHeaderLeft}>
                   <View style={styles.orderMeta}>
-                    {getStatusIcon(item.status)}
-                    <AppText variant="captionSemiBold" color={colors.textPrimary}>
+                    <AppText variant="cardTitle" color={colors.textPrimary}>
                       #{item.id.slice(-6).toUpperCase()}
                     </AppText>
-                    <AppText variant="small" color={colors.textSecondary}>
-                      {new Date(item.createdAt).toLocaleTimeString('vi-VN', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </AppText>
+                    <View
+                      style={[
+                        styles.paymentBadge,
+                        {
+                          backgroundColor:
+                            item.paymentStatus === 'PAID_DEMO'
+                              ? colors.successSoft
+                              : item.paymentStatus === 'REFUNDED_DEMO'
+                              ? colors.primarySoft
+                              : colors.warningSoft,
+                        },
+                      ]}
+                    >
+                      <AppText
+                        variant="small"
+                        color={
+                          item.paymentStatus === 'PAID_DEMO'
+                            ? colors.success
+                            : item.paymentStatus === 'REFUNDED_DEMO'
+                            ? colors.primary
+                            : colors.warning
+                        }
+                      >
+                        {item.paymentStatus === 'PAID_DEMO'
+                          ? 'Đã thanh toán'
+                          : item.paymentStatus === 'REFUNDED_DEMO'
+                          ? 'Đã hoàn tiền'
+                          : 'Chưa thanh toán'}
+                      </AppText>
+                    </View>
                   </View>
+                  <AppText variant="small" color={colors.textSecondary}>
+                    {new Date(item.createdAt).toLocaleString('vi-VN')}
+                  </AppText>
+                </View>
+                <StatusBadge status={item.status} />
+              </View>
 
-                  <View style={styles.customerRow}>
-                    <UserIcon size={13} color={colors.textSecondary} />
+              {/* Customer Info */}
+              <View style={styles.customerRow}>
+                <UserIcon size={14} color={colors.textSecondary} />
+                <AppText variant="bodyMedium" color={colors.textPrimary}>
+                  {item.customer.fullname}
+                </AppText>
+                {item.customer.phone ? (
+                  <>
                     <AppText variant="caption" color={colors.textSecondary}>
-                      {item.customer.fullname}
+                      •
                     </AppText>
                     <Phone size={13} color={colors.textSecondary} />
                     <AppText variant="caption" color={colors.textSecondary}>
                       {item.customer.phone}
                     </AppText>
-                  </View>
-                </View>
-                <StatusBadge status={item.status} />
+                  </>
+                ) : null}
               </View>
 
-              {/* Items */}
+              {/* Order Items Summary */}
               <View style={styles.itemsList}>
-                {(item.items as any[]).slice(0, 3).map((it: any, idx: number) => (
+                {item.items.map((prod, idx) => (
                   <View key={idx} style={styles.itemRow}>
                     <AppText variant="caption" color={colors.textPrimary} style={{ flex: 1 }}>
-                      {it.quantity}x {it.productName || it.name}
+                      {prod.quantity}x {prod.productName || 'Pizza'}
+                      {(prod as any).selectedSize || prod.variantName ? ` (${(prod as any).selectedSize || prod.variantName})` : ''}
+                      {(prod as any).selectedCrust ? ` - ${(prod as any).selectedCrust}` : ''}
                     </AppText>
-                    <AppText variant="caption" color={colors.textSecondary}>
-                      {formatCurrency(it.lineTotal || it.unitPrice * it.quantity || 0)}
+                    <AppText variant="captionMedium" color={colors.textPrimary}>
+                      {formatCurrency(prod.lineTotal || (prod.unitPrice * prod.quantity))}
                     </AppText>
                   </View>
                 ))}
-                {item.items.length > 3 && (
-                  <AppText variant="small" color={colors.textSecondary}>
-                    + {item.items.length - 3} món khác...
-                  </AppText>
-                )}
               </View>
 
-              {/* Total & Payment */}
+              {/* Total & Fulfillment */}
               <View style={styles.totalRow}>
-                <View>
-                  <AppText variant="captionMedium" color={colors.textSecondary}>
-                    {item.fulfillmentType === 'DELIVERY' ? '🛵 Giao tận nơi' : '🏪 Lấy tại quầy'}
-                  </AppText>
-                  <View style={[
-                    styles.paymentBadge,
-                    {
-                      backgroundColor:
-                        item.paymentStatus === 'REFUNDED_DEMO'
-                          ? colors.successSoft
-                          : item.paymentStatus === 'REFUND_PENDING'
-                          ? colors.warningSoft
-                          : colors.surfaceAlt,
-                    },
-                  ]}>
-                    <AppText
-                      variant="small"
-                      color={
-                        item.paymentStatus === 'REFUNDED_DEMO'
-                          ? colors.success
-                          : item.paymentStatus === 'REFUND_PENDING'
-                          ? colors.warning
-                          : colors.textSecondary
-                      }
-                    >
-                      {item.paymentMethod} •{' '}
-                      {item.paymentStatus === 'REFUNDED_DEMO'
-                        ? 'Đã hoàn tiền'
-                        : item.paymentStatus === 'REFUND_PENDING'
-                        ? 'Chờ hoàn'
-                        : item.paymentStatus}
-                    </AppText>
-                  </View>
-                </View>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  {item.fulfillmentType === 'DELIVERY' ? 'Giao tận nơi' : 'Lấy tại quầy'} • {item.paymentMethod}
+                </AppText>
                 <AppText variant="price" color={colors.primary}>
                   {formatCurrency(item.total)}
                 </AppText>
               </View>
 
-              {/* Action Buttons — Admin Override */}
-              <View style={styles.actionRow}>
-                {canCancel(item.status) && (
-                  <TouchableOpacity
-                    style={styles.cancelBtn}
-                    activeOpacity={0.8}
-                    onPress={() => handleCancelOrder(item)}
-                  >
-                    <Ban size={15} color={colors.error} />
-                    <AppText variant="captionSemiBold" color={colors.error}>
-                      Hủy đơn
-                    </AppText>
-                  </TouchableOpacity>
-                )}
+              {/* Admin Actions: Can thiệp Hủy / Hoàn tiền */}
+              {(canCancel(item.status) || canRefund(item)) && (
+                <View style={styles.actionRow}>
+                  {canCancel(item.status) && (
+                    <TouchableOpacity
+                      style={styles.cancelBtn}
+                      activeOpacity={0.8}
+                      onPress={() => handleCancelOrder(item)}
+                    >
+                      <Ban size={15} color={colors.error} />
+                      <AppText variant="captionSemiBold" color={colors.error}>
+                        Hủy đơn (Override)
+                      </AppText>
+                    </TouchableOpacity>
+                  )}
 
-                {canRefund(item) && (
-                  <TouchableOpacity
-                    style={styles.refundBtn}
-                    activeOpacity={0.8}
-                    onPress={() => handleRefund(item)}
-                  >
-                    <RotateCcw size={15} color={colors.warning} />
-                    <AppText variant="captionSemiBold" color={colors.warning}>
-                      Hoàn tiền
-                    </AppText>
-                  </TouchableOpacity>
-                )}
-              </View>
+                  {canRefund(item) && (
+                    <TouchableOpacity
+                      style={styles.refundBtn}
+                      activeOpacity={0.8}
+                      onPress={() => handleRefund(item)}
+                    >
+                      <RotateCcw size={15} color={colors.warning} />
+                      <AppText variant="captionSemiBold" color={colors.warning}>
+                        Hoàn tiền Demo
+                      </AppText>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
             </View>
           )}
         />
@@ -377,4 +385,3 @@ export default function AdminOrdersScreen() {
     </SafeAreaView>
   );
 }
-
