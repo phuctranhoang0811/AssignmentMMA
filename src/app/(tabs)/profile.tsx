@@ -140,7 +140,7 @@ export default function ProfileScreen() {
             {/* Menu Group 1 */}
             <View style={styles.cardGroup}>
               {/* Quản lý đơn bếp (dành riêng cho Admin / Employee) */}
-              {(user?.role === 'EMPLOYEE' ||
+              {(user?.role === 'STORE_MANAGER' || user?.role === 'EMPLOYEE' ||
                 user?.role === 'SUPER_ADMIN' ||
                 user?.role === 'ADMIN') && (
                 <>

@@ -30,9 +30,10 @@ import {
 import { useAuth } from '../../state/AuthContext';
 import { styles } from '../../styles/login.styles';
 import type { GoogleBrowserSession } from '../../types/googleLogin';
+import { loginDestination } from '../../utils/staff';
 
 export default function LoginScreen() {
-  const { loginDemo, loginGoogle, isLoading: authLoading } = useAuth();
+  const { user, loginDemo, loginGoogle, isLoading: authLoading } = useAuth();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -40,16 +41,17 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [shouldNavigate, setShouldNavigate] = useState(false);
   const signingIn = useRef(false);
   const googleController = useRef<AbortController | null>(null);
   const [browserSession, setBrowserSession] = useState<GoogleBrowserSession | null>(null);
-  const busy = isLoading || googleLoading || authLoading;
+  const busy = isLoading || googleLoading || authLoading || shouldNavigate;
 
   useEffect(() => () => { googleController.current?.abort(); }, []);
 
   const handleBack = () => {
     googleController.current?.abort();
-    if (returnTo === 'profile') {
+    if (returnTo === 'staff' || returnTo === 'profile') {
       router.replace('/(tabs)/profile');
     } else if (returnTo === 'rewards') {
       router.replace('/(tabs)/profile');
@@ -63,10 +65,10 @@ export default function LoginScreen() {
   };
 
   useEffect(() => {
-    if (returnTo === 'profile' || returnTo === 'rewards' || returnTo === 'menu' || returnTo === 'cart' || returnTo === 'cart-checkout') {
+    if (returnTo === 'staff' || returnTo === 'profile' || returnTo === 'rewards' || returnTo === 'menu' || returnTo === 'cart' || returnTo === 'cart-checkout') {
       const onBackPress = () => {
         googleController.current?.abort();
-        if (returnTo === 'profile' || returnTo === 'rewards') router.replace('/(tabs)/profile');
+        if (returnTo === 'staff' || returnTo === 'profile' || returnTo === 'rewards') router.replace('/(tabs)/profile');
         else if (returnTo === 'menu') router.replace('/(tabs)/menu');
         else if (returnTo === 'cart' || returnTo === 'cart-checkout') router.replace('/(tabs)/cart');
         return true;
@@ -76,24 +78,14 @@ export default function LoginScreen() {
     }
   }, [returnTo]);
 
-  const navigateAfterLogin = () => {
-    if (returnTo === 'checkout') {
-      router.back();
-    } else if (returnTo === 'cart-checkout') {
-      // Signed in from the cart's checkout button: continue to checkout with the same cart.
-      router.replace('/checkout');
-    } else if (returnTo === 'profile') {
-      router.replace('/(tabs)/profile');
-    } else if (returnTo === 'rewards') {
-      router.replace('/(tabs)/rewards');
-    } else if (returnTo === 'menu') {
-      router.replace('/(tabs)/menu');
-    } else if (returnTo === 'cart') {
-      router.replace('/(tabs)/cart');
-    } else {
-      router.replace('/(tabs)/home');
-    }
-  };
+  // Wait for the authenticated profile; the identifier may be a phone or Google account.
+  useEffect(() => {
+    if (!shouldNavigate || authLoading || !user) return;
+    const destination = loginDestination(user.role, returnTo);
+    setShouldNavigate(false);
+    if (destination === 'back') router.back();
+    else router.replace(destination);
+  }, [shouldNavigate, authLoading, user, returnTo]);
 
   const handleLogin = async () => {
     if (signingIn.current || authLoading) return;
@@ -111,7 +103,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await loginDemo(identifier.trim(), password);
-      navigateAfterLogin();
+      setShouldNavigate(true);
     } catch (e: any) {
       Alert.alert('Đăng nhập thất bại', e.message || 'Tài khoản hoặc mật khẩu không đúng');
     } finally {
@@ -126,7 +118,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await loginDemo('demo@pizzatime.local');
-      navigateAfterLogin();
+      setShouldNavigate(true);
     } finally {
       signingIn.current = false;
       setIsLoading(false);
@@ -143,7 +135,7 @@ export default function LoginScreen() {
     try {
       if (await loginGoogle({ signal: controller.signal,
         onBrowserSession: session => { if (!controller.signal.aborted) setBrowserSession(session); },
-      })) navigateAfterLogin();
+      })) setShouldNavigate(true);
     } catch (error) {
       if (!controller.signal.aborted) setErrorMessage(error instanceof Error ? error.message : 'Đăng nhập Google chưa thành công.');
     } finally {

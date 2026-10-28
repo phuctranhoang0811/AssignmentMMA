@@ -3,14 +3,9 @@ import { auth } from './firebase';
 import { apiUrl, request } from './payosService';
 import type { CreateOrderInput } from './contracts';
 import { deliveryCheckout } from './deliveryService';
-import type { Delivery } from '../types/delivery';
+import type { StaffOrder } from '../types/order';
+export type { StaffOrder } from '../types/order';
 
-export type StaffOrder = {
-  id: string; orderCode: string; status: string; fulfillmentType: string; address: string;
-  customer: { fullname: string; phone: string }; total: number; paymentName?: string; paymentStatus?: string;
-  deliveryTime?: string; items: { productName: string; quantity: number; variantName?: string }[];
-  delivery?: Delivery;
-};
 // Same shape as a Firestore order document, minus internal fields.
 export type LookupOrder = Record<string, any> & { id: string; orderCode: string; status: string };
 

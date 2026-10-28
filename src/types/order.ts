@@ -1,4 +1,17 @@
 import { PizzaCustomizationState } from './pizzaCustomization';
+import type { Delivery } from './delivery';
+
+export type StaffOrder = {
+  id: string; orderCode: string; status: string; fulfillmentType: string; address: string;
+  customer: { fullname: string; phone: string }; total: number; paymentName?: string; paymentStatus?: string;
+  createdAt?: string | { seconds?: number; _seconds?: number };
+  deliveryNote?: string; paymentMethod?: string;
+  deliveryTime?: string; items: {
+    productName: string; quantity: number; variantName?: string; addonNames?: string[];
+    note?: string; lineTotal?: number; customizationSummary?: string | string[];
+  }[];
+  delivery?: Delivery;
+};
 
 export type OrderStatus =
   | 'PENDING_CONFIRMATION'

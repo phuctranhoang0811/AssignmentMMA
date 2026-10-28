@@ -75,7 +75,7 @@ export default function RootLayout() {
       <Stack.Screen name="profile/settings" options={{ headerShown: false }} />
       <Stack.Screen name="favorites" options={{ headerShown: false }} />
       <Stack.Screen name="offers" options={{ headerShown: false }} />
-      <Stack.Screen name="staff/orders" options={{ headerShown: false }} />
+      <Stack.Screen name="staff" options={{ headerShown: false }} />
     </Stack>
   );
 
