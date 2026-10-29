@@ -48,6 +48,7 @@
     "seed:accounts": "npx tsx scripts/create-admin-employee-accounts.ts",
     "view:firebase": "npx tsx scripts/view-firebase-data.ts",
     "lint": "expo lint",
+    "test:rules": "npm --prefix firestore-tests install --no-audit --no-fund && npm --prefix firestore-tests test",
     "dev:client": "expo start --dev-client",
     "google:expo-go": "node scripts/start-google-bridge.mjs"
   },

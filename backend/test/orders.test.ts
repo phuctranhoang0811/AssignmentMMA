@@ -4,6 +4,8 @@ import { OrderOpsStore, nextStatus, findCoupon, isBlocked } from '../src/orders'
 import { checkoutSchema, HttpError, priceCheckout } from '../src/domain';
 import { mockProducts } from '../../src/data/mockProducts';
 import { database } from './fakeDb';
+import { OrderStore } from '../src/store';
+import { Timestamp } from 'firebase-admin/firestore';
 import { phoneLogin } from '../src/phoneLogin';
 import { OtpStore } from '../src/otp';
 import { isCustomizablePizza, PIZZA_TOPPINGS } from '../../src/types/pizzaCustomization';
@@ -308,4 +310,39 @@ test('phone numbers have one spelling: 10 digits starting with 0', () => {
   assert.equal(normalizePhone('0912.345.678'), '0912345678');
   assert.equal(normalizePhone('84912345678'), '0912345678');
   assert.equal(normalizePhone('12345'), '');
+});
+
+test('staff list keeps every active order however old, plus the newest finished ones, newest first', async () => {
+  const { ops, docs } = fixture();
+  const at = (ms: number) => Timestamp.fromMillis(ms);
+  docs.set('orders/old-pending', { status: 'PENDING_CONFIRMATION', createdAt: at(1_000) });
+  for (let i = 0; i < 120; i++) docs.set(`orders/done-${i}`, { status: 'COMPLETED', createdAt: at(10_000 + i) });
+  docs.set('orders/new-ready', { status: 'READY', createdAt: at(1_000_000) });
+  const list = await ops.list('staff') as { id: string; status: string }[];
+  assert.ok(list.some(o => o.id === 'old-pending'), 'an old pending order must not drop off the list');
+  assert.equal(list[0].id, 'new-ready');
+  assert.equal(list.filter(o => o.status === 'COMPLETED').length, 49); // the newest 50 also include new-ready
+  assert.deepEqual((await ops.list('staff', 'PENDING_CONFIRMATION') as { id: string }[]).map(o => o.id), ['old-pending']);
+  await assert.rejects(ops.list('customer'), status(403));
+});
+
+test('payOS takes a voucher: discounted price, use recorded only once paid, refused for a second order', async () => {
+  const { db, docs } = database({ sized });
+  const store = new OrderStore(db);
+  const payos = checkoutSchema.parse({ ...checkout(), promoCode: 'pizza20' });
+  const order = await store.reserve('buyer', 'payos-voucher-key-0001', payos);
+  assert.equal(order.pricing.discount, 50000);
+  assert.equal(order.total, 350000);
+  assert.equal(docs.has('coupon_usages/PIZZA20_buyer'), false, 'not used until paid');
+  await store.pay({ orderCode: order.orderCode, paymentLinkId: 'link', amount: order.total, reference: 'bank' });
+  assert.equal(docs.get('coupon_usages/PIZZA20_buyer')!.orderId, order.id);
+  assert.equal(docs.get(`orders/${order.id}`)!.voucherCode, 'PIZZA20');
+  await assert.rejects(store.reserve('buyer', 'payos-voucher-key-0002', payos), status(409));
+});
+
+test('cash order returns the amounts it stored, so the confirmation screen can show them', async () => {
+  const { ops } = fixture();
+  const first = await ops.createCash('customer', 'cash-key-0000000050', { checkout: checkout(), promoCode: 'PIZZA20' });
+  assert.deepEqual({ subtotal: first.subtotal, discount: first.discount, total: first.total }, { subtotal: 400000, discount: 50000, total: 350000 });
+  assert.deepEqual(await ops.createCash('customer', 'cash-key-0000000050', { checkout: checkout(), promoCode: 'PIZZA20' }), first);
 });

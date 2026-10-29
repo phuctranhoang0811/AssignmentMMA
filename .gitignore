@@ -50,3 +50,6 @@ backend/.env
 # Temporary / demo captures
 emulator_current.png
 
+
+# Firebase emulator logs
+*-debug.log

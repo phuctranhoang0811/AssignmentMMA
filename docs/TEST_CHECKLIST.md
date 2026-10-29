@@ -4,7 +4,7 @@ Cập nhật: 29/10/2026, nhánh `feature/firebase-auth-database` (sau khi gộp
 
 Tài liệu mô tả **code hiện có**. Mỗi test case ghi kết quả vào cột **KQ**: `PASS` / `FAIL` / `BLOCKED`. Khi FAIL, ghi: nền tảng (Android/iOS/web), tài khoản (không ghi mật khẩu), mã đơn, bước tái hiện, kết quả thật, log terminal backend.
 
-Kiểm tra tự động hiện tại: lint 0 lỗi/0 cảnh báo, TypeScript app + backend sạch, **92/92** test backend pass, và **12/12** test Firestore rules trên Firebase Emulator. Test tự động dùng Firestore giả lập và provider giả lập — **không** thay thế các test thủ công dưới đây.
+Kiểm tra tự động hiện tại: lint 0 lỗi/0 cảnh báo, TypeScript app + backend sạch, **95/95** test backend pass, và **12/12** test Firestore rules trên Firebase Emulator. Test tự động dùng Firestore giả lập và provider giả lập — **không** thay thế các test thủ công dưới đây.
 
 ---
 
@@ -199,6 +199,7 @@ Chạy theo thứ tự; nếu bước nào FAIL thì dừng và ghi lỗi.
 | C08 | Tắt backend → đặt → bật lại → đặt lại | Lần đầu báo lỗi, giỏ còn; lần sau tạo đúng một đơn | |
 | C09 | Thông tin khách điền sẵn khi đã đăng nhập | Tên/SĐT/email của tài khoản; không có dữ liệu người khác | |
 | C10 | Món trong giỏ → M tắt "Đang bán" món đó → A đặt COD | Báo tiếng Việt: Món "…" hiện đã hết hoặc ngừng bán, kèm tên món; không tạo đơn | |
+| C11 | Mở checkout → M đổi giá một món trong giỏ → A đặt COD ngay | Màn xác nhận hiện tạm tính/giảm giá/tổng **đúng số backend đã lưu** (giá mới), khớp với đơn trong Lịch sử | |
 
 ### D. Thanh toán payOS
 
@@ -206,12 +207,15 @@ Có thể tạo QR ngân hàng thật — chỉ chuyển tiền khi chủ độn
 
 | ID | Thao tác | Kết quả mong đợi | KQ |
 | --- | --- | --- | --- |
-| D01 | Chọn payOS khi đang có voucher | Báo payOS chưa hỗ trợ voucher | |
+| D01 | Chọn payOS khi đang có voucher `PIZZA20`, giỏ ≥ 200.000đ | Cho phép; QR đúng số tiền **sau giảm** | |
 | D02 | Tạo QR, chưa chuyển tiền | Có QR/link; chưa có đơn trong bếp; giỏ còn | |
 | D03 | Hủy/quay lại/QR hết hạn | Không có đơn bếp, giỏ còn | |
 | D04 | (Tùy chọn) Chuyển tiền thật → "Kiểm tra thanh toán" | PAID do backend xác nhận; đúng một đơn bếp; giỏ xóa | |
 | D05 | Chọn giờ hẹn + ghi chú → payOS → (đã trả) → S xem đơn | S thấy đúng giờ hẹn và ghi chú | |
 | D06 | B mở màn thanh toán bằng ID đơn của A | Bị từ chối | |
+| D07 | Tạo QR payOS có voucher nhưng chưa trả tiền → đổi sang tiền mặt cùng voucher | Vẫn dùng được mã (lượt dùng chỉ bị tính khi payOS đã thanh toán) | |
+| D08 | (Tùy chọn) Trả tiền đơn payOS có `PIZZA20` → đặt đơn mới cùng mã | Đơn mới bị báo "đã dùng mã PIZZA20"; staff từ chối đơn đã trả → mã được trả lại | |
+| D09 | Giao Ahamove + voucher | Vẫn bị chặn: gỡ voucher trước khi lấy phí Ahamove | |
 
 ### E. Nhân viên, theo dõi đơn, hủy, điểm
 
@@ -231,6 +235,7 @@ Có thể tạo QR ngân hàng thật — chỉ chuyển tiền khi chủ độn
 | E12 | A và B thay nhau đăng nhập trên cùng máy | Không thấy đơn, địa chỉ, yêu thích của người trước | |
 | E13 | Mở Rewards → hoàn tất đơn ở S → quay lại Rewards | Điểm mới hiển thị | |
 | E14 | Đơn tiền mặt (tại quầy hoặc giao thường) → S chuyển tới COMPLETED | Thanh toán chuyển "ĐÃ THANH TOÁN" khi hoàn tất; trước đó và khi bị hủy vẫn "CHƯA THANH TOÁN". Đơn tiền mặt qua Ahamove vẫn chưa thanh toán (tài xế giữ tiền) | |
+| E15 | Có đơn chờ xác nhận từ lâu + hơn 100 đơn mới hơn đã xong → S mở portal | Đơn chờ cũ vẫn ở tab "Chờ duyệt"; tab "Đã xong" hiện 50 đơn mới nhất | |
 
 ### F. Rewards và hồ sơ
 
@@ -344,13 +349,15 @@ npx expo lint
 npx tsc --noEmit
 npm run typecheck --prefix backend
 npm test --prefix backend
+npm run test:rules   # Firestore rules trên emulator, cần Java 11+ (lần đầu tự cài công cụ test)
 ```
 
-Kỳ vọng: lint 0 lỗi/0 cảnh báo, TypeScript sạch, 92/92 test pass.
+Kỳ vọng: lint 0 lỗi/0 cảnh báo, TypeScript sạch, 95/95 test backend pass, 12/12 test rules.
 
 ## 7. Giới hạn hiện tại (không tính là lỗi khi test)
 
-- Voucher chưa dùng được với payOS và Ahamove. Mỗi khách dùng mỗi mã một lần.
+- Voucher chưa dùng được với Ahamove (báo phí tính trước khi giảm). Mỗi khách dùng mỗi mã một lần; với payOS, lượt dùng được ghi khi đã thanh toán.
+- Portal nhân viên: tab "Đã xong" chỉ hiện 50 đơn hoàn tất/hủy mới nhất; lịch sử đầy đủ xem ở trang admin.
 - Phụ thu loại đế là giá chung trong code, admin chưa chỉnh được.
 - Hoàn tiền là thủ công: hệ thống chỉ ghi nhận trạng thái, không tự chuyển tiền.
 - App lưu giá/voucher tạm ~60 giây; thay đổi của admin có thể cần mở lại app mới thấy.

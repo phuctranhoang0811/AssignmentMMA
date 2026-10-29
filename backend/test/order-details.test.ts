@@ -67,7 +67,7 @@ test('ordinary delivery payOS keeps notes without an Ahamove quote, and legacy p
   const { deliveryTime: _time, deliveryNote: _note, ...legacy } = body;
   assert.equal(checkoutSchema.safeParse(legacy).success, true);
   assert.equal(checkoutSchema.safeParse({ ...body, deliveryTime: 'x'.repeat(101) }).success, false);
-  assert.throws(() => payosCheckout({ ...input, promoCode: 'FPT40' }), /giảm giá/);
+  assert.equal(checkoutSchema.parse(payosCheckout({ ...input, promoCode: ' fpt40 ' })).promoCode, 'FPT40');
 });
 
 test('Ahamove quote and COD use the same rich kitchen snapshot without booking a driver', async () => {

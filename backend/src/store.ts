@@ -4,6 +4,7 @@ import type { Checkout, PaymentLink, PaymentOrder, PaidData } from './domain';
 import { HttpError, orderIdentity, paidFulfillmentOrder, priceCheckout, settle } from './domain';
 import type { Product } from '../../src/types/product';
 import { validateQuote, type StoredQuote } from './delivery';
+import { checkCoupon, recordCouponUse } from './orders';
 
 export class OrderStore {
   constructor(private db: Firestore, private requireDeliveryQuote = false) {}
@@ -26,9 +27,13 @@ export class OrderStore {
       }
       const quoteRef = checkout.deliveryQuoteId ? this.db.collection('delivery_quotes').doc(checkout.deliveryQuoteId) : null;
       const quote = quoteRef ? validateQuote((await tx.get(quoteRef)).data() as StoredQuote | undefined, uid, checkout, 'PAYOS', id) : undefined;
+      // Ahamove quotes are priced without a voucher, so the two cannot be combined.
+      if (checkout.promoCode && quote) throw new HttpError(422, 'Voucher chưa áp dụng cho giao Ahamove.');
+      // Checked now; the use is recorded only once the payment settles (see pay()).
+      const voucher = checkout.promoCode ? await checkCoupon(tx, this.db, checkout.promoCode, uid) : undefined;
       const productIds = [...new Set(checkout.items.map(i => i.productId))];
       const products = await tx.getAll(...productIds.map(id => this.db.collection('products').doc(id)));
-      const priced = priceCheckout(checkout, products.filter(p => p.exists).map(p => ({ ...p.data(), id: p.id }) as Product));
+      const priced = priceCheckout(checkout, products.filter(p => p.exists).map(p => ({ ...p.data(), id: p.id }) as Product), voucher?.coupon);
       if (quote) {
         if (quote.pricing.subtotal !== priced.pricing.total) throw new HttpError(409, 'Giá món đã thay đổi. Vui lòng lấy lại phí.');
         priced.pricing = quote.pricing;
@@ -66,7 +71,10 @@ export class OrderStore {
       if (!doc.exists) throw new HttpError(409, 'Missing mapped order');
       const order = doc.data() as PaymentOrder;
       const updated = settle(order, data);
+      const claimVoucher = updated !== order && order.checkout.promoCode
+        ? await recordCouponUse(tx, this.db, order.checkout.promoCode, order.userId) : undefined;
       if (updated !== order) {
+        claimVoucher?.(order.id);
         tx.update(ref, { paymentStatus: updated.paymentStatus, paidAt: updated.paidAt!, reference: updated.reference! });
         tx.create(this.db.collection('orders').doc(order.id), {
           ...paidFulfillmentOrder(updated), createdAt: Timestamp.fromDate(new Date(order.createdAt)),

@@ -63,7 +63,7 @@ import type { DeliveryQuote } from '../../types/delivery';
 // Payment Methods
 const PAYMENT_METHODS = [
   { id: 'cash', name: 'Tiền mặt khi nhận hàng', subtext: 'Thanh toán bằng tiền mặt khi nhận món' },
-  { id: 'payos', name: 'payOS', subtext: 'Chuyển khoản bằng mã QR • Cần đăng nhập • Chưa hỗ trợ voucher' },
+  { id: 'payos', name: 'payOS', subtext: 'Chuyển khoản bằng mã QR • Cần đăng nhập' },
 ];
 
 /* SVG: Empty Voucher Ticket with Star */
@@ -283,19 +283,11 @@ export default function CheckoutScreen() {
   };
 
   const handleConfirmPayment = () => {
-    if (tempPaymentId === 'payos' && promoCode) {
-      Alert.alert('payOS chưa hỗ trợ voucher', 'Vui lòng gỡ mã giảm giá trước hoặc tiếp tục thanh toán tiền mặt.');
-      return;
-    }
     setSelectedPaymentId(tempPaymentId);
     setPaymentModalVisible(false);
   };
 
   const handleApplyVoucherCode = () => {
-    if (selectedPaymentId === 'payos') {
-      Alert.alert('payOS chưa hỗ trợ voucher', 'Chọn thanh toán tiền mặt để sử dụng mã giảm giá.');
-      return;
-    }
     const code = inputVoucherCode.trim().toUpperCase();
     const voucher = findCoupon(coupons, code);
     if (!voucher) {
@@ -409,6 +401,7 @@ export default function CheckoutScreen() {
       router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } });
       return;
     }
+    let saved: { subtotal: number; discount: number; total: number };
     try {
       const result = await createCashOrder({
         customer: { fullname, phone: localPhone, email },
@@ -416,6 +409,7 @@ export default function CheckoutScreen() {
         needCutlery, address, deliveryNote, items, promoCode: selectedVoucher?.code, paymentMethod: 'COD',
       }, formatDeliveryTime(deliveryTime));
       setOrderCode(result.orderCode);
+      saved = result;
     } catch (err) {
       Alert.alert('Chưa thể đặt hàng', err instanceof Error ? err.message : 'Đơn hàng chưa được lưu. Giỏ hàng của bạn vẫn được giữ nguyên, vui lòng thử lại.');
       return;
@@ -440,16 +434,16 @@ export default function CheckoutScreen() {
       pad(now.getSeconds());
     setOrderDateString(dateFormatted);
 
-    // 1. Snapshot cart & pricing before clearing
+    // 1. Snapshot cart before clearing; amounts are what the backend stored (prices may have changed meanwhile).
     const orderSnapshot = {
       items: [...items],
       itemCount,
-      subtotal,
+      subtotal: saved.subtotal,
       deliveryFee,
-      voucherDiscount,
+      voucherDiscount: saved.discount,
       selectedVoucher,
-      total,
-      earnedPoints,
+      total: saved.total,
+      earnedPoints: Math.floor(saved.total / 10000),
     };
     setConfirmedOrderData(orderSnapshot);
 

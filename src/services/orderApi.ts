@@ -22,7 +22,7 @@ export async function createCashOrder(input: CreateOrderInput, deliveryTime: str
   const saved = JSON.parse((await AsyncStorage.getItem(storageKey)) ?? 'null') as { body: string; key: string } | null;
   const attempt = saved?.body === body ? saved : { body, key: `CASH-${Date.now()}-${Math.random().toString(36).slice(2, 12)}` };
   await AsyncStorage.setItem(storageKey, JSON.stringify(attempt));
-  const result = await request<{ id: string; orderCode: string }>('/api/orders/cash', {
+  const result = await request<{ id: string; orderCode: string; subtotal: number; discount: number; total: number }>('/api/orders/cash', {
     method: 'POST', headers: { 'Idempotency-Key': attempt.key }, body,
   }, uid);
   await AsyncStorage.removeItem(storageKey);

@@ -28,6 +28,7 @@ export const checkoutSchema = z.object({
   address: z.string().trim().min(1).max(500).optional(),
   deliveryNote: z.string().trim().max(500).optional(),
   deliveryTime: z.string().trim().min(1).max(100).optional(),
+  promoCode: z.string().trim().min(1).max(30).optional(),
   deliveryQuoteId: z.string().uuid().optional(),
   items: z.array(z.object({
     lineId: identifier, productId: identifier, variantId: identifier.optional(),
@@ -105,6 +106,7 @@ export function paidFulfillmentOrder(order: PaymentOrder) {
     deliveryTime: order.checkout.deliveryTime ?? (order.delivery ? 'Giao ngay khi món sẵn sàng' : 'Sớm nhất'),
     ...(order.delivery ? { delivery: order.delivery, deliveryQuoteId: order.checkout.deliveryQuoteId } : {}),
     paymentMethod: 'payos', paymentName: 'payOS', paymentStatus: 'PAID',
+    voucherCode: order.checkout.promoCode?.toUpperCase() ?? null,
     paymentOrderId: order.id, paidAt: order.paidAt, reference: order.reference,
     status: 'PENDING_CONFIRMATION',
     statusHistory: [{ status: 'PENDING_CONFIRMATION', at: order.paidAt, note: 'Đã xác nhận thanh toán payOS' }],

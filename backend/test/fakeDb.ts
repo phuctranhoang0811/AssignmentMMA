@@ -12,16 +12,23 @@ export function database(products: Record<string, Record<string, unknown>> = {})
       update: async value => { assert.ok(docs.has(path)); docs.set(path, { ...docs.get(path), ...value }); } };
   }
   function snapshot(ref: Ref, source: typeof docs) { return { ref, id: ref.id, exists: source.has(ref.path), data: () => source.get(ref.path) }; }
-  // Equality queries with a limit, enough for the stores' lookups.
-  type Query = { name: string; filters: [string, unknown][]; max: number };
-  function query(name: string, filters: [string, unknown][] = [], max = Infinity) {
-    const spec: Query = { name, filters, max };
-    return { spec, where: (field: string, _op: '==', value: unknown) => query(name, [...filters, [field, value]], max),
-      limit: (n: number) => query(name, filters, n), get: async () => run(spec, docs) };
+  // '==' / 'in' filters, one descending orderBy and a limit: enough for the stores' queries.
+  type Filter = [string, '==' | 'in', unknown];
+  type Query = { name: string; filters: Filter[]; max: number; order?: string };
+  function query(name: string, filters: Filter[] = [], max = Infinity, order?: string) {
+    const spec: Query = { name, filters, max, order };
+    return { spec, where: (field: string, op: '==' | 'in', value: unknown) => query(name, [...filters, [field, op, value]], max, order),
+      orderBy: (field: string) => query(name, filters, max, field),
+      limit: (n: number) => query(name, filters, n, order), get: async () => run(spec, docs) };
   }
-  function run({ name, filters, max }: Query, source: typeof docs) {
-    const found = [...source.keys()].filter(path => path.startsWith(`${name}/`) && path.split('/').length === 2)
-      .filter(path => filters.every(([field, value]) => source.get(path)?.[field] === value)).slice(0, max)
+  const millis = (value: unknown) => (value as { toMillis?: () => number })?.toMillis?.() ?? Date.parse(String(value));
+  function run({ name, filters, max, order }: Query, source: typeof docs) {
+    const matches = (value: unknown, op: Filter[1], expected: unknown) => op === 'in' ? (expected as unknown[]).includes(value) : value === expected;
+    let paths = [...source.keys()].filter(path => path.startsWith(`${name}/`) && path.split('/').length === 2)
+      .filter(path => filters.every(([field, op, value]) => matches(source.get(path)?.[field], op, value)));
+    if (order) paths = paths.filter(path => source.get(path)?.[order] !== undefined)
+      .sort((a, b) => millis(source.get(b)![order]) - millis(source.get(a)![order]));
+    const found = paths.slice(0, max)
       .map(path => snapshot(reference(name, path.slice(name.length + 1)), source));
     return { docs: found, empty: found.length === 0, size: found.length };
   }
