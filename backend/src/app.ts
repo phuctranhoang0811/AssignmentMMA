@@ -121,7 +121,7 @@ export function createPaymentServer(options: Options) {
       if (identity.exp * 1000 <= Date.now()) throw new Error('Expired');
       res.locals.uid = identity.uid;
       next();
-    } catch { next(new HttpError(401, 'Authentication required')); }
+    } catch { next(new HttpError(401, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')); }
   });
   app.use('/api', rateLimit({ windowMs: 60_000, limit: 60, keyGenerator: (_req, res) => res.locals.uid,
     standardHeaders: 'draft-8', legacyHeaders: false }));
@@ -232,13 +232,13 @@ export function createPaymentServer(options: Options) {
     }
     res.json({ ...publicOrder(order), providerStatus: link.status });
   });
-  app.use((_req, res) => { res.status(404).json({ error: 'Not found' }); });
+  app.use((_req, res) => { res.status(404).json({ error: 'Không tìm thấy.' }); });
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    if (error instanceof z.ZodError) { res.status(400).json({ error: 'Invalid request', details: error.issues }); return; }
+    if (error instanceof z.ZodError) { res.status(400).json({ error: 'Dữ liệu gửi lên chưa hợp lệ.', details: error.issues }); return; }
     const status = error instanceof HttpError ? error.status :
       error instanceof SyntaxError ? 400 : 500;
     if (status === 500) console.error('Request failed', error instanceof Error ? error.name : 'UnknownError');
-    res.status(status).json({ error: error instanceof HttpError ? error.message : status === 400 ? 'Invalid JSON' : 'Internal server error',
+    res.status(status).json({ error: error instanceof HttpError ? error.message : status === 400 ? 'Dữ liệu gửi lên chưa hợp lệ.' : 'Máy chủ đang gặp sự cố. Vui lòng thử lại.',
       ...(error instanceof HttpError && error.code ? { code: error.code } : {}) });
   });
   return { app, server, io };

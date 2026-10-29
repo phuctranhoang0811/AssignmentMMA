@@ -41,6 +41,10 @@ export async function transition(tx: Transaction, db: Firestore, ref: DocumentRe
     changes.pointsAwarded = true;
   }
   if (status === 'CANCELLED' && order.paymentStatus === 'PAID') changes.paymentStatus = 'REFUND_PENDING';
+  // Store staff collect cash at hand-over. An Ahamove driver collects it instead, so that stays for reconciliation.
+  if (status === 'COMPLETED' && order.paymentMethod === 'cash' && order.paymentStatus === 'UNPAID' && !order.delivery) {
+    changes.paymentStatus = 'PAID';
+  }
   tx.update(ref, changes);
   return { id: ref.id, status };
 }

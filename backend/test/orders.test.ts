@@ -205,3 +205,26 @@ test('app catalog: Firestore wins, admin-only items are kept, deleted products d
   assert.deepEqual(mergeStored(bundled, stored, key, false).map(key), ['a', 'b', 'new']);
   assert.deepEqual(mergeStored(bundled, new Map(), key, true), bundled); // not seeded / offline
 });
+
+test('cash is marked paid when the order completes; cancelled cash orders stay unpaid', async () => {
+  const { ops, docs } = fixture();
+  const { id } = await ops.createCash('customer', 'cash-key-0000000010', { checkout: checkout() });
+  for (let i = 0; i < 3; i++) await ops.advance('staff', id);
+  assert.equal(docs.get(`orders/${id}`)!.paymentStatus, 'UNPAID'); // READY: not handed over yet
+  await ops.advance('staff', id);
+  assert.equal(docs.get(`orders/${id}`)!.status, 'COMPLETED');
+  assert.equal(docs.get(`orders/${id}`)!.paymentStatus, 'PAID');
+  const other = await ops.createCash('customer', 'cash-key-0000000011', { checkout: checkout() });
+  await ops.cancel('customer', other.id);
+  assert.equal(docs.get(`orders/${other.id}`)!.paymentStatus, 'UNPAID');
+});
+
+test('customers see Vietnamese errors naming the product when an item can no longer be ordered', () => {
+  const soldOut = { ...mockProducts.find(p => p.id === 'PZ001')!, isAvailable: false };
+  const order = checkoutSchema.parse({ customer: { fullname: 'K', phone: '0900000000' }, fulfillmentType: 'PICKUP',
+    items: [{ lineId: 'line-1', productId: 'PZ001', variantId: 'medium', addonIds: [], quantity: 1 }] });
+  assert.throws(() => priceCheckout(order, [soldOut]), (e: unknown) => e instanceof HttpError && e.status === 422
+    && e.message.includes(soldOut.name) && e.message.includes('hết'));
+  assert.throws(() => priceCheckout({ ...order, items: [{ ...order.items[0], variantId: 'xl' }] }, [{ ...soldOut, isAvailable: true }]),
+    (e: unknown) => e instanceof HttpError && /Size/.test(e.message));
+});

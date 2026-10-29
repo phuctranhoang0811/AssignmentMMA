@@ -44,9 +44,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!accountId) return;
     return onSnapshot(doc(db, 'users', accountId), snapshot => {
       if (!snapshot.exists()) return;
-      const points = snapshot.data().rewardPoints ?? 0;
-      setUser(previous => previous?.id === accountId ? { ...previous, rewardPoints: points } : previous);
-    }, error => console.warn('Không thể đồng bộ điểm thưởng:', error.code));
+      // Points and role change on the server (orders, admin portal); keep the session and its saved copy current.
+      const data = snapshot.data();
+      setUser(previous => {
+        if (previous?.id !== accountId) return previous;
+        const next = { ...previous, rewardPoints: data.rewardPoints ?? 0, role: data.role || 'USER' };
+        void AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+        return next;
+      });
+    }, error => console.warn('Không thể đồng bộ hồ sơ:', error.code));
   }, [accountId]);
 
   useEffect(() => {
@@ -294,23 +300,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: email !== undefined ? email : user.email,
     };
 
-    // Cập nhật lên Firestore nếu user có id hợp lệ
-    try {
-      if (user.id && !user.isDemo) {
-        await setDoc(
-          doc(db, 'users', user.id),
-          {
-            fullName: name,
-            phone,
-            ...(birthday !== undefined ? { birthday } : {}),
-            ...(gender !== undefined ? { gender } : {}),
-            ...(email !== undefined ? { email } : {}),
-          },
-          { merge: true }
-        );
-      }
-    } catch (err) {
-      console.warn('Lỗi đồng bộ cập nhật lên Firestore:', err);
+    // Save to Firestore first; on failure keep the old data so the screen does not report a save that did not happen.
+    if (user.id && !user.isDemo) {
+      await setDoc(
+        doc(db, 'users', user.id),
+        {
+          fullName: name,
+          phone,
+          ...(birthday !== undefined ? { birthday } : {}),
+          ...(gender !== undefined ? { gender } : {}),
+          ...(email !== undefined ? { email } : {}),
+        },
+        { merge: true }
+      );
     }
 
     setUser(updated);

@@ -53,20 +53,20 @@ export function priceCheckout(checkout: Checkout, products: Product[], coupon?: 
   const map = Object.fromEntries(products.map(p => [p.id, p]));
   for (const item of checkout.items) {
     const p = map[item.productId];
-    if (!p?.isAvailable || !Number.isSafeInteger(p.basePrice) || p.basePrice < 0) throw new HttpError(422, 'Product unavailable');
-    if (p.variants?.length && !item.variantId) throw new HttpError(422, 'Variant required');
-    if (item.variantId && !p.variants?.some(v => v.id === item.variantId)) throw new HttpError(422, 'Invalid variant');
-    if (new Set(item.addonIds).size !== item.addonIds.length || item.addonIds.some(id => !p.addons?.some(a => a.id === id))) throw new HttpError(422, 'Invalid addons');
+    if (!p?.isAvailable || !Number.isSafeInteger(p.basePrice) || p.basePrice < 0) throw new HttpError(422, `Món "${p?.name ?? item.productId}" hiện đã hết hoặc ngừng bán. Vui lòng xóa khỏi giỏ.`);
+    if (p.variants?.length && !item.variantId) throw new HttpError(422, `Vui lòng chọn size cho món "${p.name}".`);
+    if (item.variantId && !p.variants?.some(v => v.id === item.variantId)) throw new HttpError(422, `Size đã chọn của món "${p.name}" không còn. Vui lòng chọn lại.`);
+    if (new Set(item.addonIds).size !== item.addonIds.length || item.addonIds.some(id => !p.addons?.some(a => a.id === id))) throw new HttpError(422, `Món thêm của "${p.name}" không còn. Vui lòng chọn lại.`);
     const c = item.customization;
     if (c && (!isCustomizablePizza(p) || c.sizeId !== item.variantId || !PIZZA_CRUSTS.some(v => v.id === c.crustId && v.supportedSizes.includes(c.sizeId)) ||
       !PIZZA_SAUCES.some(v => v.id === c.sauceId) || new Set(c.toppings.map(t => t.id)).size !== c.toppings.length ||
       c.toppings.reduce((sum, t) => sum + t.quantity, 0) > MAX_TOPPINGS_COUNT ||
-      c.toppings.some(t => !PIZZA_TOPPINGS.some(v => v.id === t.id)) || c.removedIngredients.some(v => !p.ingredients?.includes(v)))) throw new HttpError(422, 'Invalid customization');
+      c.toppings.some(t => !PIZZA_TOPPINGS.some(v => v.id === t.id)) || c.removedIngredients.some(v => !p.ingredients?.includes(v)))) throw new HttpError(422, `Tùy chọn pizza "${p.name}" không hợp lệ. Vui lòng chỉnh lại món.`);
     const price = getItemLineUnitPrice(item, p);
-    if (!Number.isSafeInteger(price) || price < 0) throw new HttpError(422, 'Invalid catalog price');
+    if (!Number.isSafeInteger(price) || price < 0) throw new HttpError(422, `Giá món "${p.name}" đang lỗi. Vui lòng thử lại sau.`);
   }
   const pricing = calculateOrderTotals(checkout.items, map, checkout.fulfillmentType, coupon);
-  if (!Number.isSafeInteger(pricing.total) || pricing.total < 1 || pricing.total > 50000000) throw new HttpError(422, 'Invalid order total');
+  if (!Number.isSafeInteger(pricing.total) || pricing.total < 1 || pricing.total > 50000000) throw new HttpError(422, 'Tổng đơn hàng không hợp lệ.');
   return { pricing, items: checkout.items.map(item => {
     const product = map[item.productId];
     const unitPrice = getItemLineUnitPrice(item, product);
