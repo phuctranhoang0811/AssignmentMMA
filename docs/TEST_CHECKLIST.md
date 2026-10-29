@@ -4,7 +4,7 @@ Cập nhật: 29/10/2026, nhánh `feature/firebase-auth-database` (sau khi gộp
 
 Tài liệu mô tả **code hiện có**. Mỗi test case ghi kết quả vào cột **KQ**: `PASS` / `FAIL` / `BLOCKED`. Khi FAIL, ghi: nền tảng (Android/iOS/web), tài khoản (không ghi mật khẩu), mã đơn, bước tái hiện, kết quả thật, log terminal backend.
 
-Kiểm tra tự động hiện tại: lint 0 lỗi/0 cảnh báo, TypeScript app + backend sạch, **84/84** test backend pass. Test tự động dùng Firestore giả lập và provider giả lập — **không** thay thế các test thủ công dưới đây.
+Kiểm tra tự động hiện tại: lint 0 lỗi/0 cảnh báo, TypeScript app + backend sạch, **86/86** test backend pass. Test tự động dùng Firestore giả lập và provider giả lập — **không** thay thế các test thủ công dưới đây.
 
 ---
 
@@ -110,7 +110,7 @@ PENDING_CONFIRMATION ─► CONFIRMED ─► PREPARING ─► READY ─┬─(nh
 | Thêm món | `products/{id mới}` | Món xuất hiện trong menu |
 | Xóa món | xóa `products/{id}` | Món biến mất khỏi menu |
 | Tạo/xóa voucher | `coupons/{CODE}` | Trang Ưu đãi, ô nhập mã ở giỏ/checkout; backend chấp nhận mã |
-| Đổi role / khóa user | `users/{uid}.role` | Lần đăng nhập/mở app sau, user vào đúng portal; tài khoản khóa không đặt được đơn |
+| Đổi role / khóa user | `users/{uid}.role` | App của user nhận role mới ngay khi đang mở; tài khoản khóa không đặt được đơn |
 
 ---
 
@@ -190,6 +190,7 @@ Chạy theo thứ tự; nếu bước nào FAIL thì dừng và ghi lỗi.
 | C07 | Bấm "Đặt hàng" liên tục nhiều lần | Chỉ một đơn được tạo | |
 | C08 | Tắt backend → đặt → bật lại → đặt lại | Lần đầu báo lỗi, giỏ còn; lần sau tạo đúng một đơn | |
 | C09 | Thông tin khách điền sẵn khi đã đăng nhập | Tên/SĐT/email của tài khoản; không có dữ liệu người khác | |
+| C10 | Món trong giỏ → M tắt "Đang bán" món đó → A đặt COD | Báo tiếng Việt: Món "…" hiện đã hết hoặc ngừng bán, kèm tên món; không tạo đơn | |
 
 ### D. Thanh toán payOS
 
@@ -221,6 +222,7 @@ Có thể tạo QR ngân hàng thật — chỉ chuyển tiền khi chủ độn
 | E11 | Đăng xuất → Tra cứu đơn: đúng SĐT + mã; sai một trong hai; tra liên tục > 10 lần/phút | Đúng thì thấy đơn; sai không thấy; quá giới hạn bị chặn tạm | |
 | E12 | A và B thay nhau đăng nhập trên cùng máy | Không thấy đơn, địa chỉ, yêu thích của người trước | |
 | E13 | Mở Rewards → hoàn tất đơn ở S → quay lại Rewards | Điểm mới hiển thị | |
+| E14 | Đơn tiền mặt (tại quầy hoặc giao thường) → S chuyển tới COMPLETED | Thanh toán chuyển "ĐÃ THANH TOÁN" khi hoàn tất; trước đó và khi bị hủy vẫn "CHƯA THANH TOÁN". Đơn tiền mặt qua Ahamove vẫn chưa thanh toán (tài xế giữ tiền) | |
 
 ### F. Rewards và hồ sơ
 
@@ -231,6 +233,7 @@ Có thể tạo QR ngân hàng thật — chỉ chuyển tiền khi chủ độn
 | F03 | Không đủ điểm; bấm đổi liên tục | Không âm điểm, không trừ nhiều lần | |
 | F04 | B đăng nhập sau A | Không thấy quà của A | |
 | F05 | Sửa tên/SĐT/ngày sinh/giới tính → đăng xuất/đăng nhập | Dữ liệu được lưu thật | |
+| F06 | Tắt mạng → sửa hồ sơ → Lưu | Báo "Không thể lưu thay đổi", màn hình giữ dữ liệu cũ (không báo thành công giả) | |
 
 ### G. Admin — Dashboard, đơn hàng, hoàn tiền
 
@@ -267,8 +270,8 @@ Có thể tạo QR ngân hàng thật — chỉ chuyển tiền khi chủ độn
 | ID | Thao tác | Kết quả mong đợi | KQ |
 | --- | --- | --- | --- |
 | I01 | M mở Người dùng | Danh sách user thật | |
-| I02 | M đổi B sang `EMPLOYEE` → B đăng nhập lại | B vào portal nhân viên và thao tác đơn được | |
-| I03 | M đổi B về `USER` | B về giao diện khách; gọi API nhân viên bị 403 | |
+| I02 | B đang mở app → M đổi B sang `EMPLOYEE` | App của B nhận role mới ngay (không cần đăng nhập lại): Hồ sơ có mục quản lý đơn bếp; đóng/mở app thì vào thẳng portal nhân viên | |
+| I03 | B đang mở portal nhân viên → M đổi B về `USER` | Portal của B chuyển sang màn chặn "Khu Vực Dành Cho Nhân Viên"; gọi API nhân viên bị 403 | |
 | I04 | M thử đổi role của chính mình | Bị từ chối (rules) | |
 | I05 | M khóa X → X đặt COD / payOS / đổi quà | Cả ba bị từ chối với thông báo tài khoản bị khóa | |
 | I06 | X vẫn đăng nhập và xem đơn cũ | Được | |
@@ -329,7 +332,7 @@ npm run typecheck --prefix backend
 npm test --prefix backend
 ```
 
-Kỳ vọng: lint 0 lỗi/0 cảnh báo, TypeScript sạch, 84/84 test pass.
+Kỳ vọng: lint 0 lỗi/0 cảnh báo, TypeScript sạch, 86/86 test pass.
 
 ## 7. Giới hạn hiện tại (không tính là lỗi khi test)
 
