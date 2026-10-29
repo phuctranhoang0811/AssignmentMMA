@@ -29,6 +29,7 @@ export type PaymentStatus =
   | 'PAID_DEMO'
   | 'FAILED'
   | 'REFUND_PENDING'
+  | 'REFUNDED'
   | 'REFUNDED_DEMO';
 
 export type FulfillmentType = 'DELIVERY' | 'PICKUP';

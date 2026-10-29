@@ -10,7 +10,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../state/AuthContext';
 import { styles } from '../styles/welcome.styles';
-import { isStaffRole } from '../utils/staff';
+import { loginDestination } from '../utils/staff';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -19,13 +19,7 @@ export default function WelcomeScreen() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      const isStaff = isStaffRole(user.role);
-
-      if (isStaff) {
-        router.replace('/staff/orders');
-      } else {
-        router.replace('/(tabs)/home');
-      }
+      router.replace(loginDestination(user.role));
     }
   }, [user, isLoading, router]);
 

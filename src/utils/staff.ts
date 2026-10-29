@@ -1,9 +1,13 @@
 import type { StaffOrder } from '../types/order';
 
-export const isStaffRole = (role?: string) =>
-  ['EMPLOYEE', 'STORE_MANAGER', 'SUPER_ADMIN', 'ADMIN'].includes(role ?? '');
+// Managers/admins open the admin portal but can also run the staff portal; the backend accepts every role here.
+const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'STORE_MANAGER'];
+const STAFF_ROLES = [...ADMIN_ROLES, 'EMPLOYEE', 'ROLE_KITCHEN', 'ROLE_RIDER'];
+export const isAdminRole = (role?: string) => ADMIN_ROLES.includes(role ?? '');
+export const isStaffRole = (role?: string) => STAFF_ROLES.includes(role ?? '');
 
 export function loginDestination(role?: string, returnTo?: string) {
+  if (isAdminRole(role)) return returnTo === 'staff' ? '/staff/orders' : '/admin/dashboard';
   if (returnTo === 'staff' || isStaffRole(role)) return '/staff/orders';
   if (returnTo === 'checkout') return 'back';
   if (returnTo === 'cart-checkout') return '/checkout';

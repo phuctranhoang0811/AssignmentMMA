@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { checkoutSchema, HttpError, orderIdentity, priceCheckout, type Checkout } from './domain';
 import { mockCoupons } from '../../src/data/mockPromotions';
 import type { Product } from '../../src/types/product';
-import { isStaffRole } from '../../src/utils/staff';
+import { isAdminRole, isStaffRole } from '../../src/utils/staff';
 
 export const cashOrderInput = z.object({
   checkout: checkoutSchema,
@@ -83,6 +83,21 @@ export class OrderOpsStore {
     await this.assertStaff(uid);
     return this.cancelWhere(id, order => !FINAL.includes(order.status) && order.status !== 'OUT_FOR_DELIVERY' &&
       (!order.delivery || order.delivery.status === 'NOT_REQUESTED'), `Cửa hàng từ chối: ${reason}`);
+  }
+
+  /** Admin confirms the money for a cancelled paid order was returned by hand (no payOS refund API is used). */
+  async markRefunded(uid: string, id: string) {
+    if (!isAdminRole((await this.db.collection('users').doc(uid).get()).data()?.role)) {
+      throw new HttpError(403, 'Chỉ quản trị viên được xác nhận hoàn tiền.');
+    }
+    const ref = this.db.collection('orders').doc(id);
+    return this.db.runTransaction(async tx => {
+      const order = (await tx.get(ref)).data();
+      if (!order) throw new HttpError(404, 'Không tìm thấy đơn.');
+      if (order.paymentStatus !== 'REFUND_PENDING') throw new HttpError(409, 'Đơn không ở trạng thái chờ hoàn tiền.');
+      tx.update(ref, { paymentStatus: 'REFUNDED', refundedAt: Timestamp.now(), refundedBy: uid });
+      return { id, paymentStatus: 'REFUNDED' };
+    });
   }
 
   async cancel(uid: string, id: string) {

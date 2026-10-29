@@ -1,3 +1,5 @@
+export type UserRole = 'CUSTOMER' | 'USER' | 'EMPLOYEE' | 'STAFF' | 'STORE_MANAGER' | 'SUPER_ADMIN' | string;
+
 export type DemoUser = {
   id: string;
   fullname: string;
@@ -6,7 +8,8 @@ export type DemoUser = {
   avatar?: string;
   birthday?: string;
   gender?: string;
-  role?: 'USER' | 'EMPLOYEE' | 'STORE_MANAGER' | 'SUPER_ADMIN' | string;
+  role?: UserRole;
+  branchId?: string;
   rewardPoints?: number;
   isDemo?: boolean;
   hasPassword?: boolean;

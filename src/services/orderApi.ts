@@ -36,6 +36,8 @@ export const listStaffOrders = (status?: string) =>
   request<StaffOrder[]>(`/api/staff/orders${status ? `?status=${status}` : ''}`);
 export const advanceStaffOrder = (id: string) =>
   request<{ id: string; status: string }>(`/api/staff/orders/${encodeURIComponent(id)}/advance`, { method: 'POST' });
+export const markOrderRefunded = (id: string) =>
+  request<{ id: string; paymentStatus: string }>(`/api/admin/orders/${encodeURIComponent(id)}/refunded`, { method: 'POST' });
 export const rejectStaffOrder = (id: string, reason: string) =>
   request<{ id: string; status: string }>(`/api/staff/orders/${encodeURIComponent(id)}/reject`, {
     method: 'POST', body: JSON.stringify({ reason }),

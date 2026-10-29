@@ -165,3 +165,15 @@ test('staff access: an env UID or a staff role stored in Firestore; a customer i
   await assert.rejects(ops.advance('customer', id), status(403));
   await assert.rejects(ops.reject('nobody', id, 'x'), status(403));
 });
+
+test('only an admin marks a refund, and only for an order waiting for one', async () => {
+  const { ops, docs } = fixture();
+  docs.set('users/admin', { role: 'SUPER_ADMIN' });
+  const { id } = await ops.createCash('customer', 'cash-key-0000000007', { checkout: checkout() });
+  await assert.rejects(ops.markRefunded('admin', id), status(409));
+  docs.set(`orders/${id}`, { ...docs.get(`orders/${id}`)!, paymentStatus: 'PAID' });
+  await ops.reject('admin', id, 'Hết bột');
+  await assert.rejects(ops.markRefunded('staff', id), status(403));
+  assert.equal((await ops.markRefunded('admin', id)).paymentStatus, 'REFUNDED');
+  assert.equal(docs.get(`orders/${id}`)!.paymentStatus, 'REFUNDED');
+});

@@ -19,7 +19,7 @@ type Options = {
   delivery?: Pick<DeliveryStore, 'quote' | 'createCod' | 'dispatch' | 'refresh' | 'webhook' | 'assertStaff' | 'config'>;
   otp?: Pick<OtpStore, 'start' | 'verify'>;
   phoneLogin?: (phone: string, password: string) => Promise<{ token: string }>;
-  orders?: Pick<OrderOpsStore, 'list' | 'advance' | 'reject' | 'cancel' | 'createCash' | 'lookup'>;
+  orders?: Pick<OrderOpsStore, 'list' | 'advance' | 'reject' | 'markRefunded' | 'cancel' | 'createCash' | 'lookup'>;
   googleBridge?: GoogleBridgeOptions;
   rewards?: Pick<RewardStore, 'wallet' | 'redeem'>;
   store: Pick<OrderStore, 'get' | 'reserve' | 'attach' | 'pay'>;
@@ -161,6 +161,9 @@ export function createPaymentServer(options: Options) {
   app.post('/api/staff/orders/:id/reject', async (req, res) => {
     const { reason } = z.object({ reason: z.string().trim().min(3).max(200) }).strict().parse(req.body);
     res.json(await orders().reject(res.locals.uid, orderId.parse(req.params.id), reason));
+  });
+  app.post('/api/admin/orders/:id/refunded', async (req, res) => {
+    res.json(await orders().markRefunded(res.locals.uid, orderId.parse(req.params.id)));
   });
   app.post('/api/payments/payos', async (req, res) => {
     const key = z.string().min(16).max(128).regex(/^[\w-]+$/).parse(req.headers['idempotency-key']);

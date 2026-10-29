@@ -2,22 +2,37 @@ rules_version = '2';
 
 // The backend (Admin SDK) bypasses these rules. The app may only:
 // read the menu, read its own orders, and create/edit its own profile without touching role or points.
+// Admins (role set in the Firebase Console or by another admin) also manage the menu, coupons and roles.
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Keep in sync with ADMIN_ROLES in src/utils/staff.ts.
+    function isAdmin() {
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['SUPER_ADMIN', 'ADMIN', 'STORE_MANAGER'];
+    }
+
     match /products/{productId} {
       allow read: if true;
-      allow write: if false; // seed with `cd backend && npm run seed:catalog`
+      allow write: if isAdmin(); // initial catalog: `cd backend && npm run seed:catalog`
+    }
+
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /orders/{orderId} {
-      // Orders are created and moved by the backend only (prices, status, payment).
-      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Orders are created and moved by the backend only (prices, status, payment, refunds).
+      allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
       allow write: if false;
     }
 
     match /users/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      // Admins change roles only; reward points stay backend-only.
+      allow update: if isAdmin() && request.auth.uid != uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'updatedAt']);
       allow create: if request.auth != null && request.auth.uid == uid
         && request.resource.data.role == 'USER'
         && request.resource.data.rewardPoints == 100;

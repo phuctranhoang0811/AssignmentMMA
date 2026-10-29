@@ -66,7 +66,7 @@ test('staff time reads Admin SDK JSON timestamps and client timestamps consisten
 });
 
 test('every supported staff role, including store manager, can enter the same portal', () => {
-  for (const role of ['EMPLOYEE', 'STORE_MANAGER', 'SUPER_ADMIN', 'ADMIN']) assert.equal(isStaffRole(role), true);
+  for (const role of ['EMPLOYEE', 'ROLE_KITCHEN', 'ROLE_RIDER', 'STORE_MANAGER', 'SUPER_ADMIN', 'ADMIN']) assert.equal(isStaffRole(role), true);
   for (const role of ['USER', '', undefined]) assert.equal(isStaffRole(role), false);
 });
 
@@ -76,8 +76,11 @@ test('staff routing preserves every customer login destination, including checko
     ['rewards', '/(tabs)/rewards'], ['menu', '/(tabs)/menu'], ['cart', '/(tabs)/cart'],
     [undefined, '/(tabs)/home'],
   ]) assert.equal(loginDestination('USER', returnTo), expected);
-  for (const role of ['EMPLOYEE', 'STORE_MANAGER', 'SUPER_ADMIN', 'ADMIN']) {
-    assert.equal(loginDestination(role), '/staff/orders');
+  for (const role of ['EMPLOYEE', 'ROLE_KITCHEN', 'ROLE_RIDER']) assert.equal(loginDestination(role), '/staff/orders');
+  // Managers/admins land on the admin portal, and can still open the staff portal on purpose.
+  for (const role of ['STORE_MANAGER', 'SUPER_ADMIN', 'ADMIN']) {
+    assert.equal(loginDestination(role), '/admin/dashboard');
+    assert.equal(loginDestination(role, 'staff'), '/staff/orders');
   }
   assert.equal(loginDestination('USER', 'staff'), '/staff/orders');
 });

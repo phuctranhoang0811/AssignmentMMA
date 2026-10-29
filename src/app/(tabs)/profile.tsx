@@ -22,9 +22,11 @@ import {
   LogOut,
   X,
   Sparkles,
+  ShieldCheck,
 } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 import { styles } from '../../styles/profile.styles';
+import { isAdminRole, isStaffRole } from '../../utils/staff';
 
 // Custom Pizza Reward Slice Badge Icon (exact match to user mockup)
 const PizzaRewardIcon = ({ size = 22, color = '#1E2024' }: { size?: number; color?: string }) => (
@@ -139,10 +141,27 @@ export default function ProfileScreen() {
 
             {/* Menu Group 1 */}
             <View style={styles.cardGroup}>
+              {/* Bảng điều khiển Quản trị viên (Admin Portal) */}
+              {isAdminRole(user?.role) && (
+                <>
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.7}
+                    onPress={() => router.push('/admin/dashboard')}
+                  >
+                    <View style={styles.menuIconCol}>
+                      <ShieldCheck size={22} color="#CF4226" strokeWidth={1.8} />
+                    </View>
+                    <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
+                      Bảng Quản trị Hệ thống (Admin)
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.divider} />
+                </>
+              )}
+
               {/* Quản lý đơn bếp (dành riêng cho Admin / Employee) */}
-              {(user?.role === 'STORE_MANAGER' || user?.role === 'EMPLOYEE' ||
-                user?.role === 'SUPER_ADMIN' ||
-                user?.role === 'ADMIN') && (
+              {isStaffRole(user?.role) && (
                 <>
                   <TouchableOpacity
                     style={styles.menuRow}
