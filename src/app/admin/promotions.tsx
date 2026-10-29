@@ -20,7 +20,10 @@ import {
 import {
   collection,
   onSnapshot,
-  addDoc,
+  doc,
+  getDoc,
+  setDoc,
+  deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -36,7 +39,8 @@ import { formatCurrency } from '../../utils/formatCurrency';
 export default function AdminPromotionsScreen() {
   const router = useRouter();
 
-  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  // Built-in coupons ship with the app; only coupons stored in Firestore can be removed here.
+  const [coupons, setCoupons] = useState<(Coupon & { stored?: boolean })[]>(mockCoupons);
   const [modalVisible, setModalVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -53,8 +57,8 @@ export default function AdminPromotionsScreen() {
     const unsub = onSnapshot(
       collection(db, 'coupons'),
       (snapshot: any) => {
-        if (!snapshot.empty) {
-          const list: (Coupon & { id?: string })[] = [];
+        {
+          const list: (Coupon & { stored?: boolean })[] = [];
           snapshot.forEach((d: any) => {
             const data = d.data();
             list.push({
@@ -65,11 +69,10 @@ export default function AdminPromotionsScreen() {
               maxDiscount: data.maxDiscount ? Number(data.maxDiscount) : undefined,
               description: data.description || '',
               expiresAt: data.expiresAt || '31/12/2026',
+              stored: true,
             });
           });
-          setCoupons(list);
-        } else {
-          setCoupons(mockCoupons);
+          setCoupons([...list, ...mockCoupons.filter(m => !list.some(c => c.code === m.code))]);
         }
       },
       (err: any) => {
@@ -94,7 +97,7 @@ export default function AdminPromotionsScreen() {
         discountType,
         value: Number(value),
         minSubtotal: Number(minSubtotal) || 0,
-        maxDiscount: discountType === 'PERCENT' ? Number(maxDiscount) || 50000 : undefined,
+        ...(discountType === 'PERCENT' ? { maxDiscount: Number(maxDiscount) || 50000 } : {}),
         description:
           desc.trim() ||
           `Giảm ${discountType === 'PERCENT' ? `${value}%` : formatCurrency(Number(value))} cho đơn từ ${formatCurrency(Number(minSubtotal))}`,
@@ -102,7 +105,13 @@ export default function AdminPromotionsScreen() {
         createdAt: serverTimestamp(),
       };
 
-      await addDoc(collection(db, 'coupons'), newCoupon);
+      // Doc id = code, so the backend finds it directly and codes stay unique.
+      const ref = doc(db, 'coupons', newCoupon.code);
+      if ((await getDoc(ref)).exists() || mockCoupons.some(c => c.code === newCoupon.code)) {
+        Alert.alert('Mã đã tồn tại', `Mã ${newCoupon.code} đang được sử dụng.`);
+        return;
+      }
+      await setDoc(ref, newCoupon);
       Alert.alert('Thành công', `Đã phát hành mã ưu đãi ${newCoupon.code}`);
       setModalVisible(false);
       setCode('');
@@ -115,14 +124,23 @@ export default function AdminPromotionsScreen() {
     }
   };
 
-  const handleDeleteCoupon = (item: Coupon) => {
+  const handleDeleteCoupon = (item: Coupon & { stored?: boolean }) => {
+    if (!item.stored) {
+      Alert.alert('Mã mặc định', `Mã "${item.code}" có sẵn trong ứng dụng nên không gỡ được tại đây.`);
+      return;
+    }
     Alert.alert('Xóa Voucher', `Bạn có muốn gỡ mã "${item.code}"?`, [
       { text: 'Hủy', style: 'cancel' },
       {
         text: 'Gỡ bỏ',
         style: 'destructive',
-        onPress: () => {
-          setCoupons((prev) => prev.filter((c) => c.code !== item.code));
+        onPress: async () => {
+          // The snapshot listener removes it from the list once Firestore confirms.
+          try {
+            await deleteDoc(doc(db, 'coupons', item.code));
+          } catch (e: any) {
+            Alert.alert('Chưa gỡ được mã', e?.message || 'Vui lòng thử lại.');
+          }
         },
       },
     ]);

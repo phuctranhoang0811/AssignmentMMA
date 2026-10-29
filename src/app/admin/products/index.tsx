@@ -120,7 +120,10 @@ export default function AdminProductsScreen() {
         updatedAt: serverTimestamp(),
       });
     } catch (err: any) {
-      console.warn('Cập nhật tồn kho Firestore thất bại:', err.message);
+      setProducts((prev) =>
+        prev.map((p) => (p.id === item.id ? { ...p, isAvailable: item.isAvailable } : p))
+      );
+      Alert.alert('Chưa cập nhật được tình trạng món', err?.message || 'Vui lòng thử lại.');
     }
   };
 
@@ -182,9 +185,10 @@ export default function AdminProductsScreen() {
           image: formImage.trim() || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500',
           description: formDesc.trim(),
           isAvailable: true,
+          // A variant price is the full selling price (see getItemLineUnitPrice), not a surcharge.
           variants: [
-            { id: 'v1', name: 'Size Vừa (9")', price: 0 },
-            { id: 'v2', name: 'Size Lớn (12")', price: 60000 },
+            { id: 'v1', name: 'Size Vừa (9")', price: priceNum },
+            { id: 'v2', name: 'Size Lớn (12")', price: priceNum + 60000 },
           ],
           addons: [],
           createdAt: serverTimestamp(),

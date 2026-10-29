@@ -8,14 +8,15 @@ import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { ProductCard } from '../components/product/ProductCard';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useFavorites } from '../state/FavoritesContext';
-import { mockProducts } from '../data/mockProducts';
+import { useCatalog } from '../services/catalog';
 import { styles } from '../styles/favorites.styles';
 
 export default function FavoritesScreen() {
   const insets = useSafeAreaInsets();
   const { favoriteIds } = useFavorites();
 
-  const favoriteProducts = mockProducts.filter((p) => favoriteIds.includes(p.id));
+  const { products } = useCatalog();
+  const favoriteProducts = products.filter((p) => favoriteIds.includes(p.id));
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>

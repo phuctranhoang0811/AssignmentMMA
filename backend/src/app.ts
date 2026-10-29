@@ -25,6 +25,7 @@ type Options = {
   store: Pick<OrderStore, 'get' | 'reserve' | 'attach' | 'pay'>;
   payos: Pick<PayOS, 'paymentRequests' | 'webhooks'>;
   verifyToken: (token: string) => Promise<{ uid: string; exp: number }>;
+  isBlocked?: (uid: string) => Promise<boolean>;
   origins: string[]; returnUrl: string; cancelUrl: string;
 };
 const orderIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -124,6 +125,16 @@ export function createPaymentServer(options: Options) {
   });
   app.use('/api', rateLimit({ windowMs: 60_000, limit: 60, keyGenerator: (_req, res) => res.locals.uid,
     standardHeaders: 'draft-8', legacyHeaders: false }));
+  // Locked accounts may still sign in and see their orders, but not create new ones.
+  const canOrder: express.RequestHandler = async (_req, res, next) => {
+    try {
+      if (await options.isBlocked?.(res.locals.uid)) throw new HttpError(403, 'Tài khoản đã bị khóa đặt hàng. Vui lòng liên hệ cửa hàng.');
+      next();
+    } catch (error) { next(error); }
+  };
+  for (const path of ['/api/delivery/quotes', '/api/delivery/orders', '/api/orders/cash', '/api/payments/payos', '/api/rewards/redeem']) {
+    app.post(path, canOrder);
+  }
   const delivery = () => {
     if (!options.delivery) throw new HttpError(503, 'Ahamove staging chưa được cấu hình.');
     return options.delivery;

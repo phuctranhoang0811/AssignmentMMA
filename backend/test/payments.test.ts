@@ -50,7 +50,7 @@ class MemoryStore {
     const paid = settle(order, data); this.orders.set(paid.id, paid); return paid;
   }
 }
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, blocked: string[] = []) {
   const store = new MemoryStore();
   let creates = 0;
   let createFailure: Error | null = null;
@@ -67,7 +67,7 @@ async function fixture(t: TestContext) {
       wallets.set(uid, updated); return updated;
     },
   };
-  const app = createPaymentServer({ rewards, store, payos: api, verifyToken: async token => {
+  const app = createPaymentServer({ rewards, store, payos: api, isBlocked: async uid => blocked.includes(uid), verifyToken: async token => {
     if (!['user-a', 'user-b'].includes(token)) throw new Error('Invalid');
     return { uid: token, exp: Math.floor(Date.now() / 1000) + 3600 };
   }, origins: ['http://localhost:8081'], returnUrl: 'https://example.com/return', cancelUrl: 'https://example.com/cancel' });
@@ -310,4 +310,14 @@ test('reward API requires auth, rejects client pricing, and scopes retries to th
     assert.equal(wallet.gifts.length, 1);
   }
   assert.deepEqual(await (await f.request('/api/rewards', undefined, 'user-b')).json(), { points: 100, gifts: [] });
+});
+
+test('a locked account cannot start a payment or redeem rewards; other accounts are unaffected', async t => {
+  const f = await fixture(t, ['user-b']);
+  const blocked = await f.request('/api/payments/payos', checkout, 'user-b');
+  assert.equal(blocked.status, 403);
+  assert.match((await blocked.json()).error, /khóa/);
+  assert.equal((await f.request('/api/rewards/redeem', { rewardId: 'x' }, 'user-b')).status, 403);
+  assert.equal(f.creates(), 0);
+  assert.equal((await f.create()).status, 200);
 });

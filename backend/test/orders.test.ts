@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { OrderOpsStore, nextStatus } from '../src/orders';
+import { OrderOpsStore, nextStatus, findCoupon, isBlocked } from '../src/orders';
 import { checkoutSchema, HttpError, priceCheckout } from '../src/domain';
 import { mockProducts } from '../../src/data/mockProducts';
 import { database } from './fakeDb';
 import { phoneLogin } from '../src/phoneLogin';
 import { OtpStore } from '../src/otp';
 import { isCustomizablePizza, PIZZA_TOPPINGS } from '../../src/types/pizzaCustomization';
+import { mergeStored } from '../../src/utils/catalogMerge';
 
 const sized = { name: 'Pizza Size', categoryId: 'pizza', basePrice: 100000, addons: [], isAvailable: true,
   variants: [{ id: 'medium', name: 'Cỡ Vừa', price: 200000 }] };
@@ -176,4 +177,31 @@ test('only an admin marks a refund, and only for an order waiting for one', asyn
   await assert.rejects(ops.markRefunded('staff', id), status(403));
   assert.equal((await ops.markRefunded('admin', id)).paymentStatus, 'REFUNDED');
   assert.equal(docs.get(`orders/${id}`)!.paymentStatus, 'REFUNDED');
+});
+
+test('coupons made in the admin portal are priced by the server; built-in ones still work', async () => {
+  const { ops, docs } = fixture();
+  docs.set('coupons/ADMIN50K', { discountType: 'FIXED', value: 50000, minSubtotal: 100000, description: 'Admin' });
+  const { id } = await ops.createCash('customer', 'cash-key-0000000008', { checkout: checkout(), promoCode: 'admin50k' });
+  assert.equal(docs.get(`orders/${id}`)!.discount, 50000);
+  assert.equal((await findCoupon((ops as unknown as { db: Parameters<typeof findCoupon>[0] }).db, 'pizza20'))?.code, 'PIZZA20');
+  await assert.rejects(ops.createCash('customer', 'cash-key-0000000009', { checkout: checkout(), promoCode: 'NOPE' }), status(422));
+});
+
+test('only the BLACKLISTED role counts as locked', async () => {
+  const { db, docs } = database({});
+  docs.set('users/bad', { role: 'BLACKLISTED' });
+  docs.set('users/good', { role: 'USER' });
+  assert.equal(await isBlocked(db, 'bad'), true);
+  assert.equal(await isBlocked(db, 'good'), false);
+  assert.equal(await isBlocked(db, 'missing'), false);
+});
+
+test('app catalog: Firestore wins, admin-only items are kept, deleted products disappear once a catalog exists', () => {
+  const key = (item: { id: string }) => item.id;
+  const bundled = [{ id: 'a', price: 1 }, { id: 'b', price: 2 }];
+  const stored = new Map([['b', { id: 'b', price: 20 }], ['new', { id: 'new', price: 5 }]]);
+  assert.deepEqual(mergeStored(bundled, stored, key, true), [{ id: 'b', price: 20 }, { id: 'new', price: 5 }]);
+  assert.deepEqual(mergeStored(bundled, stored, key, false).map(key), ['a', 'b', 'new']);
+  assert.deepEqual(mergeStored(bundled, new Map(), key, true), bundled); // not seeded / offline
 });

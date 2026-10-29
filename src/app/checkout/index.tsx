@@ -36,11 +36,10 @@ import {
 import Svg, { Path, Polygon } from 'react-native-svg';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
-import { mockProducts } from '../../data/mockProducts';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { calculateOrderTotals, getItemLineUnitPrice } from '../../utils/calculateTotals';
 import { triggerHaptic } from '../../utils/haptics';
-import { mockCoupons } from '../../data/mockPromotions';
+import { findCoupon, useCatalog, useCoupons } from '../../services/catalog';
 import { formatDeliveryTime, isDeliveryTimeAvailable } from '../../utils/deliveryTime';
 import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
 import { DeliveryTimeModal } from '../../components/modals/DeliveryTimeModal';
@@ -60,10 +59,6 @@ import { createCashOrder } from '../../services/orderApi';
 import { ahamoveEnabled, createAhamoveCod, deliveryCheckout, getDeliveryQuote, resumeAhamoveCod } from '../../services/deliveryService';
 import type { DeliveryQuote } from '../../types/delivery';
 
-const productsMap = mockProducts.reduce((acc, p) => {
-  acc[p.id] = p;
-  return acc;
-}, {} as Record<string, (typeof mockProducts)[0]>);
 
 // Payment Methods
 const PAYMENT_METHODS = [
@@ -103,6 +98,8 @@ const contactError = (field: ContactField, value: string) => {
 };
 
 export default function CheckoutScreen() {
+  const { productsMap } = useCatalog();
+  const coupons = useCoupons();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { items, isLoaded: cartLoaded, clearCart, promoCode, setPromoCode, fulfillmentType, setFulfillmentType, needCutlery } = useCart();
@@ -230,7 +227,7 @@ export default function CheckoutScreen() {
   // Voucher Modal & Selection
   const [voucherModalVisible, setVoucherModalVisible] = useState(false);
   const [inputVoucherCode, setInputVoucherCode] = useState('');
-  const selectedVoucher = mockCoupons.find(c => c.code === promoCode) || null;
+  const selectedVoucher = (promoCode && findCoupon(coupons, promoCode)) || null;
 
   // Address Modal ('Tìm cửa hàng gần bạn nhất' / Nhập tay vị trí)
   const [addressModalVisible, setAddressModalVisible] = useState(false);
@@ -300,7 +297,7 @@ export default function CheckoutScreen() {
       return;
     }
     const code = inputVoucherCode.trim().toUpperCase();
-    const voucher = mockCoupons.find(c => c.code === code);
+    const voucher = findCoupon(coupons, code);
     if (!voucher) {
       Alert.alert('Mã không hợp lệ', 'Vui lòng kiểm tra lại mã giảm giá.');
       return;

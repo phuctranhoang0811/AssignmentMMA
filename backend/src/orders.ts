@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { checkoutSchema, HttpError, orderIdentity, priceCheckout, type Checkout } from './domain';
 import { mockCoupons } from '../../src/data/mockPromotions';
 import type { Product } from '../../src/types/product';
+import type { Coupon } from '../../src/types/user';
 import { isAdminRole, isStaffRole } from '../../src/utils/staff';
 
 export const cashOrderInput = z.object({
@@ -42,6 +43,19 @@ export async function transition(tx: Transaction, db: Firestore, ref: DocumentRe
   if (status === 'CANCELLED' && order.paymentStatus === 'PAID') changes.paymentStatus = 'REFUND_PENDING';
   tx.update(ref, changes);
   return { id: ref.id, status };
+}
+
+/** Coupons created in the admin portal (doc id = code) win over the built-in ones. */
+export async function findCoupon(db: Firestore, code: string): Promise<Coupon | undefined> {
+  const normalized = code.trim().toUpperCase();
+  const stored = (await db.collection('coupons').doc(normalized).get()).data();
+  if (stored) return { ...stored, code: normalized } as Coupon;
+  return mockCoupons.find(c => c.code === normalized);
+}
+
+/** Accounts an admin locked (role BLACKLISTED) cannot place orders or redeem rewards. */
+export async function isBlocked(db: Firestore, uid: string) {
+  return (await db.collection('users').doc(uid).get()).data()?.role === 'BLACKLISTED';
 }
 
 // Staff = a UID listed in env, or the same roles the app uses to open the staff portal.
@@ -118,7 +132,7 @@ export class OrderOpsStore {
   async createCash(uid: string, key: string, input: z.infer<typeof cashOrderInput>) {
     const { checkout, promoCode, deliveryTime } = input;
     if (checkout.deliveryQuoteId) throw new HttpError(400, 'Đơn Ahamove dùng /api/delivery/orders.');
-    const coupon = promoCode ? mockCoupons.find(c => c.code === promoCode.toUpperCase()) : undefined;
+    const coupon = promoCode ? await findCoupon(this.db, promoCode) : undefined;
     if (promoCode && !coupon) throw new HttpError(422, 'Mã giảm giá không hợp lệ.');
     const { id, fingerprint } = orderIdentity(uid, `CASH-${key}`, { ...checkout, promoCode, deliveryTime } as Checkout);
     const ref = this.db.collection('orders').doc(id);

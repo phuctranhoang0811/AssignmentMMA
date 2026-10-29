@@ -7,12 +7,13 @@ import { colors } from '../theme/colors';
 import { AppText } from '../components/ui/AppText';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { styles } from '../styles/offers.styles';
-import { mockCoupons } from '../data/mockPromotions';
+import { useCoupons } from '../services/catalog';
 import { useCart } from '../state/CartContext';
 import { useToast } from '../state/ToastContext';
 import { triggerHaptic } from '../utils/haptics';
 
 export default function OffersScreen() {
+  const coupons = useCoupons();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
@@ -45,7 +46,7 @@ export default function OffersScreen() {
           Các mã giảm giá đang áp dụng cho Pizza Time:
         </AppText>
 
-        {mockCoupons.map((coupon) => {
+        {coupons.map((coupon) => {
           const isCopied = copiedCode === coupon.code;
           return (
             <View key={coupon.code} style={styles.couponCard}>

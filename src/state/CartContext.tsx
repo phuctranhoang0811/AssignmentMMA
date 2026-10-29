@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from '
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CartItem } from '../types/order';
 import { generateCartLineKey } from '../utils/cartLineKey';
-import { mockProducts } from '../data/mockProducts';
+import { cachedProduct, useCatalog } from '../services/catalog';
 import { getItemLineUnitPrice } from '../utils/calculateTotals';
 import { replaceCartItem } from '../utils/cartOperations';
 import { isCustomizablePizza } from '../types/pizzaCustomization';
@@ -28,24 +28,20 @@ interface CartContextType {
 const CART_STORAGE_KEY = '@pizza_time_cart_v1';
 const CHECKOUT_STORAGE_KEY = '@pizza_checkout_preferences_v1';
 
-const productsMap = mockProducts.reduce((acc, p) => {
-  acc[p.id] = p;
-  return acc;
-}, {} as Record<string, (typeof mockProducts)[0]>);
-
 // Quick-add buttons send no size; the backend rejects a sized product without one. A customized pizza's size
 // must equal its variant, so use that, else the first (default) size.
 const withVariant = (productId: string, variantId?: string, sizeId?: string) => {
-  const variants = productsMap[productId]?.variants ?? [];
+  const variants = cachedProduct(productId)?.variants ?? [];
   return variantId ?? variants.find(v => v.id === sizeId)?.id ?? variants[0]?.id;
 };
 // Older carts may hold a pizza builder state on combos; the backend rejects it there.
 const validCustomization = (productId: string, customization?: CartItem['customization']) =>
-  isCustomizablePizza(productsMap[productId]) ? customization : undefined;
+  isCustomizablePizza(cachedProduct(productId)) ? customization : undefined;
 
 const CartContext = createContext<CartContextType>({} as CartContextType);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { productsMap } = useCatalog();
   const [items, setItems] = useState<CartItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [needCutlery, setNeedCutlery] = useState(false);
@@ -188,7 +184,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const qty = Number(item.quantity) || 1;
       return acc + unitPrice * qty;
     }, 0);
-  }, [items]);
+  }, [items, productsMap]);
 
   return (
     <CartContext.Provider

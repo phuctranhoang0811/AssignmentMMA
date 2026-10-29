@@ -24,7 +24,6 @@ import {
 } from 'lucide-react-native';
 import { productService } from '../../services';
 import { Product } from '../../types/product';
-import { mockProducts } from '../../data/mockProducts';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
@@ -216,7 +215,7 @@ export default function HomeScreen() {
 
   const favoritePizzas = products.slice(0, 4);
 
-  const lunchCombos = mockProducts.filter(
+  const lunchCombos = products.filter(
     (p) => p.tags?.includes('Combo Trưa') || p.id.startsWith('CB')
   );
 

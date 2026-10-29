@@ -1,6 +1,6 @@
 import { Product } from '../../types/product';
 import { ProductFilterParams, ProductService } from '../contracts';
-import { mockProducts } from '../../data/mockProducts';
+import { loadProducts } from '../catalog';
 import { demoConfig } from '../../data/mockConfig';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -8,7 +8,7 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 class MockProductService implements ProductService {
   async list(params?: ProductFilterParams): Promise<Product[]> {
     await delay(demoConfig.simulatedLatencyMs);
-    let result = [...mockProducts];
+    let result = [...await loadProducts()];
 
     if (params?.categoryId && params.categoryId !== 'all') {
       if (params.categoryId === 'offers') {
@@ -52,7 +52,7 @@ class MockProductService implements ProductService {
 
   async getById(id: string): Promise<Product | null> {
     await delay(demoConfig.simulatedLatencyMs);
-    const product = mockProducts.find((p) => p.id === id);
+    const product = (await loadProducts()).find((p) => p.id === id);
     return product || null;
   }
 }

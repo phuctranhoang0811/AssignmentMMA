@@ -7,7 +7,7 @@ import { DeliveryStore } from './delivery';
 import { createPaymentServer } from './app';
 import { OrderStore } from './store';
 import { RewardStore } from './rewards';
-import { OrderOpsStore } from './orders';
+import { isBlocked, OrderOpsStore } from './orders';
 import { phoneLogin } from './phoneLogin';
 import { OtpStore, otpEmailHtml } from './otp';
 import nodemailer from 'nodemailer';
@@ -57,6 +57,7 @@ const { server, io } = createPaymentServer({
   payos: new PayOS({ clientId: env.PAYOS_CLIENT_ID, apiKey: env.PAYOS_API_KEY,
     checksumKey: env.PAYOS_CHECKSUM_KEY, timeout: 15000, maxRetries: 1, logLevel: 'off' }),
   verifyToken: token => getAuth().verifyIdToken(token, true),
+  isBlocked: uid => isBlocked(db, uid),
   origins: env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean),
   returnUrl: env.PAYOS_RETURN_URL, cancelUrl: env.PAYOS_CANCEL_URL,
 });

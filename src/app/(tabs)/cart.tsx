@@ -24,7 +24,6 @@ import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
 import { triggerHaptic } from '../../utils/haptics';
-import { mockProducts } from '../../data/mockProducts';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { calculateOrderTotals, getItemLineUnitPrice } from '../../utils/calculateTotals';
 import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
@@ -35,21 +34,15 @@ import {
 } from '../../services/addressStorage';
 
 import { styles, BRAND_RED } from '../../styles/cart.styles';
-import { mockCoupons } from '../../data/mockPromotions';
+import { findCoupon, useCatalog, useCoupons } from '../../services/catalog';
 import { QuantityStepper } from '../../components/ui/QuantityStepper';
 import { canEditCartProduct } from '../../utils/cartOperations';
 import { CartItem } from '../../types/order';
 import { Product } from '../../types/product';
 import { formatCustomizationSummary } from '../../types/pizzaCustomization';
 
-const productsMap = mockProducts.reduce((acc, p) => {
-  acc[p.id] = p;
-  return acc;
-}, {} as Record<string, (typeof mockProducts)[0]>);
-
 // Recommendation items for "Bạn sẽ thích"
-const RECOMMENDATIONS = ['PA002', 'PZ002', 'PA001']
-  .map(id => productsMap[id]).filter(product => product?.isAvailable);
+const RECOMMENDATION_IDS = ['PA002', 'PZ002', 'PA001'];
 
 /* SVG: Green Recycling Emblem with Center Checkmark */
 const RecycleIcon = () => (
@@ -104,6 +97,9 @@ const EmptyTicketIcon = () => (
 );
 
 export default function CartScreen() {
+  const { productsMap } = useCatalog();
+  const coupons = useCoupons();
+  const RECOMMENDATIONS = RECOMMENDATION_IDS.map(id => productsMap[id]).filter(product => product?.isAvailable);
   const router = useRouter();
   const { items, removeItem, addItem, updateQuantity, promoCode, setPromoCode, fulfillmentType, setFulfillmentType,
     isLoaded, needCutlery, setNeedCutlery } = useCart();
@@ -117,7 +113,7 @@ export default function CartScreen() {
   // Voucher screen state (Image 1)
   const [voucherScreenVisible, setVoucherScreenVisible] = useState(false);
   const [inputVoucherCode, setInputVoucherCode] = useState('');
-  const selectedVoucher = mockCoupons.find(c => c.code === promoCode) || null;
+  const selectedVoucher = (promoCode && findCoupon(coupons, promoCode)) || null;
   const setSelectedVoucher = (voucher: { code: string } | null) => setPromoCode(voucher?.code || '');
 
   // Modal xác nhận xóa món
@@ -222,7 +218,7 @@ export default function CartScreen() {
     const code = inputVoucherCode.trim().toUpperCase();
     if (!code) return;
 
-    const voucher = mockCoupons.find(c => c.code === code);
+    const voucher = findCoupon(coupons, code);
     if (voucher) {
       if (subtotal < voucher.minSubtotal) {
         triggerHaptic('warning');
