@@ -9,7 +9,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
   UtensilsCrossed,
-  ChefHat,
   Ticket,
   Users,
   TrendingUp,
@@ -17,7 +16,6 @@ import {
   CheckCircle,
   PackageCheck,
   ChevronRight,
-  ExternalLink,
   ClipboardList,
   BarChart2,
 } from 'lucide-react-native';
@@ -29,7 +27,6 @@ import { AppText } from '../../components/ui/AppText';
 import { colors } from '../../theme/colors';
 import { styles } from '../../styles/adminDashboard.styles';
 import { mockProducts } from '../../data/mockProducts';
-import { initialMockOrders } from '../../data/mockOrders';
 import { formatCurrency } from '../../utils/formatCurrency';
 
 export default function AdminDashboardScreen() {
@@ -56,45 +53,26 @@ export default function AdminDashboardScreen() {
           let pendingCount = 0;
           let completedCount = 0;
 
-          if (!snapshot.empty) {
-            snapshot.forEach((doc: any) => {
-              const data = doc.data();
-              const total = Number(data.totalAmount || data.total || 0);
-              const status = data.status;
+          snapshot.forEach((doc: any) => {
+            const data = doc.data();
+            const total = Number(data.totalAmount || data.total || 0);
+            const status = data.status;
 
-              if (status === 'COMPLETED' || status === 'DELIVERED') {
-                revenue += total;
-                completedCount++;
-              } else if (status === 'PENDING' || status === 'PENDING_CONFIRMATION') {
-                pendingCount++;
-              }
-            });
+            if (status === 'COMPLETED' || status === 'DELIVERED') {
+              revenue += total;
+              completedCount++;
+            } else if (status === 'PENDING' || status === 'PENDING_CONFIRMATION') {
+              pendingCount++;
+            }
+          });
 
-            setStats((prev) => ({
-              ...prev,
-              totalRevenue: revenue,
-              pendingOrdersCount: pendingCount,
-              completedOrdersCount: completedCount,
-            }));
-          } else {
-            // Fallback từ initialMockOrders nếu Firestore trống
-            const mockRev = initialMockOrders
-              .filter((o: any) => o.status === 'COMPLETED')
-              .reduce((sum: number, o: any) => sum + (o.total || 0), 0);
-            const mockPending = initialMockOrders.filter(
-              (o: any) => o.status === 'PENDING_CONFIRMATION'
-            ).length;
-            const mockCompleted = initialMockOrders.filter(
-              (o: any) => o.status === 'COMPLETED'
-            ).length;
-
-            setStats((prev) => ({
-              ...prev,
-              totalRevenue: mockRev,
-              pendingOrdersCount: mockPending,
-              completedOrdersCount: mockCompleted,
-            }));
-          }
+          // No orders yet means zeros, not demo numbers.
+          setStats((prev) => ({
+            ...prev,
+            totalRevenue: revenue,
+            pendingOrdersCount: pendingCount,
+            completedOrdersCount: completedCount,
+          }));
         },
         (err: any) => {
           console.warn('Lỗi đọc realtime orders:', err.message);

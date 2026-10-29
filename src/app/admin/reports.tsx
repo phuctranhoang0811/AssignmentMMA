@@ -11,17 +11,15 @@ import {
   TrendingUp,
   ShoppingBag,
   BarChart2,
-  Clock,
   XCircle,
-  Award,
 } from 'lucide-react-native';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../../services/firebase';
+import { Alert } from '../../utils/alert';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { AppText } from '../../components/ui/AppText';
 import { colors } from '../../theme/colors';
 import { styles } from '../../styles/adminReports.styles';
-import { initialMockOrders } from '../../data/mockOrders';
 import { formatCurrency } from '../../utils/formatCurrency';
 
 type Period = 'today' | 'week' | 'month';
@@ -68,35 +66,19 @@ export default function AdminReportsScreen() {
       unsub = onSnapshot(
         q,
         (snapshot: any) => {
-          if (!snapshot.empty) {
-            processOrders(snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })));
-          } else {
-            processOrders(initialMockOrders.map(o => ({
-              ...o,
-              totalAmount: o.total,
-              status: o.status,
-              items: o.items.map(i => ({ ...i, name: i.productName })),
-              createdAt: { toDate: () => new Date(o.createdAt) },
-            })));
-          }
+          // An empty store means no sales yet; never fill reports with demo orders.
+          processOrders(snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })));
         },
         (err: any) => {
-          console.warn('Reports onSnapshot error:', err.message);
-          processOrders(initialMockOrders.map(o => ({
-            ...o,
-            totalAmount: o.total,
-            createdAt: { toDate: () => new Date(o.createdAt) },
-          })));
+          processOrders([]);
+          Alert.alert('Không tải được báo cáo', err.message);
         }
       );
-    } catch (e) {
-      processOrders(initialMockOrders.map(o => ({
-        ...o,
-        totalAmount: o.total,
-        createdAt: { toDate: () => new Date(o.createdAt) },
-      })));
+    } catch {
+      processOrders([]);
     }
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- processOrders reads `period`, which is the dependency
   }, [period]);
 
   const processOrders = (orders: any[]) => {

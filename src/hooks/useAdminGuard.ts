@@ -15,7 +15,7 @@ export function useAdminGuard() {
         router.replace('/(tabs)/home');
       }
     }
-  }, [user, isLoading, isAdmin]);
+  }, [user, isLoading, isAdmin, router]);
 
   return {
     isAdmin,

@@ -221,7 +221,7 @@ export default function AdminProductsScreen() {
               setProducts((prev) => prev.filter((p) => p.id !== item.id));
               Alert.alert('Thành công', 'Đã xóa món ăn khỏi thực đơn');
             } catch (e: any) {
-              Alert.alert('Lỗi', 'Không thể xóa món ăn');
+              Alert.alert('Lỗi', e?.message || 'Không thể xóa món ăn');
             }
           },
         },

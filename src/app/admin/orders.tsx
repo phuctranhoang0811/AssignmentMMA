@@ -9,13 +9,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
-  Clock,
-  ChefHat,
-  Package,
-  Bike,
-  CheckCircle,
-  XCircle,
-  RefreshCw,
   Phone,
   User as UserIcon,
   Ban,
@@ -156,19 +149,6 @@ export default function AdminOrdersScreen() {
   const filteredOrders = filterStatus === 'ALL'
     ? orders
     : orders.filter(o => o.status === filterStatus);
-
-  const getStatusIcon = (status: OrderStatus) => {
-    switch (status) {
-      case 'PENDING_CONFIRMATION': return <Clock size={16} color={colors.warning} />;
-      case 'CONFIRMED': return <CheckCircle size={16} color={colors.primary} />;
-      case 'PREPARING': return <ChefHat size={16} color={colors.warning} />;
-      case 'READY': return <Package size={16} color={colors.success} />;
-      case 'OUT_FOR_DELIVERY': return <Bike size={16} color={colors.primary} />;
-      case 'COMPLETED': return <CheckCircle size={16} color={colors.success} />;
-      case 'CANCELLED': return <XCircle size={16} color={colors.error} />;
-      default: return null;
-    }
-  };
 
   // Same limits as the backend's reject(): not once the order is out for delivery or done.
   const canCancel = (status: OrderStatus) =>
