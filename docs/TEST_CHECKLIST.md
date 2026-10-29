@@ -29,7 +29,7 @@ Chỉ kiểm tra sự có mặt của cấu hình trong các file `.env`, không
 | Hạng mục | Trạng thái | Việc cần làm trước khi test |
 | --- | --- | --- |
 | API URL của app, Firebase app và backend | Đã có; project ID app/backend khớp; file credential tồn tại | Khởi động backend, kiểm tra `/health`. Chưa xác minh credential/provider còn hoạt động. |
-| Quyền staff ở backend | `STAFF_UIDS` và `AHAMOVE_STAFF_UIDS` đang trống | Đặt `STAFF_UIDS=<Firebase UID nhân viên>` trong `backend/.env`, restart backend. Chỉ có role `EMPLOYEE` trong Firestore vẫn nhận 403 nếu UID chưa được cấp. |
+| Quyền staff ở backend | Role nhân viên trong `users/{uid}` hoặc `STAFF_UIDS` | Gán `role` (EMPLOYEE, STORE_MANAGER, ADMIN, SUPER_ADMIN) cho user trong Firebase Console, hoặc đặt `STAFF_UIDS=<UID>` trong `backend/.env` rồi restart backend. |
 | Gửi OTP qua Gmail | `SMTP_USER`/`SMTP_PASS` đang trống | Backend ở chế độ development in `[OTP dev] ...` trong terminal. Dùng mã này để thử; muốn nhận mail thì cấu hình SMTP. Không có SMTP trong production thì endpoint OTP không khả dụng. |
 | Google trong Expo Go | Chưa có `EXPO_PUBLIC_GOOGLE_BRIDGE_URL` | Chuẩn bị HTTPS bridge theo [google-login.md](./google-login.md). Có thể dùng script `npm run google:expo-go`, thêm hostname vào Firebase Authorized domains, rồi restart Expo theo tài liệu. |
 | Google trên web | Dùng Firebase popup | Bật Google provider và cho phép hostname của app trong Firebase; không cần bridge Expo Go. |

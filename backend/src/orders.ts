@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { checkoutSchema, HttpError, orderIdentity, priceCheckout, type Checkout } from './domain';
 import { mockCoupons } from '../../src/data/mockPromotions';
 import type { Product } from '../../src/types/product';
+import { isStaffRole } from '../../src/utils/staff';
 
 export const cashOrderInput = z.object({
   checkout: checkoutSchema,
@@ -43,15 +44,23 @@ export async function transition(tx: Transaction, db: Firestore, ref: DocumentRe
   return { id: ref.id, status };
 }
 
+// Staff = a UID listed in env, or the same roles the app uses to open the staff portal.
+// Firestore rules stop users from editing their own role, so the stored role can be trusted.
+export async function assertStaffAccess(db: Firestore, staffUids: string[], uid: string) {
+  if (staffUids.includes(uid)) return;
+  const role = (await db.collection('users').doc(uid).get()).data()?.role;
+  if (!isStaffRole(role)) throw new HttpError(403, 'Tài khoản chưa được cấp quyền nhân viên.');
+}
+
 export class OrderOpsStore {
   constructor(private db: Firestore, private staffUids: string[]) {}
 
   assertStaff(uid: string) {
-    if (!this.staffUids.includes(uid)) throw new HttpError(403, 'Tài khoản chưa được cấp quyền nhân viên.');
+    return assertStaffAccess(this.db, this.staffUids, uid);
   }
 
   async list(uid: string, status?: string) {
-    this.assertStaff(uid);
+    await this.assertStaff(uid);
     // shortcut: recent 100 then filter in memory; avoids a composite index until order volume needs paging.
     const result = await this.db.collection('orders').orderBy('createdAt', 'desc').limit(100).get();
     return result.docs.map(doc => ({ ...doc.data(), id: doc.id }))
@@ -59,7 +68,7 @@ export class OrderOpsStore {
   }
 
   async advance(uid: string, id: string) {
-    this.assertStaff(uid);
+    await this.assertStaff(uid);
     const ref = this.db.collection('orders').doc(id);
     return this.db.runTransaction(async tx => {
       const order = (await tx.get(ref)).data();
@@ -71,7 +80,7 @@ export class OrderOpsStore {
   }
 
   async reject(uid: string, id: string, reason: string) {
-    this.assertStaff(uid);
+    await this.assertStaff(uid);
     return this.cancelWhere(id, order => !FINAL.includes(order.status) && order.status !== 'OUT_FOR_DELIVERY' &&
       (!order.delivery || order.delivery.status === 'NOT_REQUESTED'), `Cửa hàng từ chối: ${reason}`);
   }

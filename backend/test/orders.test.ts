@@ -155,3 +155,13 @@ test('pizza toppings: the backend counts portions (max 5 in total), which the bu
   assert.ok(priceCheckout(order([{ id: a.id, quantity: 3 }, { id: b.id, quantity: 2 }]), [pizza]).pricing.total > 0);
   assert.throws(() => priceCheckout(order([{ id: a.id, quantity: 3 }, { id: b.id, quantity: 3 }]), [pizza]), status(422));
 });
+
+test('staff access: an env UID or a staff role stored in Firestore; a customer is still refused', async () => {
+  const { ops, docs } = fixture();
+  docs.set('users/manager', { role: 'STORE_MANAGER' });
+  const { id } = await ops.createCash('customer', 'cash-key-0000000006', { checkout: checkout() });
+  assert.equal((await ops.advance('manager', id)).status, 'CONFIRMED');
+  assert.equal((await ops.advance('staff', id)).status, 'PREPARING');
+  await assert.rejects(ops.advance('customer', id), status(403));
+  await assert.rejects(ops.reject('nobody', id, 'x'), status(403));
+});

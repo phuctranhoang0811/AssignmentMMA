@@ -3,7 +3,7 @@ import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { z } from 'zod';
 import { AhamoveClient, type AhaConfig, type AhaOrder, type AhaPayload } from './ahamove';
 import { checkoutSchema, HttpError, orderIdentity, priceCheckout, type Checkout } from './domain';
-import { transition } from './orders';
+import { assertStaffAccess, transition } from './orders';
 import type { Product } from '../../src/types/product';
 import type { Delivery, DeliveryQuote, DeliveryStatus } from '../../src/types/delivery';
 
@@ -108,10 +108,10 @@ export class DeliveryStore {
     });
   }
   assertStaff(uid: string) {
-    if (!this.config.staffUids.includes(uid)) throw new HttpError(403, 'Tài khoản chưa được cấp quyền vận hành giao hàng.');
+    return assertStaffAccess(this.db, this.config.staffUids, uid);
   }
   async dispatch(uid: string, id: string) {
-    this.assertStaff(uid);
+    await this.assertStaff(uid);
     const ref = this.db.collection('orders').doc(id);
     const operation = this.db.collection('delivery_operations').doc(id);
     const claim = await this.db.runTransaction(async tx => {
@@ -150,7 +150,7 @@ export class DeliveryStore {
   }
   async refresh(uid: string, id: string) {
     const order = (await this.db.collection('orders').doc(id).get()).data();
-    if (!order || (order.userId !== uid && !this.config.staffUids.includes(uid))) throw new HttpError(404, 'Không tìm thấy đơn.');
+    if (!order || (order.userId !== uid && !(await this.assertStaff(uid).then(() => true, () => false)))) throw new HttpError(404, 'Không tìm thấy đơn.');
     const operation = await this.db.collection('delivery_operations').doc(id).get();
     if (!operation.exists) throw new HttpError(409, 'Cửa hàng chưa gọi tài xế.');
     const detail = order.delivery?.providerOrderId ? await this.provider.get(order.delivery.providerOrderId) : await this.provider.find(id);
