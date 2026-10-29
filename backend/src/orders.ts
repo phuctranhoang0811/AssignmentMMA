@@ -5,6 +5,7 @@ import { mockCoupons } from '../../src/data/mockPromotions';
 import type { Product } from '../../src/types/product';
 import type { Coupon } from '../../src/types/user';
 import { isAdminRole, isStaffRole } from '../../src/utils/staff';
+import { couponUsageId, isCouponExpired } from '../../src/utils/coupons';
 
 export const cashOrderInput = z.object({
   checkout: checkoutSchema,
@@ -34,6 +35,10 @@ export async function transition(tx: Transaction, db: Firestore, ref: DocumentRe
   status: string, note?: string) {
   const user = status === 'COMPLETED' && order.userId && !order.pointsAwarded
     ? await tx.get(db.collection('users').doc(order.userId)) : null;
+  // A cancelled order gives its voucher back (the customer's single use and one of the coupon's total uses).
+  const release = status === 'CANCELLED' && order.voucherCode && order.userId;
+  const usage = release ? await tx.get(db.collection('coupon_usages').doc(couponUsageId(order.voucherCode, order.userId))) : null;
+  const coupon = usage?.exists && usage.data()?.orderId === ref.id ? await tx.get(db.collection('coupons').doc(order.voucherCode)) : null;
   const changes: Record<string, unknown> = { status,
     statusHistory: [...(order.statusHistory ?? []), { status, at: new Date().toISOString(), ...(note ? { note } : {}) }] };
   if (user?.exists) {
@@ -41,6 +46,11 @@ export async function transition(tx: Transaction, db: Firestore, ref: DocumentRe
     changes.pointsAwarded = true;
   }
   if (status === 'CANCELLED' && order.paymentStatus === 'PAID') changes.paymentStatus = 'REFUND_PENDING';
+  if (coupon) {
+    tx.delete(usage!.ref);
+    const used = coupon.data()?.usedCount;
+    if (typeof used === 'number' && used > 0) tx.update(coupon.ref, { usedCount: used - 1 });
+  }
   // Store staff collect cash at hand-over. An Ahamove driver collects it instead, so that stays for reconciliation.
   if (status === 'COMPLETED' && order.paymentMethod === 'cash' && order.paymentStatus === 'UNPAID' && !order.delivery) {
     changes.paymentStatus = 'PAID';
@@ -138,6 +148,7 @@ export class OrderOpsStore {
     if (checkout.deliveryQuoteId) throw new HttpError(400, 'Đơn Ahamove dùng /api/delivery/orders.');
     const coupon = promoCode ? await findCoupon(this.db, promoCode) : undefined;
     if (promoCode && !coupon) throw new HttpError(422, 'Mã giảm giá không hợp lệ.');
+    if (coupon && isCouponExpired(coupon)) throw new HttpError(422, `Mã ${coupon.code} đã hết hạn.`);
     const { id, fingerprint } = orderIdentity(uid, `CASH-${key}`, { ...checkout, promoCode, deliveryTime } as Checkout);
     const ref = this.db.collection('orders').doc(id);
     return this.db.runTransaction(async tx => {
@@ -145,6 +156,17 @@ export class OrderOpsStore {
       if (existing.exists) {
         if (existing.data()?.checkoutFingerprint !== fingerprint) throw new HttpError(409, 'Idempotency-Key đã dùng cho đơn khác.');
         return { id, orderCode: existing.data()!.orderCode as string };
+      }
+      const usageRef = coupon ? this.db.collection('coupon_usages').doc(couponUsageId(coupon.code, uid)) : null;
+      const couponRef = coupon?.usageLimit ? this.db.collection('coupons').doc(coupon.code) : null;
+      if (usageRef && (await tx.get(usageRef)).exists) throw new HttpError(409, `Bạn đã dùng mã ${coupon!.code} rồi.`);
+      const used = couponRef ? (await tx.get(couponRef)).data()?.usedCount ?? 0 : 0;
+      if (couponRef && used >= coupon!.usageLimit!) throw new HttpError(409, `Mã ${coupon!.code} đã hết lượt sử dụng.`);
+      if (coupon?.firstOrderOnly) {
+        const previous = await tx.get(this.db.collection('orders').where('userId', '==', uid).limit(50));
+        if (previous.docs.some(doc => doc.data().status !== 'CANCELLED')) {
+          throw new HttpError(409, `Mã ${coupon.code} chỉ áp dụng cho đơn hàng đầu tiên.`);
+        }
       }
       const refs = [...new Set(checkout.items.map(item => item.productId))].map(productId => this.db.collection('products').doc(productId));
       const products = await tx.getAll(...refs);
@@ -158,6 +180,8 @@ export class OrderOpsStore {
         status: 'PENDING_CONFIRMATION', statusHistory: [{ status: 'PENDING_CONFIRMATION', at: new Date().toISOString(), note: 'Khách hàng vừa đặt đơn' }],
         items, itemCount: items.reduce((sum, item) => sum + item.quantity, 0), ...pricing,
         voucherCode: coupon?.code ?? null, earnedPoints: rewardPointsFor(pricing.total) });
+      if (usageRef) tx.create(usageRef, { uid, code: coupon!.code, orderId: id, usedAt: Timestamp.now() });
+      if (couponRef) tx.update(couponRef, { usedCount: used + 1 });
       return { id, orderCode };
     });
   }

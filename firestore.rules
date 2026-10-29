@@ -6,10 +6,28 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'USER');
+    }
+
     // Keep in sync with ADMIN_ROLES in src/utils/staff.ts.
     function isAdmin() {
-      return request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['SUPER_ADMIN', 'ADMIN', 'STORE_MANAGER'];
+      return request.auth != null && myRole() in ['SUPER_ADMIN', 'ADMIN', 'STORE_MANAGER'];
+    }
+
+    // Keep in sync with canChangeRole() in src/utils/staff.ts: SUPER_ADMIN/ADMIN assign roles,
+    // and only SUPER_ADMIN may grant or remove SUPER_ADMIN/ADMIN.
+    function canSetRole(before, after) {
+      let role = myRole();
+      return role in ['SUPER_ADMIN', 'ADMIN']
+        && after in ['USER', 'EMPLOYEE', 'ROLE_KITCHEN', 'ROLE_RIDER', 'STORE_MANAGER', 'ADMIN', 'SUPER_ADMIN', 'BLACKLISTED']
+        && (role == 'SUPER_ADMIN' || !(before in ['SUPER_ADMIN', 'ADMIN'] || after in ['SUPER_ADMIN', 'ADMIN']));
+    }
+
+    // One account per phone number: a profile's phone must be claimed in phone_numbers by the same account
+    // (in the same write). Empty means no number (Google accounts before they add one).
+    function ownsPhone(phone, uid) {
+      return phone == '' || getAfter(/databases/$(database)/documents/phone_numbers/$(phone)).data.uid == uid;
     }
 
     match /products/{productId} {
@@ -28,16 +46,32 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /phone_numbers/{phone} {
+      // Free numbers and your own claim are readable; someone else's claim is not (that is how "taken" shows).
+      allow get: if request.auth != null && (resource == null || resource.data.uid == request.auth.uid);
+      allow create: if request.auth != null && phone.matches('^0[0-9]{9}$')
+        && request.resource.data.keys().hasOnly(['uid']) && request.resource.data.uid == request.auth.uid;
+      // Released only when the profile no longer uses it.
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('phone', '') != phone;
+      allow list, update: if false;
+    }
+
     match /users/{uid} {
       allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
-      // Admins change roles only; reward points stay backend-only.
-      allow update: if isAdmin() && request.auth.uid != uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'updatedAt']);
       allow create: if request.auth != null && request.auth.uid == uid
         && request.resource.data.role == 'USER'
-        && request.resource.data.rewardPoints == 100;
+        && request.resource.data.rewardPoints == 100
+        && ownsPhone(request.resource.data.get('phone', ''), uid);
+      // The owner edits their profile; role, points and uid stay out of reach, and a new phone must be claimed.
       allow update: if request.auth != null && request.auth.uid == uid
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'rewardPoints', 'uid']);
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'rewardPoints', 'uid'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['phone'])
+          || ownsPhone(request.resource.data.get('phone', ''), uid));
+      // Admins change roles only (never their own); reward points stay backend-only.
+      allow update: if request.auth != null && request.auth.uid != uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'updatedAt'])
+        && canSetRole(resource.data.get('role', 'USER'), request.resource.data.role);
       allow delete: if false;
 
       match /reward_gifts/{giftId} {
@@ -46,7 +80,7 @@ service cloud.firestore {
       }
     }
 
-    // payment_orders, payment_codes, payment_system, delivery_*: backend only.
+    // payment_orders, payment_codes, payment_system, delivery_*, coupon_usages: backend only.
     match /{document=**} {
       allow read, write: if false;
     }

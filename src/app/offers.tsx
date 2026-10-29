@@ -7,13 +7,13 @@ import { colors } from '../theme/colors';
 import { AppText } from '../components/ui/AppText';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { styles } from '../styles/offers.styles';
-import { useCoupons } from '../services/catalog';
+import { useActiveCoupons } from '../services/catalog';
 import { useCart } from '../state/CartContext';
 import { useToast } from '../state/ToastContext';
 import { triggerHaptic } from '../utils/haptics';
 
 export default function OffersScreen() {
-  const coupons = useCoupons();
+  const coupons = useActiveCoupons();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
@@ -67,7 +67,7 @@ export default function OffersScreen() {
                   <View style={styles.expiryRow}>
                     <Clock size={12} color={colors.textDisabled} />
                     <AppText variant="caption" color={colors.textDisabled} style={{ marginLeft: 4 }}>
-                      HSD: {coupon.expiresAt}
+                      HSD: {coupon.expiresAt || 'Không giới hạn'}
                     </AppText>
                   </View>
 

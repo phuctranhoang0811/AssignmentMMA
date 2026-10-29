@@ -4,7 +4,7 @@ Cập nhật: 29/10/2026, nhánh `feature/firebase-auth-database` (sau khi gộp
 
 Tài liệu mô tả **code hiện có**. Mỗi test case ghi kết quả vào cột **KQ**: `PASS` / `FAIL` / `BLOCKED`. Khi FAIL, ghi: nền tảng (Android/iOS/web), tài khoản (không ghi mật khẩu), mã đơn, bước tái hiện, kết quả thật, log terminal backend.
 
-Kiểm tra tự động hiện tại: lint 0 lỗi/0 cảnh báo, TypeScript app + backend sạch, **86/86** test backend pass. Test tự động dùng Firestore giả lập và provider giả lập — **không** thay thế các test thủ công dưới đây.
+Kiểm tra tự động hiện tại: lint 0 lỗi/0 cảnh báo, TypeScript app + backend sạch, **92/92** test backend pass, và **12/12** test Firestore rules trên Firebase Emulator. Test tự động dùng Firestore giả lập và provider giả lập — **không** thay thế các test thủ công dưới đây.
 
 ---
 
@@ -19,6 +19,7 @@ Kiểm tra tự động hiện tại: lint 0 lỗi/0 cảnh báo, TypeScript app
 | P3 | Gán role cho tài khoản test | Firebase Console → `users/{uid}` → field `role` | Xem bảng tài khoản 1.2 |
 | P4 | (Tùy chọn) nhận OTP qua Gmail | `SMTP_USER`, `SMTP_PASS` trong `backend/.env` | Không có SMTP: backend dev in `[OTP dev] email: 1234` ra terminal |
 | P5 | Đăng nhập bằng SĐT | `FIREBASE_WEB_API_KEY` trong `backend/.env` | Thiếu thì đăng nhập SĐT báo lỗi cấu hình |
+| P6 | Giữ chỗ SĐT cho tài khoản cũ (mỗi số một tài khoản) | `npm --prefix backend run backfill:phones` | In số SĐT đã giữ chỗ; danh sách số đang bị nhiều tài khoản dùng chung cần admin xử lý |
 
 ### 1.2 Tài khoản test
 
@@ -67,7 +68,7 @@ Mở app ─► Splash
 | Khách vãng lai | Xem menu, tùy chỉnh pizza, thêm giỏ, áp voucher, tra cứu đơn bằng SĐT + mã đơn | Đặt hàng (bị yêu cầu đăng nhập, giỏ được giữ) |
 | USER | Đặt COD/payOS, theo dõi đơn của mình, hủy khi còn chờ xác nhận, tích điểm, đổi quà | Xem đơn người khác, tự đổi role/điểm |
 | Nhân viên (S) | Portal bếp: xác nhận → làm → sẵn sàng → giao/khách nhận; từ chối đơn | Trang admin |
-| Admin (M) | Mọi thứ của nhân viên + dashboard, sửa món/giá, voucher, phân quyền/khóa user, hủy đơn, xác nhận hoàn tiền, báo cáo | Đổi role của chính mình, sửa điểm thưởng, ghi trực tiếp vào đơn |
+| Admin (M) | SUPER_ADMIN/ADMIN: mọi thứ của nhân viên + dashboard, sửa món/giá, voucher, phân quyền/khóa user, hủy đơn, xác nhận hoàn tiền, báo cáo. STORE_MANAGER: như trên nhưng **không** phân quyền/khóa user | Đổi role của chính mình; ADMIN không cấp/gỡ quyền ADMIN, SUPER_ADMIN; sửa điểm thưởng; ghi trực tiếp vào đơn |
 | Bị khóa (`BLACKLISTED`) | Đăng nhập, xem đơn cũ | Đặt đơn, tạo thanh toán, lấy phí Ahamove, đổi quà (backend trả 403) |
 
 Quyền thật nằm ở **backend + Firestore rules**, không phải ở giao diện. Backend nhận nhân viên khi role là nhân viên/admin **hoặc** UID nằm trong `STAFF_UIDS`.
@@ -157,6 +158,9 @@ Chạy theo thứ tự; nếu bước nào FAIL thì dừng và ghi lỗi.
 | A13 | A (USER) gõ `/admin/dashboard` | Bị đưa về Trang chủ | |
 | A14 | Vãng lai hoặc A mở `/staff/orders` | Màn "Khu Vực Dành Cho Nhân Viên" + nút đăng nhập | |
 | A15 | Tài khoản có email chứa `admin@` nhưng role `USER` | Vẫn là khách thường (quyền theo role, không theo email) | |
+| A16 | Đăng ký bằng SĐT đã có tài khoản khác dùng | Báo "Số điện thoại này đã được dùng cho tài khoản khác"; không tạo tài khoản, email đó đăng ký lại được | |
+| A17 | Đăng ký nhập SĐT `+84 912 345 678` | Hồ sơ lưu `0912345678`; đăng nhập bằng cả 2 cách viết đều được | |
+| A18 | Hai tài khoản cũ cùng một SĐT → mỗi người đăng nhập bằng SĐT + mật khẩu của mình | Cả hai đều vào đúng tài khoản của mình |
 
 ### B. Menu, chi tiết món, giỏ hàng
 
@@ -176,6 +180,10 @@ Chạy theo thứ tự; nếu bước nào FAIL thì dừng và ghi lỗi.
 | B12 | Áp `PIZZAFPT` (−40k, đơn từ 100k), `FPT40` (−40k, từ 200k), `PIZZA20` (−20% tối đa 50k, từ 200k), mã sai, đơn dưới ngưỡng | Giảm đúng; mã sai báo không hợp lệ; dưới ngưỡng báo cần tối thiểu | |
 | B13 | Giỏ 498.000đ + `FPT40` → checkout COD | Tổng 458.000đ, không cộng VAT/phí giao | |
 | B14 | Trang Ưu đãi | Liệt kê mã có sẵn **và** mã admin tạo | |
+| B15 | A đặt COD với `PIZZA20` → đặt đơn khác cũng `PIZZA20` | Đơn 2 báo "Bạn đã dùng mã PIZZA20 rồi" | |
+| B16 | A hủy đơn đã dùng `PIZZA20` (khi còn chờ xác nhận) → đặt lại với `PIZZA20` | Dùng lại được (hủy đơn trả lại lượt) | |
+| B17 | Tài khoản mới dùng `WELCOME30` cho đơn đầu; tài khoản đã có đơn dùng `WELCOME30` | Đơn đầu được giảm; tài khoản đã có đơn (không tính đơn đã hủy) bị từ chối "chỉ áp dụng cho đơn hàng đầu tiên" | |
+| B18 | Mã đã hết hạn (admin tạo rồi sửa hạn trong Console về ngày cũ) | Không còn trên trang Ưu đãi; nhập mã báo không hợp lệ; backend báo "đã hết hạn" | |
 
 ### C. Checkout và đơn tiền mặt (COD)
 
@@ -234,6 +242,7 @@ Có thể tạo QR ngân hàng thật — chỉ chuyển tiền khi chủ độn
 | F04 | B đăng nhập sau A | Không thấy quà của A | |
 | F05 | Sửa tên/SĐT/ngày sinh/giới tính → đăng xuất/đăng nhập | Dữ liệu được lưu thật | |
 | F06 | Tắt mạng → sửa hồ sơ → Lưu | Báo "Không thể lưu thay đổi", màn hình giữ dữ liệu cũ (không báo thành công giả) | |
+| F07 | Sửa hồ sơ sang SĐT tài khoản khác đang dùng; sửa sang số mới hợp lệ; nhập số sai định dạng | Lần 1 báo đã được dùng; lần 2 lưu được (số cũ được trả lại để người khác dùng); lần 3 báo cần 10 chữ số | |
 
 ### G. Admin — Dashboard, đơn hàng, hoàn tiền
 
@@ -264,6 +273,8 @@ Có thể tạo QR ngân hàng thật — chỉ chuyển tiền khi chủ độn
 | H10 | A dùng voucher mới ở giỏ → đặt COD | Giảm đúng ở app và trong đơn backend | |
 | H11 | Gỡ voucher admin tạo → A nhập lại mã | Mã không còn hợp lệ | |
 | H12 | Gỡ voucher có sẵn (`PIZZA20`) | Báo đây là mã mặc định, không gỡ được | |
+| H13 | Tạo voucher có hạn dùng sai định dạng hoặc ngày đã qua | Báo "Hạn dùng phải là ngày trong tương lai, dạng dd/mm/yyyy" | |
+| H14 | Tạo voucher tổng 2 lượt → 2 khách khác nhau dùng → khách thứ 3 dùng | Danh sách hiện "Đã dùng: 2/2"; khách thứ 3 bị báo "đã hết lượt sử dụng" | |
 
 ### I. Admin — Người dùng, phân quyền, khóa tài khoản
 
@@ -277,6 +288,9 @@ Có thể tạo QR ngân hàng thật — chỉ chuyển tiền khi chủ độn
 | I06 | X vẫn đăng nhập và xem đơn cũ | Được | |
 | I07 | M mở khóa X → X đặt đơn | Đặt được | |
 | I08 | A (USER) cố ghi Firestore trực tiếp (vd. sửa `role` của mình qua console trình duyệt) | Bị rules từ chối | |
+| I09 | Đăng nhập STORE_MANAGER → Người dùng | Xem được danh sách, **không** có nút Đổi quyền/Khóa | |
+| I10 | Đăng nhập ADMIN → đổi quyền một user | Danh sách quyền không có Admin; không có nút trên tài khoản SUPER_ADMIN/ADMIN khác | |
+| I11 | Đăng nhập SUPER_ADMIN → cấp ADMIN cho B | Được | |
 
 ### J. Ahamove (chỉ khi đã cấu hình staging)
 
@@ -332,14 +346,13 @@ npm run typecheck --prefix backend
 npm test --prefix backend
 ```
 
-Kỳ vọng: lint 0 lỗi/0 cảnh báo, TypeScript sạch, 86/86 test pass.
+Kỳ vọng: lint 0 lỗi/0 cảnh báo, TypeScript sạch, 92/92 test pass.
 
 ## 7. Giới hạn hiện tại (không tính là lỗi khi test)
 
-- Voucher chưa dùng được với payOS và Ahamove; `WELCOME30` chưa kiểm tra "đơn đầu tiên".
+- Voucher chưa dùng được với payOS và Ahamove. Mỗi khách dùng mỗi mã một lần.
 - Phụ thu loại đế là giá chung trong code, admin chưa chỉnh được.
 - Hoàn tiền là thủ công: hệ thống chỉ ghi nhận trạng thái, không tự chuyển tiền.
 - App lưu giá/voucher tạm ~60 giây; thay đổi của admin có thể cần mở lại app mới thấy.
-- Admin `STORE_MANAGER` có quyền như admin (kể cả phân quyền user).
 - Chưa có push notification, đối soát COD, đồng bộ giỏ/địa chỉ giữa nhiều thiết bị.
 - Các màn cũ `/order/[id]`, `/order/success`, `/profile/addresses`, `/profile/settings` còn dữ liệu cục bộ/demo — không dùng làm bằng chứng luồng đơn thật.

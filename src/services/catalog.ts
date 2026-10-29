@@ -6,6 +6,7 @@ import { mockCoupons } from '../data/mockPromotions';
 import type { Product } from '../types/product';
 import type { Coupon } from '../types/user';
 import { mergeStored } from '../utils/catalogMerge';
+import { isCouponExpired } from '../utils/coupons';
 
 // The backend prices orders from Firestore `products` and `coupons`, which admins edit.
 // The app reads the same collections so displayed prices match; the bundled data is the offline fallback.
@@ -49,6 +50,8 @@ export const loadProducts = products.load;
 export const cachedProduct = (id: string) => products.current().find(p => p.id === id);
 export const loadCoupons = coupons.load;
 export const useCoupons = coupons.useList;
+/** Codes a customer can still use today (offers page). */
+export const useActiveCoupons = () => coupons.useList().filter(c => !isCouponExpired(c));
 
 export function useCatalog() {
   const list = products.useList();
@@ -56,5 +59,6 @@ export function useCatalog() {
   return { products: list, productsMap };
 }
 
+/** Expired codes are treated as unknown; per-customer and total limits are checked by the backend at order time. */
 export const findCoupon = (list: Coupon[], code: string) =>
-  list.find(c => c.code.toUpperCase() === code.trim().toUpperCase());
+  list.find(c => c.code.toUpperCase() === code.trim().toUpperCase() && !isCouponExpired(c));

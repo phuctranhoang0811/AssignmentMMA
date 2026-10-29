@@ -3,11 +3,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DemoUser } from '../types/user';
 import { authService } from '../services';
 import { auth, db } from '../services/firebase';
-import { createUserWithEmailAndPassword, signInWithCustomToken, signInWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp, onSnapshot, runTransaction } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, deleteUser, signInWithCustomToken, signInWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { doc, getDoc, serverTimestamp, onSnapshot, runTransaction, type Transaction } from 'firebase/firestore';
 import { clearCustomerInfo, clearDeliveryAddress } from '../services/addressStorage';
 import { phoneLoginToken } from '../services/orderApi';
 import { isValidEmail } from '../utils/validators';
+import { normalizePhone } from '../utils/phone';
 import { signInWithGoogle } from '../services/googleSignIn';
 import { googleAccountProfile, googleLoginError } from '../utils/googleAccount';
 import type { GoogleLoginOptions } from '../types/googleLogin';
@@ -32,6 +33,21 @@ interface AuthContextType {
 }
 
 const AUTH_STORAGE_KEY = '@pizza_time_auth_v1';
+const PHONE_TAKEN = 'Số điện thoại này đã được dùng cho tài khoản khác.';
+
+/**
+ * Claims phone_numbers/{phone} for uid inside a transaction (Firestore rules require it for a profile's phone).
+ * Reading a number owned by someone else is denied by the rules, which is how a taken number shows up.
+ */
+async function claimPhone(transaction: Transaction, phone: string, uid: string) {
+  const ref = doc(db, 'phone_numbers', phone);
+  const owner = await transaction.get(ref).catch((error: { code?: string }) => {
+    if (error?.code === 'permission-denied') throw new Error(PHONE_TAKEN);
+    throw error;
+  });
+  if (owner.exists() && owner.data().uid !== uid) throw new Error(PHONE_TAKEN);
+  return () => { if (!owner.exists()) transaction.set(ref, { uid }); };
+}
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
@@ -182,11 +198,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       const trimmedEmail = email.trim().toLowerCase();
+      const normalizedPhone = normalizePhone(phone);
+      if (!normalizedPhone) throw new Error('Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0.');
       let uid = `USR-${Date.now().toString().slice(-4)}`;
+      let createdNow = false;
 
       try {
         const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
         uid = userCredential.user.uid;
+        createdNow = true;
       } catch (authErr: any) {
         if (authErr.code === 'auth/email-already-in-use') {
           try {
@@ -205,11 +225,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const stored = await runTransaction(db, async transaction => {
         const existing = await transaction.get(userRef);
         if (existing.exists()) return existing.data();
+        const savePhone = await claimPhone(transaction, normalizedPhone, uid);
+        savePhone();
         transaction.set(userRef, {
           uid,
           email: trimmedEmail,
           fullName: name.trim(),
-          phone: phone.trim(),
+          phone: normalizedPhone,
           gender: extra?.gender || 'Nam',
           birthday: extra?.birthday || '01/01/2000',
           role: 'USER',
@@ -217,13 +239,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           createdAt: serverTimestamp(),
         });
         return null;
+      }).catch(async error => {
+        // A number already in use: remove the login we just created so the email can register again.
+        if (createdNow && auth.currentUser?.uid === uid) await deleteUser(auth.currentUser).catch(() => signOut(auth));
+        else await signOut(auth).catch(() => {});
+        throw error;
       });
 
       const newUser: DemoUser = {
         id: uid,
         fullname: stored?.fullName ?? name.trim(),
         email: trimmedEmail,
-        phone: stored?.phone ?? phone.trim(),
+        phone: stored?.phone ?? normalizedPhone,
         gender: stored?.gender ?? (extra?.gender || 'Nam'),
         birthday: stored?.birthday ?? (extra?.birthday || '01/01/2000'),
         role: stored?.role ?? 'USER',
@@ -302,17 +329,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Save to Firestore first; on failure keep the old data so the screen does not report a save that did not happen.
     if (user.id && !user.isDemo) {
-      await setDoc(
-        doc(db, 'users', user.id),
-        {
+      const uid = user.id;
+      const changedPhone = phone !== user.phone;
+      const nextPhone = changedPhone ? normalizePhone(phone) : phone;
+      if (changedPhone && !nextPhone) throw new Error('Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0.');
+      updated.phone = nextPhone;
+      const previous = normalizePhone(user.phone ?? '');
+      // Release the old number only if this account holds it (older profiles may never have claimed theirs).
+      const releaseOld = changedPhone && previous && previous !== nextPhone
+        && await getDoc(doc(db, 'phone_numbers', previous)).then(d => d.exists() && d.data().uid === uid, () => false);
+      await runTransaction(db, async transaction => {
+        const savePhone = changedPhone ? await claimPhone(transaction, nextPhone, uid) : () => {};
+        savePhone();
+        if (releaseOld) transaction.delete(doc(db, 'phone_numbers', previous));
+        transaction.set(doc(db, 'users', uid), {
           fullName: name,
-          phone,
+          phone: nextPhone,
           ...(birthday !== undefined ? { birthday } : {}),
           ...(gender !== undefined ? { gender } : {}),
           ...(email !== undefined ? { email } : {}),
-        },
-        { merge: true }
-      );
+        }, { merge: true });
+      });
     }
 
     setUser(updated);

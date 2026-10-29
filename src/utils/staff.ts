@@ -4,6 +4,12 @@ import type { StaffOrder } from '../types/order';
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'STORE_MANAGER'];
 const STAFF_ROLES = [...ADMIN_ROLES, 'EMPLOYEE', 'ROLE_KITCHEN', 'ROLE_RIDER'];
 export const isAdminRole = (role?: string) => ADMIN_ROLES.includes(role ?? '');
+
+// Mirrors canSetRole() in firestore.rules: SUPER_ADMIN/ADMIN assign roles, only SUPER_ADMIN touches the admin tier.
+const ADMIN_TIER = ['SUPER_ADMIN', 'ADMIN'];
+export const canManageRoles = (myRole?: string) => ADMIN_TIER.includes(myRole ?? '');
+export const canChangeRole = (myRole: string | undefined, from: string | undefined, to: string) =>
+  canManageRoles(myRole) && (myRole === 'SUPER_ADMIN' || (!ADMIN_TIER.includes(from ?? 'USER') && !ADMIN_TIER.includes(to)));
 export const isStaffRole = (role?: string) => STAFF_ROLES.includes(role ?? '');
 
 export function loginDestination(role?: string, returnTo?: string) {

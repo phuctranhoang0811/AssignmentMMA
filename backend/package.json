@@ -8,6 +8,7 @@
   "scripts": {
     "webhook:register": "node --env-file=.env --import tsx src/registerWebhook.ts",
     "seed:catalog": "node --env-file=.env --import tsx src/seedCatalog.ts",
+    "backfill:phones": "node --env-file=.env --import tsx src/backfillPhones.ts",
     "dev": "node --env-file=.env --import tsx --watch src/server.ts",
     "start": "node --env-file=.env --import tsx src/server.ts",
     "typecheck": "tsc --noEmit",

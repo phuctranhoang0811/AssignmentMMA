@@ -8,6 +8,8 @@ import { phoneLogin } from '../src/phoneLogin';
 import { OtpStore } from '../src/otp';
 import { isCustomizablePizza, PIZZA_TOPPINGS } from '../../src/types/pizzaCustomization';
 import { mergeStored } from '../../src/utils/catalogMerge';
+import { isCouponExpired } from '../../src/utils/coupons';
+import { normalizePhone } from '../../src/utils/phone';
 
 const sized = { name: 'Pizza Size', categoryId: 'pizza', basePrice: 100000, addons: [], isAvailable: true,
   variants: [{ id: 'medium', name: 'Cỡ Vừa', price: 200000 }] };
@@ -84,7 +86,8 @@ test('customer cancels only their own pending order; staff reject flags paid ord
 
 test('phone login verifies the password server-side and never reveals whether a number exists', async () => {
   const users = [{ id: 'uid-1', data: () => ({ email: 'a@b.vn', phone: '0900000000' }) }];
-  const db = { collection: () => ({ where: (_f: string, _op: string, forms: string[]) => ({ limit: () => ({
+  const db = { collection: () => ({ doc: () => ({ get: async () => ({ data: () => undefined }) }),
+    where: (_f: string, _op: string, forms: string[]) => ({ limit: () => ({
     get: async () => ({ docs: users.filter(u => forms.includes(u.data().phone)) }) }) }) }) } as unknown as Parameters<typeof phoneLogin>[0]['db'];
   const calls: string[] = [];
   const deps = { db, apiKey: 'k', createCustomToken: async (uid: string) => `token-${uid}`,
@@ -227,4 +230,82 @@ test('customers see Vietnamese errors naming the product when an item can no lon
     && e.message.includes(soldOut.name) && e.message.includes('hết'));
   assert.throws(() => priceCheckout({ ...order, items: [{ ...order.items[0], variantId: 'xl' }] }, [{ ...soldOut, isAvailable: true }]),
     (e: unknown) => e instanceof HttpError && /Size/.test(e.message));
+});
+
+test('a voucher is used once per customer; cancelling the order gives it back', async () => {
+  const { ops, docs } = fixture();
+  const first = await ops.createCash('customer', 'cash-key-0000000020', { checkout: checkout(), promoCode: 'PIZZA20' });
+  await assert.rejects(ops.createCash('customer', 'cash-key-0000000021', { checkout: checkout(), promoCode: 'PIZZA20' }),
+    (e: unknown) => e instanceof HttpError && e.status === 409 && /đã dùng mã PIZZA20/.test(e.message));
+  assert.ok((await ops.createCash('other', 'cash-key-0000000022', { checkout: checkout(), promoCode: 'PIZZA20' })).id);
+  await ops.cancel('customer', first.id);
+  assert.equal(docs.has('coupon_usages/PIZZA20_customer'), false);
+  assert.ok((await ops.createCash('customer', 'cash-key-0000000023', { checkout: checkout(), promoCode: 'PIZZA20' })).id);
+});
+
+test('admin coupons stop at their total limit and reopen when a use is cancelled; expired codes are refused', async () => {
+  const { ops, docs } = fixture();
+  docs.set('coupons/ONLY2', { discountType: 'FIXED', value: 10000, minSubtotal: 0, description: 'x', usageLimit: 2, usedCount: 0 });
+  const a = await ops.createCash('u1', 'cash-key-0000000030', { checkout: checkout(), promoCode: 'ONLY2' });
+  await ops.createCash('u2', 'cash-key-0000000031', { checkout: checkout(), promoCode: 'ONLY2' });
+  assert.equal(docs.get('coupons/ONLY2')!.usedCount, 2);
+  await assert.rejects(ops.createCash('u3', 'cash-key-0000000032', { checkout: checkout(), promoCode: 'ONLY2' }),
+    (e: unknown) => e instanceof HttpError && /hết lượt/.test(e.message));
+  await ops.cancel('u1', a.id);
+  assert.equal(docs.get('coupons/ONLY2')!.usedCount, 1);
+  assert.ok((await ops.createCash('u3', 'cash-key-0000000033', { checkout: checkout(), promoCode: 'ONLY2' })).id);
+
+  docs.set('coupons/OLD', { discountType: 'FIXED', value: 10000, minSubtotal: 0, description: 'x', expiresAt: '01/01/2020' });
+  await assert.rejects(ops.createCash('u4', 'cash-key-0000000034', { checkout: checkout(), promoCode: 'OLD' }),
+    (e: unknown) => e instanceof HttpError && e.status === 422 && /hết hạn/.test(e.message));
+});
+
+test('WELCOME30 only applies to a first order; a cancelled earlier order does not count', async () => {
+  const { ops } = fixture();
+  const earlier = await ops.createCash('newbie', 'cash-key-0000000040', { checkout: checkout() });
+  await assert.rejects(ops.createCash('newbie', 'cash-key-0000000041', { checkout: checkout(), promoCode: 'WELCOME30' }),
+    (e: unknown) => e instanceof HttpError && /đơn hàng đầu tiên/.test(e.message));
+  await ops.cancel('newbie', earlier.id);
+  assert.ok((await ops.createCash('newbie', 'cash-key-0000000042', { checkout: checkout(), promoCode: 'WELCOME30' })).id);
+});
+
+test('coupon end dates: dd/mm/yyyy lasts through that day in Vietnam time', () => {
+  const end = Date.UTC(2026, 11, 31, 16, 59, 59, 999); // 31/12/2026 23:59:59.999 +07:00
+  assert.equal(isCouponExpired({ expiresAt: '31/12/2026' }, end), false);
+  assert.equal(isCouponExpired({ expiresAt: '31/12/2026' }, end + 1), true);
+  assert.equal(isCouponExpired({}, end), false);
+  assert.equal(isCouponExpired({ expiresAt: 'không rõ' }, end), false);
+});
+
+test('phone login: a number shared by older profiles still signs in its real owner; the claimed owner is tried first', async () => {
+  const { db, docs } = database();
+  docs.set('users/squatter', { email: 'squatter@x.vn', phone: '0912345678' });
+  docs.set('users/owner', { email: 'owner@x.vn', phone: '+84912345678' });
+  const passwords: Record<string, string> = { 'squatter@x.vn': 'pw-squatter', 'owner@x.vn': 'pw-owner' };
+  const uids: Record<string, string> = { 'squatter@x.vn': 'squatter', 'owner@x.vn': 'owner' };
+  const tried: string[] = [];
+  const users = { where: (field: string, _op: string, forms: string[]) => ({ limit: () => ({ get: async () => ({
+    docs: [...docs].filter(([path, data]) => path.startsWith('users/') && forms.includes(data[field] as string))
+      .map(([path, data]) => ({ id: path.slice(6), data: () => data })) }) }) }) };
+  const deps = { apiKey: 'k', createCustomToken: async (uid: string) => `token-${uid}`,
+    db: { collection: (name: string) => name === 'users' ? { ...users, doc: (id: string) => db.collection('users').doc(id) } : db.collection(name) } as unknown as typeof db,
+    fetch: (async (_url: string, init: RequestInit) => {
+      const { email, password } = JSON.parse(init.body as string);
+      tried.push(email);
+      const ok = passwords[email] === password;
+      return new Response(JSON.stringify(ok ? { localId: uids[email] } : { error: {} }), { status: ok ? 200 : 400 });
+    }) as typeof fetch };
+  assert.deepEqual(await phoneLogin(deps, '0912345678', 'pw-owner'), { token: 'token-owner' });
+  docs.set('phone_numbers/0912345678', { uid: 'owner' });
+  tried.length = 0;
+  assert.deepEqual(await phoneLogin(deps, '+84912345678', 'pw-owner'), { token: 'token-owner' });
+  assert.deepEqual(tried, ['owner@x.vn']);
+  assert.equal((await phoneLogin(deps, '0912345678', 'nope').catch(e => e)).status, 401);
+});
+
+test('phone numbers have one spelling: 10 digits starting with 0', () => {
+  assert.equal(normalizePhone('+84 912 345 678'), '0912345678');
+  assert.equal(normalizePhone('0912.345.678'), '0912345678');
+  assert.equal(normalizePhone('84912345678'), '0912345678');
+  assert.equal(normalizePhone('12345'), '');
 });

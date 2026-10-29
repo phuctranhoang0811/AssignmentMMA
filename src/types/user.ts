@@ -33,4 +33,9 @@ export type Coupon = {
   minSubtotal: number;
   description: string;
   expiresAt?: string;
+  /** Only for a customer's first non-cancelled order. */
+  firstOrderOnly?: boolean;
+  /** Total uses across all customers (admin coupons); usedCount is kept by the backend. */
+  usageLimit?: number;
+  usedCount?: number;
 };

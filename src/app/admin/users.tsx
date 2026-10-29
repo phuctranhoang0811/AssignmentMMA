@@ -24,6 +24,8 @@ import { AppText } from '../../components/ui/AppText';
 import { colors } from '../../theme/colors';
 import { styles } from '../../styles/adminUsers.styles';
 import { DemoUser } from '../../types/user';
+import { useAuth } from '../../state/AuthContext';
+import { canChangeRole } from '../../utils/staff';
 
 const ROLE_OPTIONS = [
   { key: 'SUPER_ADMIN', label: 'Admin', desc: 'Toàn quyền cấu hình và quản trị hệ thống' },
@@ -36,6 +38,7 @@ const ROLE_OPTIONS = [
 export default function AdminUsersScreen() {
   const router = useRouter();
 
+  const { user: me } = useAuth();
   const [users, setUsers] = useState<DemoUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -267,6 +270,8 @@ export default function AdminUsersScreen() {
                     </AppText>
                   </View>
 
+                  {/* Managers view users only; admins cannot change themselves or (unless SUPER_ADMIN) other admins. */}
+                  {item.id !== me?.id && canChangeRole(me?.role, item.role, 'USER') && (
                   <View style={styles.actionBtnsRow}>
                     <TouchableOpacity
                       style={styles.actionBtn}
@@ -292,6 +297,7 @@ export default function AdminUsersScreen() {
                       </AppText>
                     </TouchableOpacity>
                   </View>
+                  )}
                 </View>
               </View>
             );
@@ -320,7 +326,7 @@ export default function AdminUsersScreen() {
               Phân định vai trò cho {selectedUser?.fullname} ({selectedUser?.email})
             </AppText>
 
-            {ROLE_OPTIONS.map((opt) => {
+            {ROLE_OPTIONS.filter(opt => canChangeRole(me?.role, selectedUser?.role, opt.key)).map((opt) => {
               const isSelected = selectedUser?.role === opt.key;
               return (
                 <TouchableOpacity

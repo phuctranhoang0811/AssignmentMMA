@@ -35,6 +35,7 @@ import { styles } from '../../styles/adminPromotions.styles';
 import { Coupon } from '../../types/user';
 import { mockCoupons } from '../../data/mockPromotions';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { isCouponExpired } from '../../utils/coupons';
 
 export default function AdminPromotionsScreen() {
   const router = useRouter();
@@ -51,6 +52,8 @@ export default function AdminPromotionsScreen() {
   const [minSubtotal, setMinSubtotal] = useState('150000');
   const [maxDiscount, setMaxDiscount] = useState('50000');
   const [desc, setDesc] = useState('');
+  const [expiresAt, setExpiresAt] = useState('31/12/2026');
+  const [usageLimit, setUsageLimit] = useState('');
 
   useEffect(() => {
     // Lắng nghe Firestore collection 'coupons'
@@ -68,7 +71,8 @@ export default function AdminPromotionsScreen() {
               minSubtotal: Number(data.minSubtotal || 0),
               maxDiscount: data.maxDiscount ? Number(data.maxDiscount) : undefined,
               description: data.description || '',
-              expiresAt: data.expiresAt || '31/12/2026',
+              expiresAt: data.expiresAt || undefined,
+              ...(data.usageLimit ? { usageLimit: Number(data.usageLimit), usedCount: Number(data.usedCount || 0) } : {}),
               stored: true,
             });
           });
@@ -90,6 +94,12 @@ export default function AdminPromotionsScreen() {
       return;
     }
 
+    // dd/mm/yyyy, checked by the backend at order time (through that day).
+    if (!/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(expiresAt.trim()) || isCouponExpired({ expiresAt })) {
+      Alert.alert('Lỗi', 'Hạn dùng phải là ngày trong tương lai, dạng dd/mm/yyyy');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const newCoupon = {
@@ -101,7 +111,8 @@ export default function AdminPromotionsScreen() {
         description:
           desc.trim() ||
           `Giảm ${discountType === 'PERCENT' ? `${value}%` : formatCurrency(Number(value))} cho đơn từ ${formatCurrency(Number(minSubtotal))}`,
-        expiresAt: '31/12/2026',
+        expiresAt: expiresAt.trim(),
+        ...(Number(usageLimit) > 0 ? { usageLimit: Math.floor(Number(usageLimit)), usedCount: 0 } : {}),
         createdAt: serverTimestamp(),
       };
 
@@ -201,9 +212,14 @@ export default function AdminPromotionsScreen() {
                 <AppText variant="small" color={colors.textSecondary}>
                   Đơn tối thiểu: {formatCurrency(item.minSubtotal)}
                 </AppText>
-                <AppText variant="small" color={colors.textSecondary}>
-                  Hạn dùng: {item.expiresAt || '31/12/2026'}
+                <AppText variant="small" color={isCouponExpired(item) ? colors.error : colors.textSecondary}>
+                  {item.expiresAt ? `Hạn dùng: ${item.expiresAt}${isCouponExpired(item) ? ' (đã hết hạn)' : ''}` : 'Không giới hạn thời gian'}
                 </AppText>
+                {!!item.usageLimit && (
+                  <AppText variant="small" color={colors.textSecondary}>
+                    Đã dùng: {item.usedCount ?? 0}/{item.usageLimit}
+                  </AppText>
+                )}
               </View>
             </View>
           ))}
@@ -414,6 +430,34 @@ export default function AdminPromotionsScreen() {
                   />
                 </View>
               )}
+
+              <View style={styles.formGroup}>
+                <AppText variant="captionSemiBold" style={styles.inputLabel}>
+                  Hạn dùng (dd/mm/yyyy)
+                </AppText>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="31/12/2026"
+                  value={expiresAt}
+                  onChangeText={setExpiresAt}
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <AppText variant="captionSemiBold" style={styles.inputLabel}>
+                  Tổng số lượt dùng (để trống = không giới hạn)
+                </AppText>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Ví dụ: 100"
+                  keyboardType="numeric"
+                  value={usageLimit}
+                  onChangeText={setUsageLimit}
+                />
+                <AppText variant="small" color={colors.textSecondary}>
+                  Mỗi khách hàng chỉ dùng được mỗi mã một lần.
+                </AppText>
+              </View>
 
               <View style={styles.formGroup}>
                 <AppText variant="captionSemiBold" style={styles.inputLabel}>

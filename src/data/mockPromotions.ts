@@ -23,5 +23,6 @@ export const mockCoupons: Coupon[] = [
     minSubtotal: 150000,
     description: 'Giảm ngay 30.000₫ cho đơn hàng đầu tiên từ 150.000₫',
     expiresAt: '31/12/2026',
+    firstOrderOnly: true,
   },
 ];
