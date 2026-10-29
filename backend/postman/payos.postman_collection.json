@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Pizza payOS backend",
-    "description": "Local API contract. Supply your Firebase ID token and catalog product ID. Reuse checkoutKey for retries. No live credentials are included. Pricing adds no tax surcharge; delivery costs 22000 VND and is free for pickup or subtotal >= 300000 VND.",
+    "description": "Local API contract. Supply your Firebase ID token and catalog product ID. Reuse checkoutKey and the unchanged payload for retries. Ordinary delivery and pickup add no delivery fee or tax surcharge; Ahamove quotes are separate. Optional deliveryTime and deliveryNote are retained after payment. No live credentials are included.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -23,9 +23,9 @@
       "name": "Create or retry payOS checkout",
       "request": {
         "method": "POST", "url": "{{baseUrl}}/api/payments/payos",
-        "description": "Use an existing Firestore product/variant. Omit variantId for products with no variants. Optional needCutlery is a boolean, saved to the fulfillment order after payment. Keep the key and payload unchanged when retrying.",
+        "description": "Use an existing Firestore product/variant. Omit variantId for products with no variants. Optional needCutlery (boolean), deliveryTime (trimmed display text, 1–100 characters) and deliveryNote (up to 500 characters) are saved to the fulfillment order after payment. Old payloads can omit them. Kitchen snapshots retain addons, pizza customization and cooking notes. Keep the key and payload unchanged when retrying; a new schedule or note needs a new checkoutKey. Ahamove remains immediate delivery with the exact quoted checkout.",
         "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{checkoutKey}}" }],
-        "body": { "mode": "raw", "options": { "raw": { "language": "json" } }, "raw": "{\n  \"customer\": { \"fullname\": \"Nguyen Van A\", \"phone\": \"0901234567\" },\n  \"fulfillmentType\": \"PICKUP\",\n  \"items\": [{ \"lineId\": \"line-1\", \"productId\": \"{{productId}}\", \"variantId\": \"{{variantId}}\", \"addonIds\": [], \"quantity\": 1 }]\n}" }
+        "body": { "mode": "raw", "options": { "raw": { "language": "json" } }, "raw": "{\n  \"customer\": {\n    \"fullname\": \"Nguyen Van A\",\n    \"phone\": \"0901234567\"\n  },\n  \"fulfillmentType\": \"PICKUP\",\n  \"items\": [\n    {\n      \"lineId\": \"line-1\",\n      \"productId\": \"{{productId}}\",\n      \"variantId\": \"{{variantId}}\",\n      \"addonIds\": [],\n      \"quantity\": 1\n    }\n  ],\n  \"deliveryTime\": \"19:30 • 28/10/2026\",\n  \"deliveryNote\": \"Gọi trước khi đến\"\n}" }
       },
       "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
         "pm.test('Checkout is persisted with a server total', () => { pm.response.to.have.status(200); const order = pm.response.json(); pm.expect(order.id).to.match(/^[a-f0-9]{64}$/); pm.expect(order.total).to.be.above(0); pm.expect(order.pricing.tax).to.eql(0); pm.expect(order.pricing.deliveryFee).to.eql(0); pm.expect(order.total).to.eql(order.pricing.subtotal); pm.expect(['PENDING', 'PAID']).to.include(order.paymentStatus); pm.collectionVariables.set('orderId', order.id); });"

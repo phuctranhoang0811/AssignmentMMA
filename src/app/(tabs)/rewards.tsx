@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   Image,
   Platform,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { AppButton } from '../../components/ui/AppButton';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '../../state/AuthContext';
 import { rewardCatalog, type RewardWallet } from '../../data/rewards';
 import { getRewardWallet, redeemReward } from '../../services/rewardService';
@@ -61,11 +61,14 @@ export default function RewardsScreen() {
   const owner = useRef(user?.id);
   owner.current = user?.id;
   const [attempt, setAttempt] = useState(0);
+  const walletKey = `${userId}:${isDemo}:${attempt}:${user?.rewardPoints}`;
+  const latestWalletKey = useRef(walletKey);
+  latestWalletKey.current = walletKey;
   const currentWallet = walletOwner === user?.id ? wallet : null;
   const userPoints = currentWallet?.points ?? user?.rewardPoints ?? 0;
   const gifts = currentWallet?.gifts ?? [];
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     let active = true;
     setWallet(null);
     setWalletOwner(undefined);
@@ -74,12 +77,12 @@ export default function RewardsScreen() {
     if (!userId || isDemo) return;
     setLoading(true);
     getRewardWallet().then(value => {
-      if (active) { setWallet(value); setWalletOwner(userId); }
+      if (active && latestWalletKey.current === walletKey) { setWallet(value); setWalletOwner(userId); }
     }).catch(() => {
-      if (active) setError('Không thể tải điểm và quà. Vui lòng thử lại.');
-    }).finally(() => { if (active) setLoading(false); });
+      if (active && latestWalletKey.current === walletKey) setError('Không thể tải điểm và quà. Vui lòng thử lại.');
+    }).finally(() => { if (active && latestWalletKey.current === walletKey) setLoading(false); });
     return () => { active = false; };
-  }, [userId, isDemo, attempt]);
+  }, [userId, isDemo, walletKey]));
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {

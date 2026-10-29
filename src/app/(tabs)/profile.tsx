@@ -5,10 +5,10 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
-  Alert,
   Platform,
   Pressable,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';

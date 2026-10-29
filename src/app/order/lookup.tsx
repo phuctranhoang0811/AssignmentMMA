@@ -6,10 +6,10 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  Alert,
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Info, Package } from 'lucide-react-native';
@@ -160,10 +160,10 @@ export default function OrderLookupScreen() {
                     </Text>
                   </View>
                   <Text style={styles.orderItemOptions}>
-                    {Array.isArray(item.customizationSummary) && item.customizationSummary.length > 0
-                      ? item.customizationSummary.join(' • ')
-                      : item.variantName || 'Đế Truyền Thống'}
+                    {[item.variantName, ...(item.addonNames ?? []), ...(Array.isArray(item.customizationSummary)
+                      ? item.customizationSummary : [item.customizationSummary])].filter(Boolean).join(' • ')}
                   </Text>
+                  {!!item.note && <Text style={styles.orderItemOptions}>Ghi chú bếp: {item.note}</Text>}
                 </View>
               ))}
 

@@ -3,9 +3,9 @@ import {
   View,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Image,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, RefreshCw, XCircle, FastForward, MapPin, Phone, User } from 'lucide-react-native';

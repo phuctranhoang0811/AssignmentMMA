@@ -8,9 +8,9 @@ import {
   RefreshControl,
   Modal,
   Pressable,
-  Alert,
   Linking,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';

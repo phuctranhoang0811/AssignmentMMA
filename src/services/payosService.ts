@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { auth } from './firebase';
 import type { CreateOrderInput } from './contracts';
+import { payosCheckout } from '../utils/payosCheckout';
 
 export type PaymentSnapshot = {
   id: string;
@@ -97,16 +98,7 @@ export async function createPayosPayment(input: CreateOrderInput): Promise<Payme
   await auth.authStateReady();
   const user = auth.currentUser;
   if (!user) throw new Error('Vui lòng đăng nhập tài khoản trước khi thanh toán payOS.');
-  if (input.promoCode?.trim()) throw new Error('Mã giảm giá hiện chưa áp dụng cho payOS. Vui lòng bỏ mã hoặc chọn tiền mặt.');
-  const body = {
-    customer: { fullname: input.customer.fullname.trim(), phone: input.customer.phone.replace(/[\s.-]/g, ''),
-      ...(input.customer.email?.trim() ? { email: input.customer.email.trim() } : {}) },
-    fulfillmentType: input.fulfillmentType,
-    ...(input.needCutlery ? { needCutlery: true } : {}),
-    ...(input.fulfillmentType === 'DELIVERY' ? { address: input.address?.trim() } : {}),
-    ...(input.deliveryQuoteId ? { deliveryQuoteId: input.deliveryQuoteId, deliveryNote: input.deliveryNote?.trim() || '' } : {}),
-    items: input.items.map((item, index) => ({ ...item, lineId: `line-${index + 1}` })),
-  };
+  const body = payosCheckout(input);
   const serialized = JSON.stringify(body);
   const storageKey = `@pizza_payos_attempt:${user.uid}`;
   const raw = await AsyncStorage.getItem(storageKey);

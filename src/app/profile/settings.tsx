@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Switch } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Bell, Globe, RotateCcw, AlertTriangle, ChefHat, Sparkles } from 'lucide-react-native';

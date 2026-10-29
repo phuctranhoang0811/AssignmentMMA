@@ -1,5 +1,6 @@
 import * as Crypto from 'expo-crypto';
-import { Alert, AppState, Linking } from 'react-native';
+import { AppState, Linking } from 'react-native';
+import { Alert } from '../utils/alert';
 import { signInWithCustomToken } from 'firebase/auth';
 import { auth } from './firebase';
 import type { GoogleLoginOptions } from '../types/googleLogin';

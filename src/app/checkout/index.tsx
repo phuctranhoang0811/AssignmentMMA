@@ -6,11 +6,11 @@ import {
   TouchableOpacity,
   TextInput,
   Modal,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
@@ -395,8 +395,9 @@ export default function CheckoutScreen() {
           customer: { fullname, phone: localPhone, email },
           fulfillmentType: fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP',
           needCutlery,
-          address, items, promoCode: selectedVoucher?.code, paymentMethod: 'PAYOS',
-          ...(useAhamove ? { deliveryQuoteId: validQuote!.id, deliveryNote } : {}),
+          address, items, promoCode: selectedVoucher?.code, paymentMethod: 'PAYOS', deliveryNote,
+          ...(!useAhamove ? { deliveryTime: formatDeliveryTime(deliveryTime) } : {}),
+          ...(useAhamove ? { deliveryQuoteId: validQuote!.id } : {}),
         });
         router.push({ pathname: '/checkout/payos', params: { orderId: payment.id } });
       } catch (err) {

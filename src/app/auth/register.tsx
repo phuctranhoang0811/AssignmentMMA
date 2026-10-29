@@ -6,11 +6,11 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
-  Alert,
   Modal,
   Pressable,
   KeyboardAvoidingView,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, ChevronDown, Check, Eye, EyeOff } from 'lucide-react-native';

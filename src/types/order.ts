@@ -65,7 +65,7 @@ export type OrderItemSnapshot = {
   unitPrice: number;
   lineTotal: number;
   image?: string;
-  customization?: PizzaCustomizationState;
+  customization?: PizzaCustomizationState | null;
   customizationSummary?: string[];
 };
 

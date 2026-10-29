@@ -7,9 +7,9 @@ import {
   Modal,
   Platform,
   StatusBar,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, User } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';

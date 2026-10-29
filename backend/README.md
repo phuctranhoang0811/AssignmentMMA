@@ -30,6 +30,10 @@ Coupon chưa hỗ trợ với payOS: app yêu cầu bỏ coupon hoặc chọn ti
 
 ## Luồng thanh toán
 
+`POST /api/payments/payos` nhận thêm hai trường tùy chọn: `deliveryTime` (chuỗi giờ hẹn hiển thị, 1–100 ký tự sau khi trim) và `deliveryNote` (tối đa 500 ký tự). App gửi giờ đã chọn cho giao thường/nhận tại quầy; Ahamove tiếp tục chỉ giao ngay theo báo phí. Hai trường được giữ trong checkout/fingerprint và đơn vận hành sau khi PAID. Khi đổi giờ hoặc ghi chú, dùng yêu cầu checkout mới; khi retry, giữ nguyên payload và Idempotency-Key. Payload cũ không có các trường này vẫn được chấp nhận.
+
+Snapshot món dùng chung cho COD, payOS và Ahamove giữ `addonIds`, `addonNames`, `customization`, `customizationSummary` và `note`, cùng giá được server tính. Thay đổi này áp dụng cho đơn mới; không thể khôi phục tùy chọn đã mất trong đơn COD cũ.
+
 1. App đăng nhập Firebase, lấy ID token và gọi `POST /api/payments/payos` với `Idempotency-Key`.
 2. Server xác thực user, kiểm tra giỏ hàng, đọc giá từ Firestore trong transaction, tạo đơn `PENDING` và orderCode duy nhất.
 3. Server tạo link payOS và trả `payment.checkoutUrl`, `payment.qrCode` (chuỗi VietQR, không phải URL ảnh). App mở trang payOS hoặc render chuỗi này bằng thư viện QR.

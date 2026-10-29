@@ -7,10 +7,10 @@ import {
   TouchableOpacity,
   TextInput,
   Modal,
-  Alert,
   Platform,
   StatusBar,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, MapPin, XCircle } from 'lucide-react-native';

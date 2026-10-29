@@ -1,5 +1,6 @@
 import React from 'react';
-import { Alert, Text, TouchableOpacity, View } from 'react-native';
+import { Text, TouchableOpacity, View } from 'react-native';
+import { Alert } from '../../utils/alert';
 import * as Linking from 'expo-linking';
 import { deliveryStatusLabels, type Delivery } from '../../types/delivery';
 import { updateDeliveryOrder } from '../../services/deliveryService';

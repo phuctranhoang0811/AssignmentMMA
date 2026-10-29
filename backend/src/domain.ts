@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { calculateOrderTotals, getItemLineUnitPrice } from '../../src/utils/calculateTotals';
-import { PIZZA_CRUSTS, PIZZA_SAUCES, PIZZA_TOPPINGS, MAX_TOPPINGS_COUNT, isCustomizablePizza } from '../../src/types/pizzaCustomization';
+import { PIZZA_CRUSTS, PIZZA_SAUCES, PIZZA_TOPPINGS, MAX_TOPPINGS_COUNT, isCustomizablePizza, formatCustomizationSummary } from '../../src/types/pizzaCustomization';
+import type { OrderItemSnapshot } from '../../src/types/order';
 import type { Product } from '../../src/types/product';
 import type { Delivery } from '../../src/types/delivery';
 import type { Coupon } from '../../src/types/user';
@@ -26,6 +27,7 @@ export const checkoutSchema = z.object({
   needCutlery: z.boolean().optional(),
   address: z.string().trim().min(1).max(500).optional(),
   deliveryNote: z.string().trim().max(500).optional(),
+  deliveryTime: z.string().trim().min(1).max(100).optional(),
   deliveryQuoteId: z.string().uuid().optional(),
   items: z.array(z.object({
     lineId: identifier, productId: identifier, variantId: identifier.optional(),
@@ -41,7 +43,7 @@ export type PaymentOrder = {
   reference?: string; payment?: PaymentLink; total: number;
   checkout: Checkout; pricing: ReturnType<typeof calculateOrderTotals>;
   delivery?: Delivery;
-  items: { productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number; variantName?: string }[];
+  items: OrderItemSnapshot[];
 };
 export function orderIdentity(uid: string, key: string, checkout: Checkout) {
   return { id: createHash('sha256').update(JSON.stringify([uid, key])).digest('hex'),
@@ -69,7 +71,13 @@ export function priceCheckout(checkout: Checkout, products: Product[], coupon?: 
     const product = map[item.productId];
     const unitPrice = getItemLineUnitPrice(item, product);
     return { productId: item.productId, productName: product.name, quantity: item.quantity, unitPrice, lineTotal: unitPrice * item.quantity,
-      variantName: product.variants?.find(v => v.id === item.variantId)?.name ?? '' };
+      variantName: product.variants?.find(v => v.id === item.variantId)?.name ?? '',
+      addonIds: item.addonIds, addonNames: item.addonIds.map(id => product.addons.find(addon => addon.id === id)!.name),
+      customization: item.customization ?? null,
+      customizationSummary: formatCustomizationSummary(item.customization),
+      note: [item.specialInstructions, item.customization?.specialInstructions].filter(Boolean)
+        .filter((value, index, all) => all.indexOf(value) === index).join(' • '),
+    };
   }) };
 }
 export type PaidData = { orderCode: number; amount: number; paymentLinkId: string; reference: string };
@@ -94,6 +102,7 @@ export function paidFulfillmentOrder(order: PaymentOrder) {
     fulfillmentType: order.checkout.fulfillmentType === 'DELIVERY' ? 'delivery' : 'takeaway',
     needCutlery: order.checkout.needCutlery ?? false,
     deliveryNote: order.checkout.deliveryNote ?? '',
+    deliveryTime: order.checkout.deliveryTime ?? (order.delivery ? 'Giao ngay khi món sẵn sàng' : 'Sớm nhất'),
     ...(order.delivery ? { delivery: order.delivery, deliveryQuoteId: order.checkout.deliveryQuoteId } : {}),
     paymentMethod: 'payos', paymentName: 'payOS', paymentStatus: 'PAID',
     paymentOrderId: order.id, paidAt: order.paidAt, reference: order.reference,
@@ -102,7 +111,8 @@ export function paidFulfillmentOrder(order: PaymentOrder) {
     items: order.items.map((item, index) => ({ ...item,
       addonIds: order.checkout.items[index]?.addonIds ?? [],
       customization: order.checkout.items[index]?.customization ?? null,
-      note: order.checkout.items[index]?.specialInstructions ?? '',
+      customizationSummary: item.customizationSummary ?? formatCustomizationSummary(order.checkout.items[index]?.customization),
+      note: item.note ?? order.checkout.items[index]?.specialInstructions ?? '',
     })),
     itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
     ...order.pricing,

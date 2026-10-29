@@ -20,6 +20,7 @@ export type CreateOrderInput = {
   needCutlery?: boolean;
   address?: string;
   deliveryNote?: string;
+  deliveryTime?: string;
   deliveryQuoteId?: string;
   items: CartItem[];
   promoCode?: string;
