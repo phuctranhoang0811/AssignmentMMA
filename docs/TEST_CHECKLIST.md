@@ -1,260 +1,326 @@
-# Review luồng và checklist kiểm thử Pizza FPT
+# Pizza FPT — Luồng hệ thống và test case kiểm thử thủ công
 
-Ngày review: 28/10/2026. Mốc review ban đầu: `2e5c6ba` trên `feature/firebase-auth-database`. Đã cập nhật theo bản sửa F1–F4 trong workspace.
+Cập nhật: 29/10/2026, nhánh `feature/firebase-auth-database` (sau khi gộp `feature/staff-confirm-order` và `feature/admin`, commit `3e7bb7f`).
 
-Tài liệu này mô tả **code đang có**, dùng để test thủ công. Các dòng checklist chưa có nghĩa là đã chạy trên thiết bị. Lint, TypeScript app/backend và 78 test tự động đã đạt trong lần review này; test backend dùng provider giả lập và dữ liệu trong bộ nhớ, không xác nhận kết nối Firebase/payos/Ahamove thật.
+Tài liệu mô tả **code hiện có**. Mỗi test case ghi kết quả vào cột **KQ**: `PASS` / `FAIL` / `BLOCKED`. Khi FAIL, ghi: nền tảng (Android/iOS/web), tài khoản (không ghi mật khẩu), mã đơn, bước tái hiện, kết quả thật, log terminal backend.
 
-## 1. Những điều cần biết trước khi test
+Kiểm tra tự động hiện tại: lint 0 lỗi/0 cảnh báo, TypeScript app + backend sạch, **84/84** test backend pass. Test tự động dùng Firestore giả lập và provider giả lập — **không** thay thế các test thủ công dưới đây.
 
-| Hạng mục | Hành vi hiện tại |
-| --- | --- |
-| Guest | Xem menu, tìm món, tùy chỉnh, thêm giỏ và tra cứu bằng SĐT + mã đơn. Phải đăng nhập tài khoản thật để checkout/đặt hàng. |
-| Demo | Dùng thử giao diện; không có Firebase session để đặt đơn, thanh toán hoặc đổi quà thật. |
-| Khách đã đăng nhập | Đặt COD/payOS, theo dõi đơn của mình, hủy đơn chưa xác nhận, tích điểm và đổi quà. |
-| Nhân viên/quản lý/admin | Cùng portal `/staff/orders`; backend chấp nhận role nhân viên trong hồ sơ Firestore (EMPLOYEE, STORE_MANAGER, ADMIN, SUPER_ADMIN) **hoặc** UID trong `STAFF_UIDS`. Chưa có portal quản trị riêng. |
-| Menu và voucher | App đọc dữ liệu local trong `src/data/`; backend tính lại tiền bằng catalog Firestore. Hai bên cần cùng dữ liệu để giá khớp. |
-| Checkout | Một màn hình `/checkout`. `/checkout/payment` và `/checkout/review` chỉ chuyển về đây. |
-| Tổng tiền thông thường | Tiền món gồm size/topping/addon, trừ voucher; hiện không cộng thêm VAT hoặc phí giao thông thường. Ahamove có báo phí riêng. |
-| Voucher | COD thường hỗ trợ. payOS và Ahamove chưa hỗ trợ. `WELCOME30` chưa có kiểm tra lịch sử để giới hạn khách đặt lần đầu. |
-| Đơn thật | Ghi qua backend vào Firestore; khách xem cập nhật trực tiếp qua Firestore. Staff đọc lại API khi mở, kéo refresh và mỗi 15 giây lúc màn hình hoạt động. |
-| Hoàn tiền | Từ chối/hủy đơn đã trả tiền đánh dấu `REFUND_PENDING`; chưa có thao tác tự chuyển tiền hoàn về ngân hàng. |
-| Lưu trên thiết bị | Giỏ, lựa chọn checkout, địa chỉ giao và yêu thích dùng local storage. Giỏ được giữ qua đăng nhập; không phải giỏ đồng bộ cloud theo tài khoản. |
+---
 
-`README.md`, `TEAM_GUIDE.md`, `SYSTEM_FLOWS.md` và bảng endpoint trong tài liệu Ahamove có phần đã cũ. Không dùng các mô tả “guest đặt hàng”, “ví demo”, “VAT 10%”, hoặc portal CRUD admin để đánh giá bản hiện tại.
+## 1. Chuẩn bị
 
-## 2. Cấu hình local được kiểm tra khi review
+### 1.1 Việc phải làm một lần
 
-Chỉ kiểm tra sự có mặt của cấu hình trong các file `.env`, không thử gửi mail, thanh toán hoặc đặt chuyến thật. Chưa đối chiếu các biến có thể được cấp riêng cho tiến trình backend đang chạy.
+| # | Việc | Lệnh / cách làm | Kiểm tra |
+| --- | --- | --- | --- |
+| P1 | Deploy Firestore rules (admin cần quyền mới) | `npx firebase-tools deploy --only firestore:rules` | Console Firebase → Firestore → Rules có hàm `isAdmin()` |
+| P2 | Đồng bộ catalog + sửa ảnh hỏng | `npm --prefix backend run seed:catalog` | Terminal in `repaired images ST_04, PA003` (lần sau in `none`) |
+| P3 | Gán role cho tài khoản test | Firebase Console → `users/{uid}` → field `role` | Xem bảng tài khoản 1.2 |
+| P4 | (Tùy chọn) nhận OTP qua Gmail | `SMTP_USER`, `SMTP_PASS` trong `backend/.env` | Không có SMTP: backend dev in `[OTP dev] email: 1234` ra terminal |
+| P5 | Đăng nhập bằng SĐT | `FIREBASE_WEB_API_KEY` trong `backend/.env` | Thiếu thì đăng nhập SĐT báo lỗi cấu hình |
 
-| Hạng mục | Trạng thái | Việc cần làm trước khi test |
+### 1.2 Tài khoản test
+
+| Ký hiệu | Role trong `users/{uid}` | Dùng để |
 | --- | --- | --- |
-| API URL của app, Firebase app và backend | Đã có; project ID app/backend khớp; file credential tồn tại | Khởi động backend, kiểm tra `/health`. Chưa xác minh credential/provider còn hoạt động. |
-| Quyền staff ở backend | Role nhân viên trong `users/{uid}` hoặc `STAFF_UIDS` | Gán `role` (EMPLOYEE, STORE_MANAGER, ADMIN, SUPER_ADMIN) cho user trong Firebase Console, hoặc đặt `STAFF_UIDS=<UID>` trong `backend/.env` rồi restart backend. |
-| Gửi OTP qua Gmail | `SMTP_USER`/`SMTP_PASS` đang trống | Backend ở chế độ development in `[OTP dev] ...` trong terminal. Dùng mã này để thử; muốn nhận mail thì cấu hình SMTP. Không có SMTP trong production thì endpoint OTP không khả dụng. |
-| Google trong Expo Go | Chưa có `EXPO_PUBLIC_GOOGLE_BRIDGE_URL` | Chuẩn bị HTTPS bridge theo [google-login.md](./google-login.md). Có thể dùng script `npm run google:expo-go`, thêm hostname vào Firebase Authorized domains, rồi restart Expo theo tài liệu. |
-| Google trên web | Dùng Firebase popup | Bật Google provider và cho phép hostname của app trong Firebase; không cần bridge Expo Go. |
-| Ahamove | Cờ app và backend đang tắt, thiếu thông tin hãng/staff | Chưa thể test chuyến staging. Xem [ahamove.md](./ahamove.md); app dùng chính xác `EXPO_PUBLIC_DELIVERY_PROVIDER=ahamove` và backend dùng `AHAMOVE_ENABLED=true`. |
+| **A** | `USER` | Khách chính: đặt đơn, hủy, điểm, đổi quà |
+| **B** | `USER` | Khách thứ 2: kiểm tra không thấy dữ liệu của A |
+| **S** | `EMPLOYEE` | Nhân viên bếp: portal `/staff/orders` |
+| **M** | `SUPER_ADMIN` (hoặc `ADMIN`, `STORE_MANAGER`) | Admin: portal `/admin` |
+| **X** | `USER` → sẽ bị admin khóa | Kiểm tra khóa tài khoản |
 
-Chuẩn bị 2 tài khoản khách A/B và một tài khoản staff S. Nên dùng 2 thiết bị hoặc 2 phiên trình duyệt riêng cho khách và staff. Lưu UID của S vào backend; role chấp nhận: `EMPLOYEE`, `STORE_MANAGER`, `SUPER_ADMIN`, `ADMIN`.
+Nên dùng 2 trình duyệt/thiết bị riêng: một cho khách, một cho S hoặc M.
 
-Chạy từ thư mục gốc, mở các terminal riêng:
+### 1.3 Chạy hệ thống
 
 ```powershell
-# Terminal 1: backend
+# Terminal 1 — backend (mặc định cổng 3001)
 npm run dev --prefix backend
 
-# Terminal 2: ứng dụng trên điện thoại
-npm run dev
-
-# Hoặc test giao diện web
-npm run web
+# Terminal 2 — app (chọn một)
+npm run dev        # Expo Go trên điện thoại
+npm run web        # trình duyệt
 ```
 
-Trên máy backend có thể đọc `http://localhost:3001/health` nếu dùng cổng mặc định; mong đợi `{"ok":true}`. Điện thoại phải dùng địa chỉ backend mà điện thoại truy cập được trong `EXPO_PUBLIC_API_URL`/`EXPO_PUBLIC_ANDROID_API_URL`. Expo tunnel cho bundle và tunnel đăng nhập Google không tự chuyển tiếp các API đặt hàng/payOS. Restart Expo sau khi sửa biến `EXPO_PUBLIC_*`.
+- Kiểm tra backend: mở `http://localhost:3001/health` → `{"ok":true}`.
+- Điện thoại phải gọi được địa chỉ backend trong `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_ANDROID_API_URL`. Sửa biến `EXPO_PUBLIC_*` xong phải restart Expo.
+- Android emulator: `adb reverse tcp:3001 tcp:3001` để emulator gọi `localhost:3001`.
 
-Nếu backend báo món không tồn tại/giá không khớp catalog, đối chiếu `products` trong Firestore với `src/data/mockProducts.ts`. Có lệnh `npm run seed:firebase` để ghi catalog lên database chung; chỉ chạy khi nhóm muốn đồng bộ catalog. Lần review này không chạy seed.
+---
 
-## 3. Bản sửa F1–F4 và các ca test hồi quy
+## 2. Luồng hệ thống
 
-### F1 — Đã sửa: Giữ tùy chọn và ghi chú món
+### 2.1 Vai trò và màn hình sau đăng nhập
 
-`priceCheckout()` tạo snapshot dùng chung giữ addon IDs/tên addon, raw customization, mô tả topping/đế/sốt và ghi chú bếp. COD, payOS và Ahamove dùng snapshot này; màn staff, theo dõi và tra cứu hiển thị tên addon và mô tả/ghi chú.
+```
+Mở app ─► Splash
+           ├─ chưa đăng nhập ─► Welcome ─► Trang chủ (khách vãng lai)
+           └─ đã đăng nhập ─► theo role:
+                 SUPER_ADMIN / ADMIN / STORE_MANAGER ─► /admin/dashboard
+                 EMPLOYEE / ROLE_KITCHEN / ROLE_RIDER  ─► /staff/orders
+                 USER (và role khác)                   ─► Trang chủ
+```
 
-Test C06: đặt pizza có topping, extra sauce, addon và ghi chú “Không hành”; đối chiếu đơn bằng cả khách và staff. Đơn mới phải giữ đủ lựa chọn và giá. Test tự động đã kiểm tra COD, payOS và Ahamove với dữ liệu trong bộ nhớ. Không tự khôi phục được thông tin đã mất ở đơn COD cũ.
-
-### F2 — Đã sửa: Giữ giờ hẹn và ghi chú qua payOS
-
-Request payOS giữ `deliveryTime` và `deliveryNote` cho giao thường/nhận tại quầy. Backend chấp nhận các trường tùy chọn, giữ trong fingerprint và đơn sau thanh toán. Đổi giờ/ghi chú phải là checkout mới; retry cùng dữ liệu không tạo thêm đơn. Ahamove vẫn giao ngay và khớp báo phí như trước.
-
-Test D07: chọn giờ nhận tương lai/ghi chú, sau khi xác nhận PAID đối chiếu với staff. Các test tự động đi qua serializer app → schema → reserve → publish của backend; không dùng chuyển khoản thật. Payload cũ không có trường mới vẫn được chấp nhận.
-
-### F3 — Đã sửa: Xác nhận và thông báo trên web
-
-Các nơi gọi `Alert.alert` chuyển qua adapter dùng chung. Native giữ Alert của React Native; web dùng hộp thoại trình duyệt. Message vẫn gọi callback sau khi đóng; xác nhận hủy/đăng xuất chỉ chạy thao tác khi đồng ý, chọn Cancel không chạy thao tác.
-
-Test E06, A04 và A11 trên web: có hộp thoại hủy đơn, lỗi form nhìn thấy, xác nhận đổi mật khẩu có thể quay lại. Test tự động kiểm tra message/callback và cả hai lựa chọn xác nhận; vẫn cần kiểm tra giao diện bằng trình duyệt/thiết bị thật.
-
-### F4 — Đã sửa: Tải lại ví Rewards khi quay vào tab
-
-Rewards tải lại ví khi được focus, khi điểm trong hồ sơ thay đổi và khi bấm thử lại. Kết quả của lần tải cũ không được ghi đè lần mới hoặc tài khoản mới.
-
-Test E13: mở Rewards trước, hoàn tất đơn ở staff, quay lại Rewards; điểm phải khớp backend. Test thêm đổi quà, chuyển tab trong lúc đang tải và đăng xuất A → đăng nhập B.
-
-## 4. Luồng cần test đầu tiên
-
-1. Mở app ở phiên guest → duyệt menu → thêm món → giỏ → đăng nhập A → trở về checkout, giữ nguyên món.
-2. A đặt **COD nhận tại quầy, món đơn giản chưa tùy chỉnh** → có mã đơn → thấy trong “Đang xử lý”.
-3. S mở “Chờ duyệt” → xác nhận → “Bếp & Giao” → bắt đầu làm → sẵn sàng → khách nhận món.
-4. A thấy đơn chuyển “Lịch sử”, điểm tăng `floor(total / 10000)` đúng một lần. Kiểm tra hồi quy F4 nếu Rewards đã mở trước.
-5. A đặt đơn khác → hủy khi chờ xác nhận trên điện thoại; đơn chuyển lịch sử. Test hồi quy F3 nếu dùng web.
-6. Đăng nhập B → không thấy đơn của A. Đăng xuất → tra cứu bằng SĐT + mã đơn A phải cần đủ cả hai giá trị đúng.
-
-Sau khi 6 bước này chạy ổn, test pizza tùy chỉnh, payOS và cuối cùng Ahamove staging. Không dùng bản mock/demo làm bằng chứng một đơn đã ghi vào Firestore hoặc đã thanh toán.
-
-## 5. Checklist chi tiết
-
-Đánh dấu thủ công mỗi dòng: PASS / FAIL / BLOCKED. Với FAIL, ghi nền tảng, tài khoản/UID, mã đơn, bước tái hiện, kết quả thật và log liên quan. Không ghi mật khẩu/token vào biên bản lỗi.
-
-### A. Khởi động, tài khoản và phân quyền
-
-| ID | Thao tác | Kết quả mong đợi / lưu ý |
+| Vai trò | Làm được | Không làm được |
 | --- | --- | --- |
-| A01 | Phiên chưa đăng nhập: mở app → tiếp tục với vai trò khách | Vào trang chủ; hồ sơ không hiển thị như đã đăng nhập demo. |
-| A02 | Email hợp lệ → gửi OTP → nhập sai rồi nhập đúng | Sai bị từ chối; đúng chuyển sang nhập hồ sơ. Khi chưa có SMTP, đọc mã ở terminal backend development. |
-| A03 | Gửi lại OTP trong 30 giây; chờ trên 5 phút mới nhập mã; nhập sai quá giới hạn | Có thông báo phù hợp, cần mã mới. Có giới hạn gửi theo IP, không spam nút trong các ca khác. |
-| A04 | Đăng ký: bỏ tên/SĐT, SĐT sai, mật khẩu yếu, xác nhận không khớp, bỏ điều khoản | Không hoàn tất đăng ký; trên web kiểm tra hộp thoại hiển thị theo F3. |
-| A05 | Đăng ký dữ liệu hợp lệ | Có Firebase Auth + hồ sơ `USER`, mặc định 100 điểm; tài khoản đăng nhập được. |
-| A06 | Login bằng email, rồi logout và login bằng SĐT + cùng mật khẩu | Cùng UID/hồ sơ; sai mật khẩu không đăng nhập được. SĐT cần backend có `FIREBASE_WEB_API_KEY`. |
-| A07 | Google web: chọn Gmail; hủy popup; thử email không phải Gmail | Gmail vào đúng tài khoản; hủy không báo thành công; tài khoản ngoài Gmail bị từ chối theo logic app. |
-| A08 | Google trên Expo Go: mở trình duyệt, xác nhận tài khoản/mã đối chiếu, quay lại app; thử hủy | Chỉ nhận đúng phiên đã duyệt; hủy không tự đăng nhập. BLOCKED cho tới khi có HTTPS bridge. |
-| A09 | Đóng/mở lại app sau login; logout và mở lại | Phiên hợp lệ được khôi phục; sau logout không tự quay lại tài khoản cũ. |
-| A10 | Quên mật khẩu → email hợp lệ; dùng mật khẩu mới sau reset | Có email reset do Firebase gửi; login được sau đổi. Không phụ thuộc SMTP OTP của backend. |
-| A11 | Đổi mật khẩu: sai mật khẩu cũ, trùng mật khẩu cũ, mật khẩu mới yếu, dữ liệu đúng | Dữ liệu sai bị từ chối; đổi đúng thì mật khẩu mới dùng được. Tài khoản Google thuần không có nút đổi mật khẩu. Kiểm tra hồi quy F3 trên web. |
-| A12 | USER mở `/staff/orders`; S có role đúng nhưng chưa có whitelist; S đã cấp đủ | USER bị chặn; thiếu whitelist nhận 403; đủ role và UID thì tải được đơn. |
-| A13 | Login S bằng email/SĐT; đóng/mở lại | Vào portal staff theo role, không phụ thuộc chuỗi email `employee@`. Quản lý cửa hàng cũng vào được. |
+| Khách vãng lai | Xem menu, tùy chỉnh pizza, thêm giỏ, áp voucher, tra cứu đơn bằng SĐT + mã đơn | Đặt hàng (bị yêu cầu đăng nhập, giỏ được giữ) |
+| USER | Đặt COD/payOS, theo dõi đơn của mình, hủy khi còn chờ xác nhận, tích điểm, đổi quà | Xem đơn người khác, tự đổi role/điểm |
+| Nhân viên (S) | Portal bếp: xác nhận → làm → sẵn sàng → giao/khách nhận; từ chối đơn | Trang admin |
+| Admin (M) | Mọi thứ của nhân viên + dashboard, sửa món/giá, voucher, phân quyền/khóa user, hủy đơn, xác nhận hoàn tiền, báo cáo | Đổi role của chính mình, sửa điểm thưởng, ghi trực tiếp vào đơn |
+| Bị khóa (`BLACKLISTED`) | Đăng nhập, xem đơn cũ | Đặt đơn, tạo thanh toán, lấy phí Ahamove, đổi quà (backend trả 403) |
 
-### B. Menu, sản phẩm, địa chỉ và giỏ
+Quyền thật nằm ở **backend + Firestore rules**, không phải ở giao diện. Backend nhận nhân viên khi role là nhân viên/admin **hoặc** UID nằm trong `STAFF_UIDS`.
 
-| ID | Thao tác | Kết quả mong đợi / lưu ý |
+### 2.2 Luồng đặt hàng
+
+```
+Menu ─► Chi tiết món (size/đế/topping) ─► Giỏ (voucher) ─► [chưa đăng nhập → Đăng nhập → quay lại Checkout]
+     ─► Checkout: thông tin, nhận tại quầy / giao hàng, giờ hẹn, ghi chú
+         ├─ Tiền mặt (COD) ─► POST /api/orders/cash ─► đơn PENDING_CONFIRMATION, UNPAID
+         └─ payOS          ─► POST /api/payments/payos ─► QR ─► webhook/kiểm tra ─► PAID ─► đơn PENDING_CONFIRMATION
+```
+
+- **Giá do backend tính lại** từ Firestore `products` + `coupons`; app hiển thị cùng nguồn dữ liệu đó.
+- Voucher chỉ dùng với COD thường; payOS và Ahamove chưa hỗ trợ voucher.
+- Tổng tiền = tiền món (size + đế + topping + addon) − voucher. Không cộng VAT, không cộng phí giao thường. Ahamove có phí riêng.
+
+### 2.3 Trạng thái đơn
+
+```
+PENDING_CONFIRMATION ─► CONFIRMED ─► PREPARING ─► READY ─┬─(nhận tại quầy)──────────────► COMPLETED
+         │                  │             │          │   └─(giao thường)─► OUT_FOR_DELIVERY ─► COMPLETED
+         │                  └─────────────┴──────────┴─► CANCELLED (nhân viên/admin từ chối)
+         └─► CANCELLED (khách tự hủy — chỉ ở bước này)
+```
+
+| Quy tắc | Chi tiết |
+| --- | --- |
+| Khách hủy | Chỉ khi `PENDING_CONFIRMATION` và là chủ đơn |
+| Staff/admin từ chối | Trước `OUT_FOR_DELIVERY`, và chưa gọi tài xế Ahamove |
+| Hủy đơn đã trả tiền | `paymentStatus` → `REFUND_PENDING`; admin hoàn tiền thủ công rồi bấm xác nhận → `REFUNDED` |
+| Điểm thưởng | Khi `COMPLETED`: cộng `floor(total / 10000)` **đúng một lần**; đơn hủy không cộng |
+| Ahamove | Sau `READY`, trạng thái do tài xế/webhook Ahamove cập nhật |
+
+### 2.4 Admin thay đổi → khách thấy gì
+
+| Admin làm | Lưu ở | Khách thấy |
 | --- | --- | --- |
-| B01 | Duyệt các danh mục; tìm tên món/nguyên liệu/tag; tìm từ không tồn tại; xóa ô tìm | Danh mục/kết quả phù hợp, có trạng thái rỗng, xóa tìm trở lại danh sách. |
-| B02 | Mở pizza; đổi size/đế/sốt, thêm topping, thêm sốt, chọn độ cay/cách nướng/cắt | Giá đổi tương ứng; tổng lượng topping tối đa 5 phần; đổi size không giữ đế không hỗ trợ. |
-| B03 | Mở combo nằm trong danh mục pizza và thử đặt | Không ép combo đi qua tùy chỉnh chỉ dành cho pizza thật. |
-| B04 | Tăng/giảm số lượng tại chi tiết và giỏ | Giới hạn UI 1–20; tổng tiền/số món cập nhật đúng. |
-| B05 | Thêm hai lần cùng cấu hình; thêm cùng món nhưng khác cấu hình/ghi chú | Cùng dòng được gộp; khác lựa chọn là dòng riêng. |
-| B06 | Sửa món đã thêm từ giỏ; đổi size/topping; lưu | Thay thế dòng cũ, giữ số lượng; không nhân đôi dòng. Đồ uống/món cố định không hiện sửa không cần thiết. |
-| B07 | Xóa một dòng; hủy xác nhận xóa; xóa dòng cuối | Hủy không mất món; xóa đúng dòng; giỏ rỗng có đường trở về menu. |
-| B08 | Đóng/mở app khi giỏ có món, voucher và dụng cụ ăn | Các lựa chọn được khôi phục; guest đăng nhập vẫn giữ giỏ. |
-| B09 | Thả tim/bỏ tim; xem yêu thích; logout A → login B | Danh sách đổi đúng; không giữ yêu thích của tài khoản A cho B trong cùng phiên chuyển tài khoản. |
-| B10 | Nhập địa chỉ thủ công; chọn gợi ý; cho phép và từ chối GPS | Địa chỉ được chọn đúng; từ chối quyền vẫn cho nhập tay. GPS cần thử trên điện thoại thật. |
-| B11 | Chọn giao hàng/lấy tại quầy ở màn địa chỉ và trong checkout | Cách nhận nhất quán; giao hàng cần địa chỉ; nhận tại quầy không cần địa chỉ khách. |
-| B12 | Mở link món không tồn tại; ảnh món lỗi; back từ chi tiết | Có màn không tìm thấy/ảnh thay thế; app không crash. |
-| B13 | Áp `PIZZAFPT`, `FPT40`, `PIZZA20`, mã sai và đơn dưới ngưỡng | `PIZZAFPT`: -40k từ 100k; `FPT40`: -40k từ 200k; `PIZZA20`: -20%, tối đa 50k từ 200k. |
-| B14 | Giỏ có tổng 498.000đ, áp `FPT40`, sang checkout COD thường | Tổng 458.000đ; không tự cộng thêm VAT/phí giao thường. |
+| Sửa tên/mô tả/giá theo size, bật/tắt còn hàng | `products/{id}` | Menu, giỏ, checkout sau tối đa ~60 giây (hoặc mở lại app); backend tính tiền theo giá mới ngay |
+| Thêm món | `products/{id mới}` | Món xuất hiện trong menu |
+| Xóa món | xóa `products/{id}` | Món biến mất khỏi menu |
+| Tạo/xóa voucher | `coupons/{CODE}` | Trang Ưu đãi, ô nhập mã ở giỏ/checkout; backend chấp nhận mã |
+| Đổi role / khóa user | `users/{uid}.role` | Lần đăng nhập/mở app sau, user vào đúng portal; tài khoản khóa không đặt được đơn |
 
-### C. Checkout và đơn COD
+---
 
-| ID | Thao tác | Kết quả mong đợi / lưu ý |
-| --- | --- | --- |
-| C01 | Guest/demo nhấn thanh toán ở giỏ; login khách thật | Đăng nhập trước checkout, giữ giỏ và đi tiếp đúng màn. |
-| C02 | Bỏ họ tên/SĐT, email sai, địa chỉ giao trống, chưa đồng ý điều khoản | Không gửi đơn; chỉ rõ dữ liệu cần sửa. Web cũng phải hiện thông báo, theo bản sửa F3. |
-| C03 | Chọn khung giờ còn hiệu lực; để khung giờ trôi qua rồi đặt | Khung giờ cũ bị yêu cầu chọn lại. Giờ cửa hàng hiện dùng múi giờ Việt Nam, 10:30–21:30, lead time 45 phút. |
-| C04 | COD nhận tại quầy, món đơn giản | Một mã `PF-...`, đơn `PENDING_CONFIRMATION`, tiền `UNPAID`; giỏ được xóa sau khi backend xác nhận tạo đơn. |
-| C05 | COD giao thường, có địa chỉ/ghi chú giao/dụng cụ ăn/voucher | Backend lưu đúng thông tin, tính lại tổng. Không mong đợi tài xế Ahamove khi tính năng đang tắt. |
-| C06 | Pizza có topping + ghi chú “Không hành” → đặt COD → staff mở đơn | Tùy chọn, ghi chú phải còn nguyên. **Test hồi quy F1**: đơn mới phải đủ dữ liệu cho bếp. |
-| C07 | Nhấn đặt nhanh nhiều lần; mất phản hồi rồi thử lại cùng giỏ | Không tạo nhiều đơn; retry cùng nội dung dùng lại yêu cầu cũ. Kiểm tra số đơn trong Firestore/staff. |
-| C08 | Dừng backend khi đặt; sau đó chạy lại và retry | Không xóa giỏ khi thất bại; có thể thử lại. Web phải hiện thông báo theo F3. |
-| C09 | Giá/stock Firestore khác dữ liệu app | Backend dùng giá/stock thật; món không khả dụng bị từ chối. Đây là ca kiểm tra catalog, không tự sửa database chung trong lúc người khác đang test. |
+## 3. Kịch bản kiểm thử nhanh (smoke test, ~20 phút)
 
-### D. payOS
+Chạy theo thứ tự; nếu bước nào FAIL thì dừng và ghi lỗi.
 
-payOS trong project có thể tạo QR ngân hàng thật. Các test tự động đã giả lập provider; chưa chuyển khoản thật trong lần review. Chỉ thanh toán khi bạn chủ động muốn kiểm tra tích hợp thực tế.
+| # | Ai | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- | --- |
+| 1 | Vãng lai | Mở app → Menu → thêm 1 pizza → Giỏ | Giỏ có món, nút "Đăng nhập để thanh toán" | |
+| 2 | Vãng lai → A | Bấm nút đó → đăng nhập A | Về thẳng Checkout, giỏ giữ nguyên | |
+| 3 | A | Nhận tại quầy, Tiền mặt, đặt hàng | Có mã `PF-...`, giỏ được xóa, đơn ở "Đang xử lý" | |
+| 4 | S | Đăng nhập S | Tự vào `/staff/orders`, đơn ở tab "Chờ duyệt" | |
+| 5 | S | Xác nhận → Bắt đầu làm món → Món đã sẵn sàng → Khách đã nhận món | Đơn qua tab "Bếp & Giao" rồi "Đã xong" | |
+| 6 | A | Xem đơn | Timeline cập nhật; đơn sang "Lịch sử"; điểm tăng `floor(tổng/10000)` | |
+| 7 | M | Đăng nhập M → Khuyến mãi → tạo mã `TEST50K`, giảm cố định 50.000đ, đơn từ 100.000đ | Báo thành công, mã có trong danh sách | |
+| 8 | A | Giỏ mới ≥ 100.000đ → nhập `TEST50K` → đặt COD | Giảm 50.000đ ở giỏ và checkout; tổng đơn backend khớp | |
+| 9 | M | Món ăn → mở 1 pizza → đổi giá size Vừa +10.000đ → lưu | Báo "Đã lưu thông tin món ăn và giá theo size" | |
+| 10 | A | Mở lại app → món đó size Vừa | Giá mới; đặt COD thì tổng đơn theo giá mới | |
+| 11 | M | Người dùng → khóa X | Nhãn "Đã khóa" | |
+| 12 | X | Đăng nhập X → đặt COD | Báo "Tài khoản đã bị khóa đặt hàng..."; không tạo đơn | |
+| 13 | M | Mở khóa X; xóa `TEST50K`; trả giá món về cũ | Dữ liệu trở lại như ban đầu | |
 
-| ID | Thao tác | Kết quả mong đợi / lưu ý |
-| --- | --- | --- |
-| D01 | Chọn payOS khi đang có voucher | Không cho xác nhận phương thức; gỡ mã rồi chọn lại. |
-| D02 | Tạo QR, chưa chuyển tiền | Có link/QR hoặc thông báo cấu hình/provider; không báo PAID chỉ vì đã mở trang thanh toán. Giỏ chưa bị xóa. |
-| D03 | Quay lại/hủy/QR hết hạn khi chưa trả tiền | Không xuất đơn đã trả vào bếp; không xóa giỏ. |
-| D04 | Khi chủ động thanh toán: dùng “Kiểm tra thanh toán”/quay lại app | PAID chỉ do backend xác nhận; đúng một đơn vận hành được tạo; giỏ tương ứng mới được xóa. |
-| D05 | Mất webhook hoặc kết nối rồi dùng “Kiểm tra thanh toán” | Backend reconcile với provider; không cần khách gửi trạng thái PAID. Có thể mô phỏng bằng test backend thay cho chuyển tiền. |
-| D06 | Thêm món khác vào giỏ sau khi tạo QR rồi xác nhận đơn cũ đã trả | Không xóa giỏ mới khác nội dung đơn đã thanh toán. |
-| D07 | Đặt giờ nhận tương lai/ghi chú giao thường trước payOS | Staff phải thấy đúng thông tin; **test hồi quy F2**. |
-| D08 | A đăng xuất; B thử mở màn thanh toán với ID của A | API từ chối; không thấy thông tin thanh toán của A. |
+---
 
-### E. Staff, theo dõi, hủy đơn và điểm
+## 4. Test case chi tiết
 
-| ID | Thao tác | Kết quả mong đợi / lưu ý |
-| --- | --- | --- |
-| E01 | Khách A tạo đơn; S mở portal | Có đơn ở “Chờ duyệt”; refresh tải lại ngay, tự tải lại khoảng 15 giây khi đang hoạt động. |
-| E02 | S lọc Giao/Tại quầy, tìm mã/tên/SĐT ở các tab | Đúng tập đơn; mã và tên không phân biệt hoa thường; backend hiện chỉ trả 100 đơn mới nhất. |
-| E03 | S xác nhận → bắt đầu làm món → sẵn sàng → khách nhận món với đơn tại quầy | `PENDING_CONFIRMATION → CONFIRMED → PREPARING → READY → COMPLETED`; đơn sang “Đã xong”. |
-| E04 | S xử lý giao thường tới sẵn sàng → bắt đầu giao → giao thành công | `READY → OUT_FOR_DELIVERY → COMPLETED`. |
-| E05 | Nhấn lặp thao tác hoặc 2 staff xử lý cùng đơn | Không cập nhật trạng thái dựa trên dữ liệu cũ không hợp lệ; server quyết định bước hiện tại. Cộng điểm tối đa một lần. |
-| E06 | A hủy đơn đang chờ xác nhận | Đơn CANCELLED; sang lịch sử. Sau CONFIRMED, không còn quyền hủy của khách. Web phải có xác nhận và hủy được theo F3. |
-| E07 | S từ chối với lý do có sẵn/tự nhập | Đơn CANCELLED và có lịch sử/lý do. Lý do tự nhập phải 3–200 ký tự theo API; UI hiện cho nhập tối đa 300 nên giá trị ngoài khoảng bị server từ chối. |
-| E08 | S từ chối một đơn payOS đã trả | `paymentStatus=REFUND_PENDING`, không mong đợi hoàn tiền tự động. |
-| E09 | A đang mở theo dõi khi staff chuyển bước | Khách thấy cập nhật qua Firestore; timeline phân biệt giao hàng/nhận tại quầy; lịch sử có cả COMPLETED/CANCELLED. |
-| E10 | Đăng xuất → tra cứu đúng SĐT + mã đơn; sai SĐT/mã; tìm liên tục | Đúng thấy đơn; sai không thấy; trên 10 lượt/phút/IP có giới hạn. Tra cứu là snapshot, không phải màn realtime. |
-| E11 | A/B thay phiên login trên cùng thiết bị | Lịch sử/chi tiết đơn và hồ sơ liên hệ không hiện dữ liệu tài khoản trước. |
-| E12 | Hoàn tất đơn tổng T; refresh/chuyển trạng thái lại | Điểm tăng `floor(T/10000)` một lần; đơn hủy không cộng. COD chưa có bước đối soát tiền thật riêng. |
-| E13 | Mở Rewards trước → hoàn tất đơn mới → quay lại Rewards | Phải thấy số điểm mới; **test hồi quy F4**. |
+### A. Tài khoản, đăng nhập, phân quyền
+
+| ID | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- |
+| A01 | Lần đầu mở app, chưa đăng nhập | Vào Welcome → Trang chủ lời chào "Chào mừng bạn đến Pizza FPT"; không tự đăng nhập tài khoản demo | |
+| A02 | Đăng ký: nhập email → gửi OTP → nhập sai → nhập đúng | Mã sai bị từ chối; mã đúng chuyển sang bước hồ sơ | |
+| A03 | Gửi lại OTP trong 30 giây; nhập mã sau 5 phút; nhập sai 5 lần | Báo chờ gửi lại; mã hết hạn; khóa sau 5 lần sai, phải lấy mã mới | |
+| A04 | Đăng ký thiếu tên/SĐT, SĐT sai, mật khẩu yếu, xác nhận không khớp, không tick điều khoản | Không đăng ký được, báo đúng lỗi (web hiện hộp thoại) | |
+| A05 | Đăng ký hợp lệ | Tạo tài khoản role `USER`, 100 điểm; đăng nhập được | |
+| A06 | Đăng nhập email → đăng xuất → đăng nhập bằng SĐT + cùng mật khẩu | Cùng tài khoản; sai mật khẩu không vào được; SĐT không tồn tại và sai mật khẩu báo **cùng** một thông báo | |
+| A07 | Google trên web: chọn Gmail; đóng popup | Gmail đăng nhập được; đóng popup không báo thành công | |
+| A08 | Đóng/mở lại app sau khi đăng nhập; đăng xuất rồi mở lại | Giữ phiên; sau đăng xuất không tự vào lại | |
+| A09 | Quên mật khẩu → nhập email | Firebase gửi mail đặt lại; đăng nhập bằng mật khẩu mới được | |
+| A10 | Đổi mật khẩu: sai mật khẩu cũ / mật khẩu mới yếu / đúng | Sai bị từ chối; đúng thì mật khẩu mới dùng được. Tài khoản chỉ Google không có mục đổi mật khẩu | |
+| A11 | Đăng nhập S (EMPLOYEE) | Vào `/staff/orders` | |
+| A12 | Đăng nhập M (SUPER_ADMIN) | Vào `/admin/dashboard`; Hồ sơ có cả "Bảng Quản trị Hệ thống" và mục quản lý đơn bếp | |
+| A13 | A (USER) gõ `/admin/dashboard` | Bị đưa về Trang chủ | |
+| A14 | Vãng lai hoặc A mở `/staff/orders` | Màn "Khu Vực Dành Cho Nhân Viên" + nút đăng nhập | |
+| A15 | Tài khoản có email chứa `admin@` nhưng role `USER` | Vẫn là khách thường (quyền theo role, không theo email) | |
+
+### B. Menu, chi tiết món, giỏ hàng
+
+| ID | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- |
+| B01 | Duyệt các danh mục; tìm theo tên/nguyên liệu; tìm từ không có | Kết quả đúng; có trạng thái rỗng | |
+| B02 | Pizza: đổi size/đế/sốt, thêm topping, cay, cách nướng, cắt | Giá đổi đúng; tổng topping tối đa 5 phần; đế không hỗ trợ size bị bỏ khi đổi size | |
+| B03 | Combo trong danh mục pizza → thêm giỏ → đặt | Không bắt đi qua màn tùy chỉnh pizza; đặt được | |
+| B04 | Tăng/giảm số lượng ở chi tiết và giỏ | Trong khoảng 1–20; tiền cập nhật | |
+| B05 | Thêm cùng cấu hình 2 lần; thêm cùng món khác cấu hình | Cùng cấu hình gộp 1 dòng; khác cấu hình thành dòng riêng | |
+| B06 | Sửa món trong giỏ (đổi size/topping) → lưu | Thay dòng cũ, không nhân đôi | |
+| B07 | Xóa dòng → Hủy; xóa thật; xóa dòng cuối | Hủy không mất món; giỏ trống có nút về Menu | |
+| B08 | Đóng/mở app khi giỏ có món + voucher | Giỏ và voucher còn nguyên | |
+| B09 | Thả tim → Yêu thích; đăng xuất A → đăng nhập B | B không thấy yêu thích của A | |
+| B10 | Mở `/product/KHONG_TON_TAI` | Màn "không tìm thấy", không crash | |
+| B11 | Món `ST_04`, `PA003` (sau bước P2) | Có ảnh thật, không phải ảnh dự phòng | |
+| B12 | Áp `PIZZAFPT` (−40k, đơn từ 100k), `FPT40` (−40k, từ 200k), `PIZZA20` (−20% tối đa 50k, từ 200k), mã sai, đơn dưới ngưỡng | Giảm đúng; mã sai báo không hợp lệ; dưới ngưỡng báo cần tối thiểu | |
+| B13 | Giỏ 498.000đ + `FPT40` → checkout COD | Tổng 458.000đ, không cộng VAT/phí giao | |
+| B14 | Trang Ưu đãi | Liệt kê mã có sẵn **và** mã admin tạo | |
+
+### C. Checkout và đơn tiền mặt (COD)
+
+| ID | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- |
+| C01 | Vãng lai bấm thanh toán ở giỏ → đăng nhập | Về Checkout với giỏ cũ; bấm back ở màn đăng nhập về Giỏ | |
+| C02 | Bỏ trống tên/SĐT, email sai, giao hàng thiếu địa chỉ, chưa đồng ý điều khoản | Không gửi đơn, báo rõ chỗ cần sửa | |
+| C03 | Chọn giờ hẹn rồi để quá giờ mới đặt | Yêu cầu chọn lại giờ (cửa hàng 10:30–21:30, chuẩn bị 45 phút) | |
+| C04 | COD nhận tại quầy | Mã `PF-...`, đơn `PENDING_CONFIRMATION`, `UNPAID`, giỏ xóa sau khi backend xác nhận | |
+| C05 | COD giao thường có địa chỉ, ghi chú, dụng cụ ăn, voucher | Đơn lưu đủ thông tin; tổng theo backend | |
+| C06 | Pizza có topping + addon + ghi chú "Không hành" → COD → S xem đơn | S thấy đủ size, đế, topping, addon, ghi chú bếp | |
+| C07 | Bấm "Đặt hàng" liên tục nhiều lần | Chỉ một đơn được tạo | |
+| C08 | Tắt backend → đặt → bật lại → đặt lại | Lần đầu báo lỗi, giỏ còn; lần sau tạo đúng một đơn | |
+| C09 | Thông tin khách điền sẵn khi đã đăng nhập | Tên/SĐT/email của tài khoản; không có dữ liệu người khác | |
+
+### D. Thanh toán payOS
+
+Có thể tạo QR ngân hàng thật — chỉ chuyển tiền khi chủ động muốn kiểm tra.
+
+| ID | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- |
+| D01 | Chọn payOS khi đang có voucher | Báo payOS chưa hỗ trợ voucher | |
+| D02 | Tạo QR, chưa chuyển tiền | Có QR/link; chưa có đơn trong bếp; giỏ còn | |
+| D03 | Hủy/quay lại/QR hết hạn | Không có đơn bếp, giỏ còn | |
+| D04 | (Tùy chọn) Chuyển tiền thật → "Kiểm tra thanh toán" | PAID do backend xác nhận; đúng một đơn bếp; giỏ xóa | |
+| D05 | Chọn giờ hẹn + ghi chú → payOS → (đã trả) → S xem đơn | S thấy đúng giờ hẹn và ghi chú | |
+| D06 | B mở màn thanh toán bằng ID đơn của A | Bị từ chối | |
+
+### E. Nhân viên, theo dõi đơn, hủy, điểm
+
+| ID | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- |
+| E01 | A đặt đơn → S mở portal | Đơn ở "Chờ duyệt"; kéo xuống tải lại; tự tải lại mỗi ~15 giây | |
+| E02 | S lọc Giao / Tại quầy; tìm theo mã, tên, SĐT | Đúng đơn; không phân biệt hoa thường | |
+| E03 | Đơn tại quầy: Xác nhận → Bắt đầu làm món → Món đã sẵn sàng → Khách đã nhận món | Đi qua đủ trạng thái, kết thúc COMPLETED | |
+| E04 | Đơn giao thường: … → Sẵn sàng → Bắt đầu giao → Giao thành công | `READY → OUT_FOR_DELIVERY → COMPLETED` | |
+| E05 | 2 thiết bị S cùng bấm bước tiếp theo một đơn | Chỉ một lần chuyển; thiết bị kia báo lỗi; điểm cộng một lần | |
+| E06 | A hủy đơn đang chờ xác nhận | CANCELLED, vào Lịch sử | |
+| E07 | A thử hủy đơn đã CONFIRMED | Không còn nút hủy / backend từ chối | |
+| E08 | S từ chối với lý do có sẵn; lý do tự nhập 3–200 ký tự; tự nhập 1–2 ký tự | Hai trường hợp đầu thành CANCELLED có lý do; trường hợp cuối bị từ chối | |
+| E09 | S từ chối đơn payOS đã trả | CANCELLED + "CHỜ HOÀN TIỀN" | |
+| E10 | A mở màn theo dõi khi S chuyển bước | Cập nhật ngay không cần tải lại | |
+| E11 | Đăng xuất → Tra cứu đơn: đúng SĐT + mã; sai một trong hai; tra liên tục > 10 lần/phút | Đúng thì thấy đơn; sai không thấy; quá giới hạn bị chặn tạm | |
+| E12 | A và B thay nhau đăng nhập trên cùng máy | Không thấy đơn, địa chỉ, yêu thích của người trước | |
+| E13 | Mở Rewards → hoàn tất đơn ở S → quay lại Rewards | Điểm mới hiển thị | |
 
 ### F. Rewards và hồ sơ
 
-| ID | Thao tác | Kết quả mong đợi / lưu ý |
-| --- | --- | --- |
-| F01 | Guest mở Rewards; demo mở Rewards | Guest được yêu cầu login; demo không đổi quà thật. |
-| F02 | A đủ điểm đổi Pepsi 30 điểm | Trừ đúng 30, thêm một quà vào “Quà của tôi”/lịch sử. |
-| F03 | Chưa đủ điểm; nhấn đổi lặp; mất kết nối rồi retry | Không âm điểm, không trừ nhiều lần cho cùng yêu cầu; backend có kiểm tra giao dịch. |
-| F04 | B login sau A đã đổi quà | Không thấy quà của A. |
-| F05 | Sửa tên/SĐT/ngày sinh/giới tính/email; đóng mở lại, logout/login | Kiểm tra dữ liệu thật sau đăng nhập lại, không chỉ toast thành công; email hồ sơ hiện không đồng nghĩa đổi email Firebase Auth. |
-| F06 | QR thành viên | Mở/đóng được QR; đây là hiển thị mã thành viên, chưa có luồng thu ngân quét để áp quyền lợi. |
+| ID | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- |
+| F01 | Vãng lai mở Rewards | Có nút Đăng nhập | |
+| F02 | A đủ điểm đổi quà 30 điểm | Trừ đúng 30, quà vào "Quà của tôi" | |
+| F03 | Không đủ điểm; bấm đổi liên tục | Không âm điểm, không trừ nhiều lần | |
+| F04 | B đăng nhập sau A | Không thấy quà của A | |
+| F05 | Sửa tên/SĐT/ngày sinh/giới tính → đăng xuất/đăng nhập | Dữ liệu được lưu thật | |
 
-### G. Ahamove staging — chỉ test sau khi cấu hình
+### G. Admin — Dashboard, đơn hàng, hoàn tiền
 
-| ID | Thao tác | Kết quả mong đợi / lưu ý |
-| --- | --- | --- |
-| G01 | Bật app `ahamove`, backend `true`, thông tin staging và UID giao hàng | Có nút lấy phí trên checkout giao hàng; role/UID staff được cấp cho cả API đơn và API giao hàng. |
-| G02 | Nhập địa chỉ/khách, bỏ voucher, chọn Sớm nhất → Lấy phí | Quote gồm giá backend + phí, hết hạn sau khoảng 5 phút; sửa giỏ/liên hệ/địa chỉ cần quote phù hợp mới. |
-| G03 | Dùng quote hết hạn hoặc đổi giỏ, chọn giờ hẹn/voucher | Không đặt được; yêu cầu lấy lại phí/bỏ voucher/chọn giao ngay. |
-| G04 | COD Ahamove → staff xác nhận/làm/sẵn sàng → gọi tài xế | Một đơn nội bộ, tối đa một yêu cầu booking không rõ kết quả; gọi tài xế chỉ khi READY. |
-| G05 | payOS Ahamove | Chỉ sau PAID mới có đơn vận hành; tài xế không thu lại tiền món đã trả. |
-| G06 | Driver staging nhận/lấy/giao; callback lặp hoặc đến trễ | Trạng thái không lùi; giao xong cập nhật đơn/điểm đúng một lần. Có “Kiểm tra chuyến” để đối chiếu. |
-| G07 | Booking timeout | Không gửi lặp POST tạo chuyến; đối chiếu chuyến cũ. Không tự reset/đặt lại chuyến nếu chưa biết hãng đã tạo hay chưa. |
-| G08 | Chuyến thất bại/hủy; COD staging giao xong | Không tự coi là thu/đối soát tiền thật. Chưa có UI hủy/đặt lại chuyến; cần xử lý vận hành riêng. |
+| ID | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- |
+| G01 | M mở Dashboard | Doanh thu, số đơn chờ, số đơn hoàn tất, số món đang bán **khớp dữ liệu thật**; không có đơn thì hiện 0 | |
+| G02 | M → Giám Sát Đơn Hàng, lọc theo trạng thái | Danh sách đơn thật, mới nhất trước; không có đơn mẫu | |
+| G03 | M hủy đơn đang chờ/đang làm | Đơn CANCELLED (khách thấy), có lịch sử "Admin can thiệp hủy đơn" | |
+| G04 | M thử hủy đơn đang giao/đã xong | Không có nút hủy | |
+| G05 | Đơn payOS đã trả bị hủy → M bấm xác nhận hoàn tiền | `REFUND_PENDING → REFUNDED`, nhãn "Đã hoàn tiền" | |
+| G06 | S (EMPLOYEE) gọi `POST /api/admin/orders/:id/refunded` | 403 "Chỉ quản trị viên..." | |
+| G07 | Tắt mạng / rules chưa deploy → mở Giám Sát Đơn Hàng | Báo "Không tải được đơn hàng", không hiện dữ liệu giả | |
+| G08 | M → Báo cáo, chọn Hôm nay / Tuần / Tháng | Số liệu theo đơn thật; không có đơn thì 0 | |
 
-### H. Giao diện và thiết bị
+### H. Admin — Món ăn và voucher
 
-| ID | Thao tác | Kết quả mong đợi |
-| --- | --- | --- |
-| H01 | Android rộng 320/360dp, điện thoại lớn; iPhone; web 320px | Không tràn ngang; thao tác chính nhìn thấy; giá/tên dài không đè nhau. |
-| H02 | Mở bàn phím tại checkout, OTP, tìm kiếm, lý do từ chối | Không che trường đang nhập/nút cần thiết; có thể cuộn và đóng bàn phím. |
-| H03 | Tablet/xoay màn hình; quay về từ app ngân hàng/trình duyệt | Layout giữ chiều rộng hợp lý; app đọc lại trạng thái khi trở về. |
-| H04 | Giỏ nổi, thanh tab và vùng safe area | Không che món cuối/nút thao tác; nút back và tab hoạt động. |
-| H05 | Mất mạng/khôi phục khi theo dõi đơn hoặc staff đang mở | Có thông báo/tải lại; không báo thành công giả và không nhân đôi đơn. |
+| ID | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- |
+| H01 | Mở chi tiết 1 pizza | Có mục "Giá theo lựa chọn" (từng size) và bảng phụ thu đế (chỉ xem) | |
+| H02 | Đổi giá size Vừa → lưu → A mở lại app | Menu/giỏ/checkout hiện giá mới; tổng đơn backend theo giá mới | |
+| H03 | Nhập giá size = 0 → lưu | Báo "Giá mỗi size phải lớn hơn 0", không lưu | |
+| H04 | Tắt "Đang bán" một món → A mở chi tiết món đó | Có thông báo hết món, nút thêm giỏ bị khóa; món đã nằm trong giỏ từ trước thì backend từ chối khi đặt | |
+| H05 | Bật/tắt còn hàng ở danh sách khi mất mạng | Báo lỗi và công tắc trở về như cũ | |
+| H06 | Thêm món mới giá 100.000đ | Size Vừa 100.000đ, size Lớn 160.000đ (không có size 0đ); món hiện ở menu khách | |
+| H07 | Xóa một món | Món biến mất khỏi menu khách | |
+| H08 | Tạo voucher % (có giảm tối đa) và voucher giảm cố định | Cả hai tạo được | |
+| H09 | Tạo mã trùng (`PIZZA20` hoặc mã vừa tạo) | Báo "Mã đã tồn tại" | |
+| H10 | A dùng voucher mới ở giỏ → đặt COD | Giảm đúng ở app và trong đơn backend | |
+| H11 | Gỡ voucher admin tạo → A nhập lại mã | Mã không còn hợp lệ | |
+| H12 | Gỡ voucher có sẵn (`PIZZA20`) | Báo đây là mã mặc định, không gỡ được | |
 
-## 6. Tra cứu function và API chính
+### I. Admin — Người dùng, phân quyền, khóa tài khoản
 
-| Nhóm | Function/file | Điều cần đối chiếu |
-| --- | --- | --- |
-| Phiên đăng nhập | `loginDemo`, `loginGoogle`, `registerDemo`, `logout`, `resetPassword`, `changePassword`, `updateProfile` — `src/state/AuthContext.tsx` | Firebase session, hồ sơ, role, điểm, dữ liệu sau logout. `loginDemo` có mật khẩu thực tế dùng Firebase, không chỉ là demo. |
-| Điều hướng login | `loginDestination`, `isStaffRole` — `src/utils/staff.ts` | Checkout/rewards quay lại đúng; staff vào portal theo role. |
-| OTP | `sendOtpToEmail`, `verifyOtp` — `src/services/otpService.ts`; `OtpStore.start/verify` — `backend/src/otp.ts` | Sinh/kiểm tra mã tại backend, hết hạn, gửi lại và giới hạn thử. |
-| Menu | `productService.list/getById` — `src/services/mock/productService.ts` | Dữ liệu local; tên/giá/cấu hình dùng chung với catalog seed. |
-| Giỏ | `addItem`, `updateItem`, `removeItem`, `updateQuantity`, `clearCart` — `src/state/CartContext.tsx` | Gộp/tách dòng, giữ cấu hình, số lượng, khôi phục storage. |
-| Giá | `getItemLineUnitPrice`, `calculateOrderTotals` — `src/utils/calculateTotals.ts`; `priceCheckout` — `backend/src/domain.ts` | Giá hiển thị và giá server; F1 kiểm tra snapshot đủ lựa chọn. |
-| Pizza | `isCustomizablePizza`, `calculateCustomizationExtra`, `formatCustomizationSummary` — `src/types/pizzaCustomization.ts` | Combo không bị ép customize; tổng phụ thu và mô tả món. |
-| COD | `createCashOrder` — `src/services/orderApi.ts`; `OrderOpsStore.createCash` | Token, giá server, chống đơn trùng và thông tin bếp. |
-| payOS | `createPayosPayment`, `getPayosPayment`, `reconcilePayosPayment`, `finishPayosCart`, `watchPayosPayments` | QR, trạng thái tiền, reconnect và xóa đúng giỏ. |
-| Staff | `filterStaffOrders`, `staffOrderAction`, `canRejectStaffOrder`; `OrderOpsStore.list/advance/reject` | Bộ lọc và quyền thao tác khớp backend. |
-| Điểm | `transition`, `rewardPointsFor` — `backend/src/orders.ts`; `RewardStore.wallet/redeem` | Cộng một lần, không âm điểm; F4 kiểm tra ví khi quay lại màn hình. |
-| Tra cứu/hủy | `lookupOrder`, `cancelOrder` — `src/services/orderApi.ts`; `OrderOpsStore.lookup/cancel` | SĐT + mã, sở hữu đơn và điều kiện hủy. |
-| Giao hàng | `getDeliveryQuote`, `createAhamoveCod`, `resumeAhamoveCod`, `updateDeliveryOrder`; `DeliveryStore` | Quote, chống booking trùng, callback và driver staging. |
+| ID | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- |
+| I01 | M mở Người dùng | Danh sách user thật | |
+| I02 | M đổi B sang `EMPLOYEE` → B đăng nhập lại | B vào portal nhân viên và thao tác đơn được | |
+| I03 | M đổi B về `USER` | B về giao diện khách; gọi API nhân viên bị 403 | |
+| I04 | M thử đổi role của chính mình | Bị từ chối (rules) | |
+| I05 | M khóa X → X đặt COD / payOS / đổi quà | Cả ba bị từ chối với thông báo tài khoản bị khóa | |
+| I06 | X vẫn đăng nhập và xem đơn cũ | Được | |
+| I07 | M mở khóa X → X đặt đơn | Đặt được | |
+| I08 | A (USER) cố ghi Firestore trực tiếp (vd. sửa `role` của mình qua console trình duyệt) | Bị rules từ chối | |
 
-Các endpoint **đang tồn tại**:
+### J. Ahamove (chỉ khi đã cấu hình staging)
+
+| ID | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- |
+| J01 | Bật `EXPO_PUBLIC_DELIVERY_PROVIDER=ahamove` + `AHAMOVE_ENABLED=true` | Checkout giao hàng có nút lấy phí | |
+| J02 | Lấy phí (bỏ voucher, giao ngay) | Báo giá = tiền món + phí, hết hạn ~5 phút | |
+| J03 | Dùng báo giá hết hạn / đổi giỏ sau khi lấy phí | Không đặt được, yêu cầu lấy phí lại | |
+| J04 | COD Ahamove → S xác nhận/làm/sẵn sàng → Gọi tài xế Ahamove | Đúng một chuyến; chỉ gọi được khi READY | |
+| J05 | Tài xế staging nhận/lấy/giao | Trạng thái chỉ tiến, COMPLETED cộng điểm một lần | |
+
+### K. Giao diện và thiết bị
+
+| ID | Thao tác | Kết quả mong đợi | KQ |
+| --- | --- | --- | --- |
+| K01 | Android 320/360dp, điện thoại lớn, iPhone, web 320px | Không tràn ngang; chữ dài không đè nhau | |
+| K02 | Bàn phím ở checkout, OTP, tìm kiếm, lý do từ chối | Không che ô đang nhập | |
+| K03 | Tablet / web màn rộng | App hiển thị dạng cột giữa | |
+| K04 | Giỏ nổi + thanh tab | Không che món cuối và nút | |
+| K05 | Hộp thoại xác nhận trên web (hủy đơn, đăng xuất, xóa) | Hiện hộp thoại trình duyệt; bấm Hủy thì không thực hiện | |
+
+---
+
+## 5. API backend
 
 | Endpoint | Quyền / mục đích |
 | --- | --- |
-| `GET /health` | Kiểm tra backend, không cần token. |
-| `POST /api/otp/send`, `/api/otp/verify` | Công khai, có giới hạn; đăng ký. |
-| `POST /api/auth/phone-login` | SĐT + mật khẩu → Firebase custom token, có giới hạn. |
-| `GET /api/orders/lookup?phone=...&code=...` | Tra cứu không cần login, có giới hạn. |
-| `POST /api/orders/cash` | Khách thật, có `Idempotency-Key`. |
-| `POST /api/orders/:id/cancel` | Chủ đơn đang chờ xác nhận. |
-| `GET /api/staff/orders` | UID được cấp; tùy chọn `?status=...`. |
-| `POST /api/staff/orders/:id/advance`, `.../reject` | Staff; reject body `{ "reason": "..." }`. |
-| `POST /api/payments/payos` | Khách thật, có `Idempotency-Key`; nhận giờ hẹn/ghi chú tùy chọn, chưa nhận voucher. |
-| `GET /api/orders/:id`, `POST /api/orders/:id/reconcile` | Trạng thái **payment order payOS**, không phải endpoint xem mọi đơn COD. |
-| `GET /api/rewards`, `POST /api/rewards/redeem` | Khách thật; đổi quà có `Idempotency-Key`. |
-| `POST /api/delivery/quotes`, `/api/delivery/orders` | Ahamove đã bật; COD create có `Idempotency-Key`. |
-| `POST /api/delivery/orders/:id/dispatch`, `.../refresh` | Gọi/đối chiếu chuyến; quyền theo backend. |
-| `POST /api/webhooks/payos`, `/api/webhooks/ahamove` | Callback provider, xác minh chữ ký/secret; không dùng token khách để giả lập thanh toán. |
+| `GET /health` | Công khai — kiểm tra backend |
+| `POST /api/otp/send`, `/api/otp/verify` | Công khai, giới hạn tần suất — OTP đăng ký |
+| `POST /api/auth/phone-login` | Công khai, giới hạn — SĐT + mật khẩu → custom token |
+| `GET /api/orders/lookup?phone=&code=` | Công khai, 10 lần/phút — tra cứu đơn |
+| `POST /api/orders/cash` | Khách (không bị khóa), header `Idempotency-Key` — tạo đơn COD |
+| `POST /api/orders/:id/cancel` | Chủ đơn, khi đang chờ xác nhận |
+| `GET /api/staff/orders?status=` | Nhân viên/admin — 100 đơn mới nhất |
+| `POST /api/staff/orders/:id/advance` | Nhân viên/admin — bước tiếp theo |
+| `POST /api/staff/orders/:id/reject` | Nhân viên/admin — body `{ "reason": "3–200 ký tự" }` |
+| `POST /api/admin/orders/:id/refunded` | **Chỉ admin** — `REFUND_PENDING → REFUNDED` |
+| `POST /api/payments/payos` | Khách (không bị khóa), `Idempotency-Key` — tạo QR |
+| `GET /api/orders/:id`, `POST /api/orders/:id/reconcile` | Chủ thanh toán payOS — trạng thái / đối soát |
+| `GET /api/rewards`, `POST /api/rewards/redeem` | Khách; đổi quà cần không bị khóa + `Idempotency-Key` |
+| `POST /api/delivery/quotes`, `/api/delivery/orders` | Ahamove — báo phí / tạo đơn COD (không bị khóa) |
+| `POST /api/delivery/orders/:id/dispatch`, `/refresh` | Nhân viên/admin — gọi / đối chiếu chuyến |
+| `POST /api/webhooks/payos`, `/api/webhooks/ahamove` | Provider gọi, có xác minh chữ ký |
 
-`GET /api/delivery/staff/orders` và `POST /api/delivery/orders/:id/advance` xuất hiện trong tài liệu/collection Ahamove cũ nhưng hiện không có route tương ứng. Dùng `/api/staff/orders` và `/api/staff/orders/:id/advance` cho bếp. Không gọi một URL không còn tồn tại rồi kết luận tính năng staff bị hỏng.
+Mọi route `/api/*` (trừ các route công khai) cần header `Authorization: Bearer <Firebase ID token>`.
 
-## 7. Chạy lại kiểm tra tự động
-
-Từ thư mục gốc:
+## 6. Chạy lại kiểm tra tự động
 
 ```powershell
 npx expo lint
@@ -263,6 +329,14 @@ npm run typecheck --prefix backend
 npm test --prefix backend
 ```
 
-Kết quả tại lần review: lint đạt, TypeScript app/backend đạt, 78/78 test đạt. Bộ test đã kiểm tra nhiều ràng buộc thanh toán, auth, staff, giá, điểm và webhook giả lập; đã bổ sung regression test cho dữ liệu đơn/payOS và xác nhận web; F1–F4 vẫn cần chạy checklist trên giao diện thực tế. Chưa test UI thực tế trên Android/iOS/web, chưa kiểm chứng giao dịch ngân hàng, mail thật, Firebase cloud hoặc driver staging.
+Kỳ vọng: lint 0 lỗi/0 cảnh báo, TypeScript sạch, 84/84 test pass.
 
-Ngoài phạm vi luồng hiện có: CRUD menu/voucher/user, dashboard doanh thu riêng cho admin, tự hoàn tiền ngân hàng, push notification thật, đối soát COD, dùng quà tại cửa hàng và đồng bộ sổ địa chỉ nhiều thiết bị. Các route legacy như `/order/[id]`, `/order/success`, `/profile/addresses`, `/profile/settings` còn code demo/cục bộ và không phải bằng chứng luồng đơn thật đã hoàn thành.
+## 7. Giới hạn hiện tại (không tính là lỗi khi test)
+
+- Voucher chưa dùng được với payOS và Ahamove; `WELCOME30` chưa kiểm tra "đơn đầu tiên".
+- Phụ thu loại đế là giá chung trong code, admin chưa chỉnh được.
+- Hoàn tiền là thủ công: hệ thống chỉ ghi nhận trạng thái, không tự chuyển tiền.
+- App lưu giá/voucher tạm ~60 giây; thay đổi của admin có thể cần mở lại app mới thấy.
+- Admin `STORE_MANAGER` có quyền như admin (kể cả phân quyền user).
+- Chưa có push notification, đối soát COD, đồng bộ giỏ/địa chỉ giữa nhiều thiết bị.
+- Các màn cũ `/order/[id]`, `/order/success`, `/profile/addresses`, `/profile/settings` còn dữ liệu cục bộ/demo — không dùng làm bằng chứng luồng đơn thật.
