@@ -36,13 +36,23 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     borderRadius: radius.card,
-    alignItems: 'center',
     marginBottom: spacing.xl,
     width: '100%',
   },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  rowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
   orderId: {
-    marginTop: 4,
-    letterSpacing: 1,
+    flexShrink: 1,
+    marginLeft: spacing.md,
+    letterSpacing: 0.5,
   },
   statusBox: {
     flexDirection: 'row',

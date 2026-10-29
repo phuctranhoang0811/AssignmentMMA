@@ -7,9 +7,11 @@ import { colors } from '../../theme/colors';
 import { AppText } from '../../components/ui/AppText';
 import { AppButton } from '../../components/ui/AppButton';
 import { styles } from '../../styles/orderSuccess.styles';
+import { formatCurrency } from '../../utils/formatCurrency';
 
 export default function OrderSuccessScreen() {
-  const { orderId } = useLocalSearchParams<{ orderId: string }>();
+  const { orderId, orderCode, total } = useLocalSearchParams<{ orderId: string; orderCode?: string; total?: string }>();
+  const paid = !!total;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -24,16 +26,20 @@ export default function OrderSuccessScreen() {
           </View>
 
           <AppText variant="h1" align="center" style={styles.title}>
-            Đã tạo đơn hàng thành công!
+            {paid ? 'Thanh toán thành công!' : 'Đã tạo đơn hàng thành công!'}
           </AppText>
 
           <View style={styles.idBox}>
-            <AppText variant="captionMedium" color={colors.textSecondary}>
-              Mã đơn hàng
-            </AppText>
-            <AppText variant="h2" color={colors.primary} style={styles.orderId}>
-              {orderId || 'PT-2026-DEMO'}
-            </AppText>
+            <View style={styles.row}>
+              <AppText variant="captionMedium" color={colors.textSecondary}>Mã đơn hàng</AppText>
+              <AppText variant="bodyMedium" numberOfLines={1} style={styles.orderId}>
+                #{orderCode || orderId?.slice(0, 8).toUpperCase() || 'PT-2026-DEMO'}
+              </AppText>
+            </View>
+            {paid && <View style={[styles.row, styles.rowDivider]}>
+              <AppText variant="captionMedium" color={colors.textSecondary}>Đã thanh toán</AppText>
+              <AppText variant="h3" color={colors.primary}>{formatCurrency(Number(total))}</AppText>
+            </View>}
           </View>
 
           <View style={styles.statusBox}>
@@ -47,7 +53,7 @@ export default function OrderSuccessScreen() {
           </View>
 
           <AppText variant="caption" color={colors.textSecondary} align="center" style={styles.note}>
-            Thời gian dự kiến nhận món: 30-45 phút (Mô phỏng demo)
+            Thời gian dự kiến nhận món: 30–45 phút
           </AppText>
         </View>
 

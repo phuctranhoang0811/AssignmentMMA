@@ -26,6 +26,10 @@ export default function PayosScreen() {
   const cleared = useRef(false);
   const confirmed = useRef(false);
   latestCart.current = JSON.stringify(items);
+  // clearCart is a new function on every cart render; reading it through a ref keeps the socket and the
+  // polling timer below from being torn down and rebuilt while the customer is paying.
+  const clearCartRef = useRef(clearCart);
+  clearCartRef.current = clearCart;
   const accept = useCallback((snapshot: PaymentSnapshot) => {
     if (!active.current || snapshot.id !== orderId) return;
     setPayment(previous => previous?.paymentStatus === 'PAID' ? previous : {
@@ -36,10 +40,10 @@ export default function PayosScreen() {
     if (snapshot.paymentStatus === 'PAID' && !cleared.current) {
       cleared.current = true;
       void finishPayosCart(snapshot.id, latestCart.current).then(shouldClear => {
-        if (shouldClear && active.current) clearCart();
+        if (shouldClear) clearCartRef.current();
       }).catch(() => { cleared.current = false; });
     }
-  }, [orderId, clearCart]);
+  }, [orderId]);
   const refresh = useCallback(async (reconcile = false) => {
     if (confirmed.current) return;
     if (!orderId || !/^[a-f0-9]{64}$/.test(orderId)) {
@@ -63,7 +67,7 @@ export default function PayosScreen() {
     try { stopSocket = watchPayosPayments(accept, () => { void refresh(); }); }
     catch (err) { setError(err instanceof Error ? err.message : 'Chưa thể kết nối thanh toán.'); }
     const foreground = AppState.addEventListener('change', state => { if (state === 'active') void refresh(true); });
-    const timer = setInterval(() => { if (AppState.currentState === 'active') void refresh(true); }, 10000);
+    const timer = setInterval(() => { if (AppState.currentState === 'active') void refresh(true); }, 3000);
     return () => { active.current = false; stopSocket(); foreground.remove(); clearInterval(timer); };
   }, [refresh, accept, user?.id]);
   const paid = payment?.paymentStatus === 'PAID';
@@ -93,6 +97,13 @@ export default function PayosScreen() {
     }).catch(() => { if (!disposed) showImmediately(); });
     return () => { disposed = true; preference.remove(); animation?.stop(); };
   }, [paid, successReveal, successScale]);
+  // Let the success check play briefly, then move on to the order success screen.
+  useEffect(() => {
+    if (!paid || !orderId || !payment) return;
+    const params = { orderId, orderCode: String(payment.orderCode), total: String(payment.total) };
+    const timer = setTimeout(() => router.replace({ pathname: '/order/success', params }), 1500);
+    return () => clearTimeout(timer);
+  }, [paid, orderId, payment]);
   const terminal = !paid && ['CANCELLED', 'EXPIRED'].includes(payment?.providerStatus ?? '');
   const checkoutOnly = !!payment?.payment && !payment.payment.qrCode;
   return (

@@ -95,11 +95,11 @@ void payosWebhookTunnel();
 // the local backend and the URL is registered as the payment channel's webhook, so a paid QR updates at once.
 // Note: the webhook is set for the whole payOS channel; anyone sharing these credentials gets it moved here.
 async function payosWebhookTunnel() {
-  if (process.env.PAYOS_TUNNEL === '0') return log('Bỏ qua tunnel payOS (PAYOS_TUNNEL=0). App vẫn tự kiểm tra mỗi 10 giây.');
+  if (process.env.PAYOS_TUNNEL === '0') return log('Bỏ qua tunnel payOS (PAYOS_TUNNEL=0). App vẫn tự kiểm tra mỗi 3 giây.');
   const cloudflared = ['cloudflared', 'C:\\Program Files (x86)\\cloudflared\\cloudflared.exe', 'C:\\Program Files\\cloudflared\\cloudflared.exe']
     .find(command => run(command, ['--version']).status === 0);
   if (!cloudflared) {
-    return log('Chưa có cloudflared nên payOS chưa báo tiền về ngay (app vẫn tự kiểm tra mỗi 10 giây). Cài: winget install --id Cloudflare.cloudflared --exact');
+    return log('Chưa có cloudflared nên payOS chưa báo tiền về ngay (app vẫn tự kiểm tra mỗi 3 giây). Cài: winget install --id Cloudflare.cloudflared --exact');
   }
   const tunnel = spawn(cloudflared, ['tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${backendPort}`], { windowsHide: true });
   children.push(tunnel);
@@ -113,7 +113,7 @@ async function payosWebhookTunnel() {
     tunnel.stderr.on('data', read);
     tunnel.once('exit', () => { clearTimeout(timer); resolve(undefined); });
   });
-  if (!url) return log('Không tạo được tunnel payOS. App vẫn tự kiểm tra thanh toán mỗi 10 giây.');
+  if (!url) return log('Không tạo được tunnel payOS. App vẫn tự kiểm tra thanh toán mỗi 3 giây.');
 
   // The tunnel's hostname needs a few seconds before it answers; the backend may still be starting too.
   for (let i = 0; i < 30; i++) {
@@ -123,5 +123,5 @@ async function payosWebhookTunnel() {
   const webhook = `${url}/api/webhooks/payos`;
   const result = spawnSync('npm', ['--prefix', 'backend', 'run', 'webhook:register', '--', webhook], { encoding: 'utf8', shell: windows });
   if (result.status === 0) log(`Webhook payOS đã trỏ về máy này: ${webhook}. Tiền vào là app báo "đã thanh toán" ngay.`);
-  else log('Đăng ký webhook payOS chưa thành công (xem thông tin payOS trong backend/.env). App vẫn tự kiểm tra mỗi 10 giây.');
+  else log('Đăng ký webhook payOS chưa thành công (xem thông tin payOS trong backend/.env). App vẫn tự kiểm tra mỗi 3 giây.');
 }
