@@ -335,7 +335,7 @@ export default function LoginScreen() {
               </View>}
 
               {/* Quick Demo Login Shortcut */}
-              {returnTo !== 'checkout' && (
+              {__DEV__ && returnTo !== 'checkout' && (
               <TouchableOpacity
                 style={styles.demoLoginBtn}
                 onPress={handleQuickDemoLogin}

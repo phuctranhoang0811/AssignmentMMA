@@ -33,7 +33,6 @@ import {
   Plus,
   Minus,
 } from 'lucide-react-native';
-import Svg, { Path, Polygon } from 'react-native-svg';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { formatCurrency } from '../../utils/formatCurrency';
@@ -58,6 +57,8 @@ import { createPayosPayment } from '../../services/payosService';
 import { createCashOrder } from '../../services/orderApi';
 import { ahamoveEnabled, createAhamoveCod, deliveryCheckout, getDeliveryQuote, resumeAhamoveCod } from '../../services/deliveryService';
 import type { DeliveryQuote } from '../../types/delivery';
+import { EmptyTicketIcon } from '../../components/ui/EmptyTicketIcon';
+import { contactError, normalizePhone, type ContactField } from '../../utils/contact';
 
 
 // Payment Methods
@@ -66,36 +67,7 @@ const PAYMENT_METHODS = [
   { id: 'payos', name: 'payOS', subtext: 'Chuyển khoản bằng mã QR • Cần đăng nhập' },
 ];
 
-/* SVG: Empty Voucher Ticket with Star */
-const EmptyTicketIcon = () => (
-  <Svg width={116} height={74} viewBox="0 0 116 74" fill="none">
-    <Path
-      d="M10 5 C5 5 0 10 0 15 L0 27 C6 27 10 31 10 37 C10 43 6 47 0 47 L0 59 C0 64 5 69 10 69 L106 69 C111 69 116 64 116 59 L116 47 C110 47 106 43 106 37 C106 31 110 27 116 27 L116 15 C116 10 111 5 106 5 Z"
-      fill="#E6E8EE"
-    />
-    <Path
-      d="M28 10 L28 64"
-      stroke="#D5D9E2"
-      strokeWidth={2}
-      strokeDasharray="4 4"
-    />
-    <Polygon
-      points="72,21 76,32 87,33 79,40 82,51 72,45 62,51 65,40 57,33 68,32"
-      fill="#FFFFFF"
-    />
-  </Svg>
-);
 
-type ContactField = 'fullname' | 'phone' | 'email';
-const normalizePhone = (value: string) => {
-  const digits = value.replace(/[\s.-]/g, '').replace(/^\+?84/, '0');
-  return digits.startsWith('0') ? digits : `0${digits}`;
-};
-const contactError = (field: ContactField, value: string) => {
-  if (field === 'fullname') return value.trim() ? '' : 'Nhập họ tên người nhận.';
-  if (field === 'phone') return /^0[35789]\d{8}$/.test(normalizePhone(value)) ? '' : 'Nhập số di động Việt Nam hợp lệ.';
-  return !value.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) ? '' : 'Kiểm tra lại địa chỉ email.';
-};
 
 export default function CheckoutScreen() {
   const { productsMap } = useCatalog();

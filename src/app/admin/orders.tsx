@@ -28,6 +28,7 @@ import { formatCurrency } from '../../utils/formatCurrency';
 
 const STATUS_FILTERS: { key: string; label: string }[] = [
   { key: 'ALL', label: 'Tất cả' },
+  { key: 'REFUND_PENDING', label: 'Chờ hoàn tiền' },
   { key: 'PENDING_CONFIRMATION', label: 'Chờ duyệt' },
   { key: 'CONFIRMED', label: 'Xác nhận' },
   { key: 'PREPARING', label: 'Đang nấu' },
@@ -146,9 +147,14 @@ export default function AdminOrdersScreen() {
     );
   };
 
+  // Refund queue: paid orders that were cancelled, longest-waiting first so nobody's money sits unattended.
+  const refundQueue = orders.filter(o => o.paymentStatus === 'REFUND_PENDING')
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
   const filteredOrders = filterStatus === 'ALL'
     ? orders
-    : orders.filter(o => o.status === filterStatus);
+    : filterStatus === 'REFUND_PENDING'
+      ? refundQueue
+      : orders.filter(o => o.status === filterStatus);
 
   // Same limits as the backend's reject(): not once the order is out for delivery or done.
   const canCancel = (status: OrderStatus) =>
@@ -184,7 +190,7 @@ export default function AdminOrdersScreen() {
                 variant="captionSemiBold"
                 color={filterStatus === f.key ? colors.white : colors.textPrimary}
               >
-                {f.label}
+                {f.label}{f.key === 'REFUND_PENDING' && refundQueue.length > 0 ? ` (${refundQueue.length})` : ''}
               </AppText>
             </TouchableOpacity>
           ))}
@@ -204,7 +210,7 @@ export default function AdminOrdersScreen() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <AppText variant="bodyMedium" color={colors.textSecondary}>
-                Không có đơn nào
+                {filterStatus === 'REFUND_PENDING' ? 'Không có đơn nào đang chờ hoàn tiền' : 'Không có đơn nào'}
               </AppText>
             </View>
           }
@@ -331,7 +337,7 @@ export default function AdminOrdersScreen() {
                     >
                       <RotateCcw size={15} color={colors.warning} />
                       <AppText variant="captionSemiBold" color={colors.warning}>
-                        Hoàn tiền Demo
+                        Đã hoàn tiền cho khách
                       </AppText>
                     </TouchableOpacity>
                   )}

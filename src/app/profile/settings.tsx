@@ -90,6 +90,9 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Demo tools never ship in a release build. */}
+        {__DEV__ && (
+          <>
         {/* Developer Demo Sandbox */}
         <View style={styles.section}>
           <View style={styles.devHeaderRow}>
@@ -151,6 +154,8 @@ export default function SettingsScreen() {
             Tải lại 4 đơn mẫu ban đầu & xóa bộ nhớ đệm giả lập
           </AppText>
         </View>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

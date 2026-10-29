@@ -23,6 +23,9 @@ export const Chip: React.FC<ChipProps> = ({
     <TouchableOpacity
       activeOpacity={0.7}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected }}
       style={[
         styles.chip,
         selected ? styles.selectedChip : styles.unselectedChip,

@@ -1,0 +1,33 @@
+# Render blueprint for the payment backend. Secrets are filled in the Render dashboard, never committed.
+services:
+  - type: web
+    name: pizza-fpt-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile.backend
+    dockerContext: .
+    healthCheckPath: /health
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PAYOS_CLIENT_ID
+        sync: false
+      - key: PAYOS_API_KEY
+        sync: false
+      - key: PAYOS_CHECKSUM_KEY
+        sync: false
+      - key: PAYOS_RETURN_URL
+        sync: false
+      - key: PAYOS_CANCEL_URL
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_WEB_API_KEY
+        sync: false
+      # Paste the whole service-account JSON as a Secret File named firebase-service-account.json.
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/firebase-service-account.json
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: STAFF_UIDS
+        sync: false
