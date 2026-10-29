@@ -145,3 +145,19 @@ export function watchPayosPayments(onUpdate: (snapshot: PaymentSnapshot) => void
   });
   return () => { socket.removeAllListeners(); socket.disconnect(); };
 }
+
+export type StaffOrderEvent = { id: string; orderCode?: number; status: string; kind: 'new' | 'updated' };
+
+// Staff sockets are put in the "staff" room by the backend, which checks the account's role.
+export function watchStaffOrders(onEvent: (event: StaffOrderEvent) => void, onConnect: () => void) {
+  const socket = io(apiUrl(), {
+    auth: callback => {
+      const user = auth.currentUser;
+      if (!user) { callback({}); return; }
+      void user.getIdToken().then(token => callback({ token })).catch(() => callback({}));
+    },
+  });
+  socket.on('staff:orders', onEvent);
+  socket.on('connect', onConnect);
+  return () => { socket.removeAllListeners(); socket.disconnect(); };
+}

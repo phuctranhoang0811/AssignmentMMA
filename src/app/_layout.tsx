@@ -16,6 +16,7 @@ import { CartProvider } from '../state/CartContext';
 import { OrderProvider } from '../state/OrderContext';
 import { FavoritesProvider } from '../state/FavoritesContext';
 import { ToastProvider } from '../state/ToastContext';
+import { OrderStatusNotifier } from '../components/order/OrderStatusNotifier';
 import { colors } from '../theme/colors';
 import { styles } from '../styles/rootLayout.styles';
 import { layoutMode } from '../utils/layout';
@@ -88,6 +89,7 @@ export default function RootLayout() {
             <FavoritesProvider>
               <ToastProvider>
                 <StatusBar style="dark" />
+                <OrderStatusNotifier />
                 {mode === 'webFrame' ? (
                   <View style={styles.desktopCanvas}>
                     <View style={styles.phoneFrame}>

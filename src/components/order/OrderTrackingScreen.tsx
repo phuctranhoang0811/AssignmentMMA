@@ -7,26 +7,31 @@ import {
   FlatList,
   RefreshControl,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { Alert } from '../../utils/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { ChevronLeft, Search, Info } from 'lucide-react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ChevronLeft, Search } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 import { db } from '../../services/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { estimatedWindow } from '../../utils/orderTime';
 import { triggerHaptic } from '../../utils/haptics';
 import { CouchIllustration } from '../../components/ui/CouchIllustration';
 import { styles, BRAND_RED } from '../../styles/orderTracking.styles';
 import { FLOATING_CART_CLEARANCE } from '../../styles/tabsLayout.styles';
 import { DeliveryDetails } from './DeliveryDetails';
 import { OrderTimeline } from './OrderTimeline';
+import { OrderReviewCard } from './OrderReviewCard';
 import { AppButton } from '../ui/AppButton';
 import { cancelOrder } from '../../services/orderApi';
 
 export default function OrderTrackingScreen({ historyOnly = false }: { historyOnly?: boolean }) {
   const router = useRouter();
+  // Opened from a paid order's success screen: show that order straight away.
+  const { orderId } = useLocalSearchParams<{ orderId?: string }>();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [result, setResult] = useState<{ owner?: string; orders: any[]; error: string; loading: boolean }>({ orders: [], error: '', loading: true });
@@ -45,7 +50,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
     : !['COMPLETED', 'CANCELLED'].includes(order.status));
 
   useEffect(() => {
-    setSelectedId(null);
+    setSelectedId(orderId ?? null);
     setResult({ owner, orders: [], error: '', loading: !!owner });
     if (!owner) return;
     let active = true;
@@ -59,7 +64,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
       if (active) setResult({ owner, orders: [], error: 'Không thể tải đơn hàng. Vui lòng kiểm tra kết nối và thử lại.', loading: false });
     });
     return () => { active = false; stop(); };
-  }, [owner, attempt]);
+  }, [owner, attempt, orderId]);
 
   const onRefresh = () => setAttempt(previous => previous + 1);
 
@@ -127,12 +132,12 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
         >
           {/* Header Message */}
           <View style={styles.orderSuccessHeader}>
-            <Text style={styles.orderSuccessTitle}>
+            {!['COMPLETED', 'CANCELLED'].includes(selectedOrder.status) && <Text style={styles.orderSuccessTitle}>
               Cảm ơn bạn {selectedOrder.customer?.fullname || user?.fullname || 'Khách hàng'}!
-            </Text>
+            </Text>}
             <Text style={styles.orderSuccessSubtitle}>{getStatusText(selectedOrder.status)}</Text>
             <Text style={styles.orderSuccessCode}>
-              #{selectedOrder.orderCode || selectedOrder.id}
+              #{selectedOrder.orderCode || String(selectedOrder.id).slice(0, 8).toUpperCase()}
             </Text>
             <Text style={styles.orderSuccessDesc}>
               {selectedOrder.status === 'CANCELLED' ? 'Đơn hàng đã được hủy.' : selectedOrder.status === 'COMPLETED' ? 'Cảm ơn bạn đã đặt món tại Pizza FPT.' : 'Trạng thái đơn hàng sẽ tự cập nhật tại đây.'}
@@ -160,17 +165,22 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             >
               <Text style={styles.primaryActionText}>Về trang chủ</Text>
             </TouchableOpacity>
+            {selectedOrder.status !== 'PENDING_CONFIRMATION' && !['COMPLETED', 'CANCELLED'].includes(selectedOrder.status) && (
+              <Text style={styles.orderSuccessDesc}>Cửa hàng đã nhận đơn nên không thể tự hủy. Vui lòng gọi tổng đài để được hỗ trợ.</Text>
+            )}
             {selectedOrder.status === 'PENDING_CONFIRMATION' && (
               <AppButton title="Hủy đơn" variant="outline" isLoading={cancelling} disabled={cancelling}
                 onPress={() => confirmCancel(selectedOrder.id)} style={{ marginTop: 12 }} />
             )}
           </View>
 
+          {selectedOrder.status === 'COMPLETED' && <OrderReviewCard orderId={selectedOrder.id} rating={selectedOrder.rating} />}
+
           {/* Card 1: Giao Đến */}
           <View style={styles.infoCard}>
             <Text style={styles.infoCardTitle}>{selectedOrder.fulfillmentType?.toUpperCase() === 'PICKUP' ? 'Nhận tại cửa hàng' : 'Giao đến'}</Text>
             <Text style={styles.infoDeliveryTime}>
-              Thời gian nhận: {selectedOrder.deliveryTime || 'Chưa có thời gian dự kiến'}
+              Thời gian nhận: {estimatedWindow(selectedOrder)}
             </Text>
             <Text style={styles.infoText}>{selectedOrder.customer?.fullname || user?.fullname}</Text>
             <Text style={styles.infoText}>{selectedOrder.customer?.phone || user?.phone}</Text>
@@ -230,14 +240,6 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
               </Text>
             </View>
 
-            <View style={styles.pricingRow}>
-              <View style={styles.infoLabelWrap}>
-                <Text style={styles.pricingLabel}>Giảm giá thành viên</Text>
-                <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
-              </View>
-              <Text style={styles.pricingValue}>0 đ</Text>
-            </View>
-
             {selectedOrder.discount > 0 && (
               <View style={styles.pricingRow}>
                 <Text style={[styles.pricingLabel, { color: BRAND_RED }]}>
@@ -273,7 +275,8 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
           <View style={styles.infoCard}>
             <Text style={styles.infoCardTitle}>Có câu hỏi về đơn hàng của bạn?</Text>
             <Text style={styles.contactSupportSubtitle}>Gọi đến Tổng đài Dịch vụ Khách hàng:</Text>
-            <TouchableOpacity activeOpacity={0.7}>
+            <TouchableOpacity activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Gọi tổng đài 19001822"
+              onPress={() => { void Linking.openURL('tel:19001822').catch(() => Alert.alert('Không thể gọi', 'Thiết bị chưa hỗ trợ gọi điện.')); }}>
               <Text style={styles.supportHotline}>19001822</Text>
             </TouchableOpacity>
             <Text style={styles.supportNotice}>

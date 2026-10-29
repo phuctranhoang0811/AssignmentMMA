@@ -12,6 +12,12 @@
       "expo-font",
       "expo-status-bar",
       [
+        "expo-notifications",
+        {
+          "defaultChannel": "orders"
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "Cho phép Pizza FPT truy cập vị trí để xác định địa chỉ giao hàng chính xác."

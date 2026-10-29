@@ -7,6 +7,8 @@ import { AppButton } from '../../components/ui/AppButton';
 import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
 import { advanceStaffOrder, listStaffOrders, rejectStaffOrder, type StaffOrder } from '../../services/orderApi';
+import { watchStaffOrders } from '../../services/payosService';
+import { triggerHaptic } from '../../utils/haptics';
 import { updateDeliveryOrder } from '../../services/deliveryService';
 import { deliveryStatusLabels } from '../../types/delivery';
 import { canRejectStaffOrder, filterStaffOrders, staffDeliveryTime, staffOrderAction, staffOrderTime, type StaffTab } from '../../utils/staff';
@@ -71,18 +73,30 @@ export default function StaffOrdersScreen() {
   useFocusEffect(useCallback(() => {
     void load();
     // Use the authenticated backend; Firestore clients cannot read or modify every customer's orders.
+    // The socket delivers changes at once; the slow poll only covers a dropped connection.
+    let stopSocket = () => {};
+    try {
+      stopSocket = watchStaffOrders(event => {
+        if (event.kind === 'new') {
+          triggerHaptic('success');
+          showToast({ message: `Có đơn mới #${event.orderCode ?? ''}`.trim(), type: 'info' });
+        }
+        void load();
+      }, () => { void load(); });
+    } catch { /* No backend address configured: the poll below still works. */ }
     const timer = setInterval(() => {
       if (AppState.currentState === 'active' && pendingLoads.current === 0) void load();
-    }, 15000);
+    }, 60000);
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') void load();
     });
     return () => {
+      stopSocket();
       clearInterval(timer);
       subscription.remove();
       requestNumber.current++;
     };
-  }, [load]));
+  }, [load, showToast]));
 
   const run = async (order: StaffOrder, action: () => Promise<unknown>) => {
     if (actionInFlight.current) return;

@@ -63,6 +63,15 @@ export const styles = StyleSheet.create({
     width: '100%',
     marginBottom: spacing.base,
   },
+  timelineBox: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.card,
+    padding: spacing.base,
+    width: '100%',
+    marginBottom: spacing.base,
+  },
   statusTextCol: {
     marginLeft: spacing.md,
     flex: 1,

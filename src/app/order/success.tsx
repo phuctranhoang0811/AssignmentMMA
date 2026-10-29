@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -8,10 +8,19 @@ import { AppText } from '../../components/ui/AppText';
 import { AppButton } from '../../components/ui/AppButton';
 import { styles } from '../../styles/orderSuccess.styles';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { OrderTimeline } from '../../components/order/OrderTimeline';
+import { db } from '../../services/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 export default function OrderSuccessScreen() {
   const { orderId, orderCode, total } = useLocalSearchParams<{ orderId: string; orderCode?: string; total?: string }>();
   const paid = !!total;
+  // The backend writes orders/{orderId} in the same transaction that marks the payment paid; follow it live.
+  const [order, setOrder] = useState<any>(null);
+  useEffect(() => {
+    if (!orderId) return;
+    return onSnapshot(doc(db, 'orders', orderId), snapshot => setOrder(snapshot.exists() ? snapshot.data() : null), () => {});
+  }, [orderId]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -42,15 +51,25 @@ export default function OrderSuccessScreen() {
             </View>}
           </View>
 
-          <View style={styles.statusBox}>
-            <Clock size={20} color={colors.warning} />
-            <View style={styles.statusTextCol}>
-              <AppText variant="bodyMedium">Trạng thái: Chờ xác nhận</AppText>
-              <AppText variant="caption" color={colors.textSecondary}>
-                Nhà hàng đang chuẩn bị tiếp nhận đơn hàng của bạn.
-              </AppText>
+          {order?.status && order.status !== 'CANCELLED' ? (
+            <View style={styles.timelineBox}>
+              <OrderTimeline
+                status={order.status}
+                fulfillmentType={['takeaway', 'PICKUP'].includes(order.fulfillmentType) ? 'PICKUP' : 'DELIVERY'}
+                history={order.statusHistory}
+              />
             </View>
-          </View>
+          ) : (
+            <View style={styles.statusBox}>
+              <Clock size={20} color={colors.warning} />
+              <View style={styles.statusTextCol}>
+                <AppText variant="bodyMedium">{order?.status === 'CANCELLED' ? 'Đơn hàng đã bị hủy' : 'Đang tải trạng thái đơn...'}</AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Trạng thái đơn hàng sẽ tự cập nhật tại đây.
+                </AppText>
+              </View>
+            </View>
+          )}
 
           <AppText variant="caption" color={colors.textSecondary} align="center" style={styles.note}>
             Thời gian dự kiến nhận món: 30–45 phút
@@ -62,14 +81,7 @@ export default function OrderSuccessScreen() {
             title="Theo dõi đơn hàng"
             icon={<ArrowRight size={18} color={colors.white} />}
             onPress={() => {
-              if (orderId) {
-                router.replace({
-                  pathname: '/order/[id]',
-                  params: { id: orderId },
-                });
-              } else {
-                router.replace('/(tabs)/orders');
-              }
+              router.replace(orderId ? { pathname: '/order/tracking', params: { orderId } } : '/order/tracking');
             }}
             style={styles.mb}
           />

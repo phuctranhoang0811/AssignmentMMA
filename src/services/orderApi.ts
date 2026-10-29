@@ -56,12 +56,22 @@ export async function lookupOrder(phone: string, code: string): Promise<LookupOr
 /** Phone + password → Firebase custom token, verified by the backend (no client access to other profiles). */
 export async function phoneLoginToken(phone: string, password: string) {
   let response: Response;
+  // An unreachable backend address (e.g. the emulator-only 10.0.2.2 on a real phone) would otherwise spin forever.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
   try {
     response = await fetch(`${apiUrl()}/api/auth/phone-login`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, password }),
+      signal: controller.signal,
     });
   } catch { throw new Error('Không kết nối được máy chủ. Vui lòng thử lại hoặc đăng nhập bằng email.'); }
+  finally { clearTimeout(timeout); }
   const body = await response.json().catch(() => null);
   if (!response.ok) throw new Error(response.status === 429 ? 'Bạn thử quá nhiều lần. Vui lòng chờ 15 phút.' : body?.error || 'Đăng nhập không thành công.');
   return body.token as string;
 }
+
+export const submitOrderReview = (id: string, rating: number, comment?: string) =>
+  request<{ orderId: string; rating: number }>(`/api/orders/${encodeURIComponent(id)}/review`, {
+    method: 'POST', body: JSON.stringify({ rating, ...(comment?.trim() ? { comment: comment.trim() } : {}) }),
+  });

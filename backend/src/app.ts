@@ -13,6 +13,8 @@ import { googleBridgeRouter, type GoogleBridgeOptions } from './googleBridge';
 import { deliveryQuoteInput, verifyAhaWebhook, type DeliveryStore } from './delivery';
 import { cashOrderInput, type OrderOpsStore } from './orders';
 import { phoneLoginInput } from './phoneLogin';
+import { pushTokenInput, type PushStore } from './push';
+import { reviewInput, type ReviewStore } from './reviews';
 import { otpSendInput, otpVerifyInput, type OtpStore } from './otp';
 
 type Options = {
@@ -22,10 +24,13 @@ type Options = {
   orders?: Pick<OrderOpsStore, 'list' | 'advance' | 'reject' | 'markRefunded' | 'cancel' | 'createCash' | 'lookup'>;
   googleBridge?: GoogleBridgeOptions;
   rewards?: Pick<RewardStore, 'wallet' | 'redeem'>;
+  push?: Pick<PushStore, 'save'>;
+  reviews?: Pick<ReviewStore, 'submit'>;
   store: Pick<OrderStore, 'get' | 'reserve' | 'attach' | 'pay'>;
   payos: Pick<PayOS, 'paymentRequests' | 'webhooks'>;
   verifyToken: (token: string) => Promise<{ uid: string; exp: number }>;
   isBlocked?: (uid: string) => Promise<boolean>;
+  isStaff?: (uid: string) => Promise<boolean>;
   origins: string[]; returnUrl: string; cancelUrl: string;
 };
 const orderIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -56,6 +61,8 @@ export function createPaymentServer(options: Options) {
   io.on('connection', socket => {
     const { uid, exp } = socket.data.identity;
     void socket.join(`user:${uid}`);
+    // Staff also hear about every order change (the server decides; clients never pick rooms).
+    void options.isStaff?.(uid).then(staff => { if (staff) void socket.join('staff'); }).catch(() => {});
     const expiry = setTimeout(() => socket.disconnect(true), Math.min(exp * 1000 - Date.now(), 2147483647));
     socket.on('disconnect', () => clearTimeout(expiry));
     // No client-selected rooms and no client event that can mark an order paid.
@@ -200,6 +207,14 @@ export function createPaymentServer(options: Options) {
       }
     }
     res.json(publicOrder(order));
+  });
+  app.post('/api/orders/:id/review', async (req, res) => {
+    if (!options.reviews) throw new HttpError(503, 'Đánh giá chưa được cấu hình.');
+    res.json(await options.reviews.submit(res.locals.uid, orderId.parse(req.params.id), reviewInput.parse(req.body)));
+  });
+  app.post('/api/push/token', async (req, res) => {
+    await options.push?.save(res.locals.uid, pushTokenInput.parse(req.body).token);
+    res.json({ success: true });
   });
   app.get('/api/rewards', async (_req, res) => {
     if (!options.rewards) throw new HttpError(503, 'Đổi quà chưa được cấu hình.');

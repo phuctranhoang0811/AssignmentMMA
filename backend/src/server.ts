@@ -7,11 +7,13 @@ import { DeliveryStore } from './delivery';
 import { createPaymentServer } from './app';
 import { OrderStore } from './store';
 import { RewardStore } from './rewards';
-import { isBlocked, OrderOpsStore } from './orders';
+import { assertStaffAccess, isBlocked, OrderOpsStore } from './orders';
 import { phoneLogin } from './phoneLogin';
 import { OtpStore, otpEmailHtml } from './otp';
 import nodemailer from 'nodemailer';
 import { GoogleBridgeStore } from './googleBridgeStore';
+import { PushStore } from './push';
+import { ReviewStore } from './reviews';
 
 let env: ReturnType<typeof readConfig>;
 try { env = readConfig(process.env); }
@@ -37,7 +39,11 @@ const sendOtp = mailer
       subject: '[Pizza FPT] Mã xác thực đăng ký tài khoản', html: otpEmailHtml(code) }); }
   : process.env.NODE_ENV === 'production' ? null
   : async (to: string, code: string) => { console.log(`[OTP dev] ${to}: ${code}`); };
+const staffUids = (env.STAFF_UIDS || process.env.AHAMOVE_STAFF_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
+const push = new PushStore(db);
 const { server, io } = createPaymentServer({
+  push,
+  reviews: new ReviewStore(db),
   store: new OrderStore(db, !!ahamoveConfig),
   delivery: ahamoveConfig ? new DeliveryStore(db, ahamoveConfig) : undefined,
   rewards: new RewardStore(db),
@@ -46,7 +52,7 @@ const { server, io } = createPaymentServer({
     ? (phone, password) => phoneLogin({ db, apiKey: env.FIREBASE_WEB_API_KEY!, createCustomToken: uid => getAuth().createCustomToken(uid) }, phone, password)
     : undefined,
   // Staff accounts: STAFF_UIDS, falling back to the Ahamove staff list.
-  orders: new OrderOpsStore(db, (env.STAFF_UIDS || process.env.AHAMOVE_STAFF_UIDS || '').split(',').map(s => s.trim()).filter(Boolean)),
+  orders: new OrderOpsStore(db, staffUids),
   googleBridge: env.GOOGLE_BRIDGE_ORIGIN ? {
     store: new GoogleBridgeStore(),
     publicOrigin: env.GOOGLE_BRIDGE_ORIGIN,
@@ -58,10 +64,38 @@ const { server, io } = createPaymentServer({
     checksumKey: env.PAYOS_CHECKSUM_KEY, timeout: 15000, maxRetries: 1, logLevel: 'off' }),
   verifyToken: token => getAuth().verifyIdToken(token, true),
   isBlocked: uid => isBlocked(db, uid),
+  isStaff: uid => assertStaffAccess(db, staffUids, uid).then(() => true, () => false),
   origins: env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean),
   returnUrl: env.PAYOS_RETURN_URL, cancelUrl: env.PAYOS_CANCEL_URL,
 });
+// Tell staff the moment an open order appears or moves (new paid/cash order, status change, finished), and push
+// the new status to the customer's phone. Only open orders are watched, so the listener stays small however many
+// orders have been completed.
+let watching = false;
+const lastStatus = new Map<string, string>();
+db.collection('orders').where('status', 'in', ['PENDING_CONFIRMATION', 'CONFIRMED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY'])
+  .onSnapshot(snapshot => {
+    const first = !watching;
+    watching = true;
+    for (const change of snapshot.docChanges()) {
+      const data = change.doc.data();
+      if (first) { lastStatus.set(change.doc.id, data.status); continue; }
+      io.to('staff').emit('staff:orders', { id: change.doc.id, orderCode: data.orderCode, status: data.status,
+        kind: change.type === 'added' && data.status === 'PENDING_CONFIRMATION' ? 'new' : 'updated' });
+      void (async () => {
+        // A finished order leaves this query, so read its final state before telling the customer.
+        const order = change.type === 'removed' ? (await change.doc.ref.get()).data() : data;
+        if (!order || lastStatus.get(change.doc.id) === order.status) return;
+        lastStatus.set(change.doc.id, order.status);
+        if (change.type !== 'added') await push.notifyStatus(order, change.doc.id);
+      })().catch(() => console.error('Push notification failed'));
+    }
+  }, error => console.error('Order watcher stopped', error instanceof Error ? error.name : 'UnknownError'));
 server.listen(env.PORT, env.HOST, () => console.log(`Payment backend listening on ${env.PORT}`));
+// A stray rejection must not take payments offline silently; log it where the host's log viewer (or Sentry later) sees it.
+for (const event of ['unhandledRejection', 'uncaughtException'] as const) {
+  process.on(event, error => console.error(event, error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown error'));
+}
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   io.close();
   server.close(() => process.exit(0));
