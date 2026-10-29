@@ -56,12 +56,14 @@ export default function PayosScreen() {
   useEffect(() => {
     active.current = true;
     if (!auth.currentUser) { setPayment(null); setError('Vui lòng đăng nhập lại để xem thanh toán.'); return; }
-    void refresh();
+    // Ask payOS directly (reconcile), not only our backend: the webhook cannot reach a local backend, and the
+    // customer often pays on another phone, so this screen never goes to the background to trigger a check.
+    void refresh(true);
     let stopSocket = () => {};
     try { stopSocket = watchPayosPayments(accept, () => { void refresh(); }); }
     catch (err) { setError(err instanceof Error ? err.message : 'Chưa thể kết nối thanh toán.'); }
     const foreground = AppState.addEventListener('change', state => { if (state === 'active') void refresh(true); });
-    const timer = setInterval(() => { if (AppState.currentState === 'active') void refresh(); }, 15000);
+    const timer = setInterval(() => { if (AppState.currentState === 'active') void refresh(true); }, 10000);
     return () => { active.current = false; stopSocket(); foreground.remove(); clearInterval(timer); };
   }, [refresh, accept, user?.id]);
   const paid = payment?.paymentStatus === 'PAID';
