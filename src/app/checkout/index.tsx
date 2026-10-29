@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Alert } from '../../utils/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   ChevronLeft,
   Info,
@@ -252,9 +252,11 @@ export default function CheckoutScreen() {
 
   // Opened with an empty cart (e.g. a direct link): send the user to the menu. Placing an order also
   // empties the cart, so never redirect while submitting or once the confirmation is showing.
-  useEffect(() => {
+  // Only while this screen is in front: a paid payOS order empties the cart while its QR screen is on top,
+  // and replacing the route from here would swap that success screen for the menu.
+  useFocusEffect(useCallback(() => {
     if (cartLoaded && items.length === 0 && !isSubmitting && !orderConfirmed) router.replace('/(tabs)/menu');
-  }, [cartLoaded, items.length, isSubmitting, orderConfirmed, router]);
+  }, [cartLoaded, items.length, isSubmitting, orderConfirmed, router]));
   const [shippingQuote, setShippingQuote] = useState<{ value: DeliveryQuote; signature: string } | null>(null);
   const [isQuoting, setIsQuoting] = useState(false);
   const [shippingError, setShippingError] = useState('');
