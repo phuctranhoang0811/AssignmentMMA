@@ -1,5 +1,22 @@
 # Hướng dẫn test cho nhóm — Pizza FPT
 
+## Cách nhanh nhất: pull code và chạy (backend đã deploy trên Render)
+
+```bash
+git fetch && git checkout feature/latest-features
+npm install
+npm start
+```
+
+Quét mã QR bằng **Expo Go**. Không cần tạo file `.env`: `.env.development` đã trỏ app tới backend `https://pizza-fpt-backend.onrender.com`.
+
+- Gói free của Render ngủ sau ~15 phút không dùng: lần đầu mở app (hoặc đăng ký/đặt đơn) có thể chờ 30–60 giây. Mở `https://pizza-fpt-backend.onrender.com/health` trước để đánh thức.
+- Muốn chạy backend trên máy mình thay vì Render: cần `backend/.env` và service account (hỏi chủ dự án), tạo `.env.development.local` với `EXPO_PUBLIC_API_URL=http://<IP máy>:3001`, rồi `npm run dev:all`.
+
+---
+
+## Cách dự phòng: host chạy backend trên máy mình
+
 Backend (thanh toán, OTP email, đơn hàng) cần khóa bí mật nên **chỉ chạy trên máy của chủ dự án**. Mọi người khác chỉ cần điện thoại + Expo Go.
 
 ## Người host (máy có `backend/.env` và file service account Firebase)
