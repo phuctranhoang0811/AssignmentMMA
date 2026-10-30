@@ -26,6 +26,7 @@ import { styles } from '../../styles/adminUsers.styles';
 import { DemoUser } from '../../types/user';
 import { useAuth } from '../../state/AuthContext';
 import { canChangeRole } from '../../utils/staff';
+import { reportAdminAction } from '../../services/orderApi';
 
 const ROLE_OPTIONS = [
   { key: 'SUPER_ADMIN', label: 'Admin', desc: 'Toàn quyền cấu hình và quản trị hệ thống' },
@@ -67,33 +68,8 @@ export default function AdminUsersScreen() {
           });
           setUsers(list);
         } else {
-          // Fallback mock accounts
-          setUsers([
-            {
-              id: 'USR-ADMIN',
-              fullname: 'Quản Trị Viên (Admin)',
-              email: 'admin@pizzastore.com',
-              phone: '0909000001',
-              role: 'SUPER_ADMIN',
-              rewardPoints: 9999,
-            },
-            {
-              id: 'USR-STAFF',
-              fullname: 'Nhân Viên Bếp & Vận Hành',
-              email: 'employee@pizzastore.com',
-              phone: '0909000002',
-              role: 'EMPLOYEE',
-              rewardPoints: 500,
-            },
-            {
-              id: 'USR-TEST',
-              fullname: 'Khách Hàng Thân Thiết',
-              email: 'testuser@pizzastore.com',
-              phone: '0909123456',
-              role: 'USER',
-              rewardPoints: 240,
-            },
-          ]);
+          // No accounts means an empty list, not made-up people the admin could try to edit.
+          setUsers([]);
         }
         setLoading(false);
       },
@@ -122,6 +98,7 @@ export default function AdminUsersScreen() {
       setUsers((prev) =>
         prev.map((u) => (u.id === selectedUser.id ? { ...u, role: newRole } : u))
       );
+      void reportAdminAction('ROLE_CHANGED', `users/${selectedUser.id}`, { from: selectedUser.role ?? 'USER', to: newRole });
       Alert.alert('Thành công', `Đã cấp quyền ${newRole} cho ${selectedUser.fullname}`);
     } catch (e: any) {
       Alert.alert('Chưa cập nhật được quyền', e?.message || 'Vui lòng thử lại.');
@@ -150,6 +127,7 @@ export default function AdminUsersScreen() {
               setUsers((prev) =>
                 prev.map((item) => (item.id === u.id ? { ...item, role: nextRole } : item))
               );
+              void reportAdminAction(isBlocked ? 'USER_UNLOCKED' : 'USER_LOCKED', `users/${u.id}`);
             } catch (e: any) {
               Alert.alert('Chưa cập nhật được', e?.message || 'Vui lòng thử lại.');
             }

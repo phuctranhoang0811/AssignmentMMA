@@ -27,7 +27,8 @@ export function googleAccountProfile(identity: GoogleIdentity, stored?: Partial<
     gender: stored?.gender,
     birthday: stored?.birthday,
     role: stored?.role || 'USER',
-    rewardPoints: stored ? stored.rewardPoints ?? 0 : 100,
+    rewardPoints: stored ? stored.rewardPoints ?? 0 : 0,
+    emailVerified: stored ? stored.emailVerified !== false : false,
     hasPassword: identity.providerData.some(provider => provider.providerId === 'password'),
     isDemo: false,
   };

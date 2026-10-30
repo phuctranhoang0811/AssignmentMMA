@@ -12,7 +12,7 @@ import { formatCurrency } from '../../utils/formatCurrency';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { auth } from '../../services/firebase';
-import { finishPayosCart, getPayosPayment, reconcilePayosPayment, watchPayosPayments, PaymentSnapshot } from '../../services/payosService';
+import { finishPayosCart, forgetPayosAttempt, getPayosPayment, reconcilePayosPayment, watchPayosPayments, PaymentSnapshot } from '../../services/payosService';
 
 export default function PayosScreen() {
   const { orderId } = useLocalSearchParams<{ orderId?: string }>();
@@ -105,6 +105,9 @@ export default function PayosScreen() {
     return () => clearTimeout(timer);
   }, [paid, orderId, payment]);
   const terminal = !paid && ['CANCELLED', 'EXPIRED'].includes(payment?.providerStatus ?? '');
+  useEffect(() => {
+    if (terminal && orderId) void forgetPayosAttempt(orderId);
+  }, [terminal, orderId]);
   const checkoutOnly = !!payment?.payment && !payment.payment.qrCode;
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>

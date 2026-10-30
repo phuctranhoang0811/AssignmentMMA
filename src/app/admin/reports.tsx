@@ -115,11 +115,12 @@ export default function AdminReportsScreen() {
       }
     });
 
-    // Fallback demo data nếu tất cả bằng 0
-    const hasRealData = dailyRevenue.some(v => v > 0);
-    const chartData = hasRealData
-      ? dailyRevenue
-      : [820000, 1250000, 980000, 1560000, 2100000, 1750000, 890000];
+    // Minutes from "xác nhận" to "sẵn sàng", from each finished order's own status history.
+    const prepMinutes = completed.map((o: any) => {
+      const at = (status: string) => Date.parse((o.statusHistory ?? []).find((h: any) => h.status === status)?.at ?? '');
+      return (at('READY') - at('CONFIRMED')) / 60000;
+    }).filter((minutes: number) => Number.isFinite(minutes) && minutes >= 0);
+    const avgPrepTime = prepMinutes.length ? Math.round(prepMinutes.reduce((sum: number, m: number) => sum + m, 0) / prepMinutes.length) : 0;
 
     // Top 5 sản phẩm bán chạy
     const productMap: Record<string, { count: number; revenue: number }> = {};
@@ -136,21 +137,8 @@ export default function AdminReportsScreen() {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    setData({
-      totalRevenue: totalRevenue || 8350000,
-      totalOrders: totalOrders || 24,
-      avgOrderValue: avgOrderValue || 347917,
-      cancelRate: cancelRate || 8,
-      avgPrepTime: 18, // phút — placeholder
-      dailyRevenue: chartData,
-      topProducts: topProducts.length > 0 ? topProducts : [
-        { name: 'Margherita Pizza', count: 28, revenue: 4452000 },
-        { name: 'Pepperoni Pizza', count: 22, revenue: 3498000 },
-        { name: 'BBQ Chicken Pizza', count: 17, revenue: 2975000 },
-        { name: 'Hawaiian Pizza', count: 14, revenue: 2380000 },
-        { name: 'Seafood Pizza', count: 11, revenue: 2090000 },
-      ],
-    });
+    // Real numbers only: a shop with no sales yet shows zeros and an empty list, never invented figures.
+    setData({ totalRevenue, totalOrders, avgOrderValue, cancelRate, avgPrepTime, dailyRevenue, topProducts });
   };
 
   const maxRevenue = Math.max(...data.dailyRevenue, 1);
@@ -290,6 +278,9 @@ export default function AdminReportsScreen() {
             Top 5 Món Pizza Bán Chạy Nhất
           </AppText>
 
+          {data.topProducts.length === 0 && (
+            <AppText variant="body" color={colors.textSecondary}>Chưa có món nào được bán trong kỳ này.</AppText>
+          )}
           {data.topProducts.map((product, index) => (
             <View
               key={product.name}
@@ -345,7 +336,7 @@ export default function AdminReportsScreen() {
             </View>
             <View style={styles.kpiValueWrap}>
               <AppText variant="price" color={colors.warning}>
-                {data.avgPrepTime} phút
+                {data.avgPrepTime > 0 ? `${data.avgPrepTime} phút` : 'Chưa có dữ liệu'}
               </AppText>
             </View>
           </View>

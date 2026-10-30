@@ -40,6 +40,18 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /settings/{document} {
+      // Opening hours and the pause switch are public so the app can show "closed" before checkout; the backend writes them.
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /audit_logs/{entry} {
+      // Written by the backend only; admins read it in the app.
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /orders/{orderId} {
       // Orders are created and moved by the backend only (prices, status, payment, refunds).
       allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
@@ -61,11 +73,13 @@ service cloud.firestore {
       allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
       allow create: if request.auth != null && request.auth.uid == uid
         && request.resource.data.role == 'USER'
-        && request.resource.data.rewardPoints == 100
+        && request.resource.data.rewardPoints == 0
+        && request.resource.data.welcomePending == true
+        && request.resource.data.emailVerified == false
         && ownsPhone(request.resource.data.get('phone', ''), uid);
-      // The owner edits their profile; role, points and uid stay out of reach, and a new phone must be claimed.
+      // The owner edits their profile; role, points, uid and the verification flags stay out of reach, and a new phone must be claimed.
       allow update: if request.auth != null && request.auth.uid == uid
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'rewardPoints', 'uid'])
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'rewardPoints', 'uid', 'welcomePending', 'emailVerified', 'emailVerifiedAt'])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['phone'])
           || ownsPhone(request.resource.data.get('phone', ''), uid));
       // Admins change roles only (never their own); reward points stay backend-only.

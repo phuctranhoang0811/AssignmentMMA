@@ -2,7 +2,7 @@ import type { StaffOrder } from '../types/order';
 
 // Managers/admins open the admin portal but can also run the staff portal; the backend accepts every role here.
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'STORE_MANAGER'];
-const STAFF_ROLES = [...ADMIN_ROLES, 'EMPLOYEE', 'ROLE_KITCHEN', 'ROLE_RIDER'];
+const STAFF_ROLES = [...ADMIN_ROLES, 'EMPLOYEE', 'ROLE_KITCHEN'];
 export const isAdminRole = (role?: string) => ADMIN_ROLES.includes(role ?? '');
 
 // Mirrors canSetRole() in firestore.rules: SUPER_ADMIN/ADMIN assign roles, only SUPER_ADMIN touches the admin tier.
@@ -11,9 +11,12 @@ export const canManageRoles = (myRole?: string) => ADMIN_TIER.includes(myRole ??
 export const canChangeRole = (myRole: string | undefined, from: string | undefined, to: string) =>
   canManageRoles(myRole) && (myRole === 'SUPER_ADMIN' || (!ADMIN_TIER.includes(from ?? 'USER') && !ADMIN_TIER.includes(to)));
 export const isStaffRole = (role?: string) => STAFF_ROLES.includes(role ?? '');
+// Riders are an outside delivery party, not store staff: they get their own portal and API, nothing of the kitchen's.
+export const isRiderRole = (role?: string) => role === 'ROLE_RIDER';
 
 export function loginDestination(role?: string, returnTo?: string) {
   if (isAdminRole(role)) return returnTo === 'staff' ? '/staff/orders' : '/admin/dashboard';
+  if (isRiderRole(role)) return '/rider';
   if (returnTo === 'staff' || isStaffRole(role)) return '/staff/orders';
   if (returnTo === 'checkout') return 'back';
   if (returnTo === 'cart-checkout') return '/checkout';
@@ -39,20 +42,20 @@ export function filterStaffOrders(orders: StaffOrder[], tab: StaffTab, fulfillme
       .some(value => String(value ?? '').toLowerCase().includes(query))));
 }
 
-// Keep the UI actions aligned with backend nextStatus(); Ahamove owns delivery after READY.
+// Keep the UI actions aligned with backend nextStatus(); Ahamove, or the store rider who took it, owns delivery after READY.
 export function staffOrderAction(order: StaffOrder) {
   const kitchen: Record<string, string> = {
     PENDING_CONFIRMATION: 'Xác nhận đơn', CONFIRMED: 'Bắt đầu làm món', PREPARING: 'Món đã sẵn sàng',
   };
   if (kitchen[order.status]) return kitchen[order.status];
-  if (order.delivery?.provider === 'AHAMOVE') return undefined;
+  if (order.delivery?.provider === 'AHAMOVE' || order.rider) return undefined;
   if (order.status === 'READY') return order.fulfillmentType === 'delivery' ? 'Bắt đầu giao' : 'Khách đã nhận món';
   if (order.status === 'OUT_FOR_DELIVERY') return 'Giao thành công';
   return undefined;
 }
 
 export const canRejectStaffOrder = (order: StaffOrder) =>
-  ['PENDING_CONFIRMATION', 'CONFIRMED', 'PREPARING', 'READY'].includes(order.status) &&
+  ['PENDING_CONFIRMATION', 'CONFIRMED', 'PREPARING', 'READY'].includes(order.status) && !order.rider &&
   (!order.delivery || order.delivery.status === 'NOT_REQUESTED');
 
 export function staffOrderTime(createdAt: StaffOrder['createdAt']) {

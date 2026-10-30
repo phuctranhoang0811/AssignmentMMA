@@ -37,6 +37,9 @@ import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { calculateOrderTotals, getItemLineUnitPrice } from '../../utils/calculateTotals';
+import { geocodeAddress } from '../../services/addressService';
+import { colors } from '../../theme/colors';
+import type { LatLng } from '../../utils/deliveryFee';
 import { triggerHaptic } from '../../utils/haptics';
 import { findCoupon, useCatalog, useCoupons } from '../../services/catalog';
 import { formatDeliveryTime, isDeliveryTimeAvailable } from '../../utils/deliveryTime';
@@ -58,6 +61,8 @@ import { createCashOrder } from '../../services/orderApi';
 import { ahamoveEnabled, createAhamoveCod, deliveryCheckout, getDeliveryQuote, resumeAhamoveCod } from '../../services/deliveryService';
 import type { DeliveryQuote } from '../../types/delivery';
 import { EmptyTicketIcon } from '../../components/ui/EmptyTicketIcon';
+import { StoreClosedBanner } from '../../components/store/StoreClosedBanner';
+import { useStoreStatus } from '../../services/storeSettings';
 import { contactError, normalizePhone, type ContactField } from '../../utils/contact';
 
 
@@ -76,6 +81,7 @@ export default function CheckoutScreen() {
   const insets = useSafeAreaInsets();
   const { items, isLoaded: cartLoaded, clearCart, promoCode, setPromoCode, fulfillmentType, setFulfillmentType, needCutlery } = useCart();
   const { user } = useAuth();
+  const store = useStoreStatus();
 
   // Address & Notes
   const [address, setAddress] = useState('');
@@ -240,9 +246,26 @@ export default function CheckoutScreen() {
   const shippingSignature = JSON.stringify([user?.id, deliveryCheckout(shippingInput), shippingInput.paymentMethod, promoCode]);
   const validQuote = shippingQuote?.signature === shippingSignature ? shippingQuote.value : null;
 
+  // Shipping fee for orders the store delivers itself: distance from the store to the address the customer picked.
+  const shippingConfig = !useAhamove && fulfillmentType === 'delivery' ? store.settings?.delivery : undefined;
+  const [located, setLocated] = useState<{ address: string; point: LatLng | null } | null>(null);
+  useEffect(() => {
+    if (!shippingConfig || !address.trim()) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      geocodeAddress(address)
+        .then(point => { if (!cancelled) setLocated({ address, point }); })
+        .catch(() => { if (!cancelled) setLocated({ address, point: null }); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [shippingConfig, address]);
+  const deliveryPoint = shippingConfig && located?.address === address ? located.point : null;
+  const locating = !!shippingConfig && !!address.trim() && located?.address !== address;
+
   // Totals Calculation
   const totals = calculateOrderTotals(items, productsMap,
-    fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP', selectedVoucher);
+    fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP', selectedVoucher, undefined,
+    shippingConfig && deliveryPoint ? { config: shippingConfig, to: deliveryPoint } : undefined);
   const { subtotal, discount: voucherDiscount } = totals;
   const deliveryFee = useAhamove ? validQuote?.pricing.deliveryFee ?? 0 : totals.deliveryFee;
   const total = useAhamove && validQuote ? validQuote.pricing.total : totals.total;
@@ -301,6 +324,10 @@ export default function CheckoutScreen() {
 
   const handlePlaceOrder = async () => {
     if (isSubmitting) return;
+    if (!store.open) {
+      Alert.alert('Cửa hàng chưa nhận đơn', store.message);
+      return;
+    }
     if (selectedPaymentId === 'payos' && (!user || user.isDemo)) {
       router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } });
       return;
@@ -314,6 +341,14 @@ export default function CheckoutScreen() {
     if (fulfillmentType === 'delivery' && !address.trim()) {
       setAddressModalVisible(true);
       return;
+    }
+    if (shippingConfig) {
+      if (locating) { Alert.alert('Đang tính phí giao hàng', 'Vui lòng đợi giây lát rồi đặt hàng.'); return; }
+      if (!deliveryPoint) { Alert.alert('Chưa xác định được vị trí', 'Vui lòng chọn lại địa chỉ giao hàng để tính phí ship.'); setAddressModalVisible(true); return; }
+      if (totals.outOfRange) {
+        Alert.alert('Ngoài vùng giao hàng', `Cửa hàng chỉ giao trong ${shippingConfig.maxKm} km. Vui lòng chọn địa chỉ gần hơn hoặc nhận tại cửa hàng.`);
+        return;
+      }
     }
     const localPhone = normalizePhone(phone);
     if (!isDeliveryTimeAvailable(deliveryTime)) {
@@ -359,6 +394,7 @@ export default function CheckoutScreen() {
           fulfillmentType: fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP',
           needCutlery,
           address, items, promoCode: selectedVoucher?.code, paymentMethod: 'PAYOS', deliveryNote,
+          ...(shippingConfig && deliveryPoint ? { deliveryLocation: deliveryPoint } : {}),
           ...(!useAhamove ? { deliveryTime: formatDeliveryTime(deliveryTime) } : {}),
           ...(useAhamove ? { deliveryQuoteId: validQuote!.id } : {}),
         });
@@ -375,12 +411,13 @@ export default function CheckoutScreen() {
       router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } });
       return;
     }
-    let saved: { subtotal: number; discount: number; total: number };
+    let saved: { subtotal: number; discount: number; deliveryFee?: number; total: number };
     try {
       const result = await createCashOrder({
         customer: { fullname, phone: localPhone, email },
         fulfillmentType: fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP',
         needCutlery, address, deliveryNote, items, promoCode: selectedVoucher?.code, paymentMethod: 'COD',
+        ...(shippingConfig && deliveryPoint ? { deliveryLocation: deliveryPoint } : {}),
       }, formatDeliveryTime(deliveryTime));
       setOrderCode(result.orderCode);
       saved = result;
@@ -413,7 +450,7 @@ export default function CheckoutScreen() {
       items: [...items],
       itemCount,
       subtotal: saved.subtotal,
-      deliveryFee,
+      deliveryFee: saved.deliveryFee ?? deliveryFee,
       voucherDiscount: saved.discount,
       selectedVoucher,
       total: saved.total,
@@ -611,6 +648,7 @@ export default function CheckoutScreen() {
         <Text style={styles.headerTitle}>Thanh toán</Text>
         <View style={styles.placeholder} />
       </View>
+      <StoreClosedBanner status={store} />
 
       <KeyboardAvoidingView style={styles.keyboardContainer}
         enabled={Platform.OS === 'ios'} behavior="padding" keyboardVerticalOffset={insets.top + 52}>
@@ -764,6 +802,17 @@ export default function CheckoutScreen() {
               <View style={styles.pricingRow}>
                 <Text style={styles.pricingLabel}>Phí giao Ahamove</Text>
                 <Text style={styles.pricingValue}>{validQuote ? formatCurrency(deliveryFee) : 'Chưa có báo phí'}</Text>
+              </View>
+            )}
+            {!!shippingConfig && (
+              <View style={styles.pricingRow}>
+                <Text style={styles.pricingLabel}>
+                  Phí giao hàng{deliveryPoint && totals.deliveryDistanceKm !== undefined ? ` (${totals.deliveryDistanceKm} km)` : ''}
+                </Text>
+                <Text style={[styles.pricingValue, totals.outOfRange ? { color: colors.error } : null]}>
+                  {locating ? 'Đang tính…' : !deliveryPoint ? 'Chọn địa chỉ để tính' : totals.outOfRange ? 'Ngoài vùng giao'
+                    : deliveryFee === 0 ? 'Miễn phí' : formatCurrency(deliveryFee)}
+                </Text>
               </View>
             )}
             {voucherDiscount > 0 && (

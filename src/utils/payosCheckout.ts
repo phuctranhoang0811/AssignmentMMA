@@ -10,6 +10,7 @@ export function payosCheckout(input: CreateOrderInput) {
     ...(input.deliveryNote !== undefined ? { deliveryNote: input.deliveryNote.trim() } : {}),
     ...(input.deliveryTime ? { deliveryTime: input.deliveryTime.trim() } : {}),
     ...(input.deliveryQuoteId ? { deliveryQuoteId: input.deliveryQuoteId } : {}),
+    ...(input.fulfillmentType === 'DELIVERY' && input.deliveryLocation ? { deliveryLocation: input.deliveryLocation } : {}),
     ...(input.promoCode?.trim() ? { promoCode: input.promoCode.trim().toUpperCase() } : {}),
     items: input.items.map((item, index) => ({ ...item, lineId: `line-${index + 1}` })),
   };

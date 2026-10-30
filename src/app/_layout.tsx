@@ -71,12 +71,14 @@ export default function RootLayout() {
       <Stack.Screen name="welcome" options={{ headerShown: false }} />
       <Stack.Screen name="auth/login" options={{ headerShown: false }} />
       <Stack.Screen name="auth/register" options={{ headerShown: false }} />
+      <Stack.Screen name="auth/verify-email" options={{ headerShown: false }} />
       <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
       <Stack.Screen name="profile/addresses" options={{ headerShown: false }} />
       <Stack.Screen name="profile/settings" options={{ headerShown: false }} />
       <Stack.Screen name="favorites" options={{ headerShown: false }} />
       <Stack.Screen name="offers" options={{ headerShown: false }} />
       <Stack.Screen name="staff" options={{ headerShown: false }} />
+      <Stack.Screen name="rider" options={{ headerShown: false }} />
       <Stack.Screen name="admin" options={{ headerShown: false }} />
     </Stack>
   );

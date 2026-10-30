@@ -11,26 +11,36 @@ import type { OrderStore } from './store';
 import type { RewardStore } from './rewards';
 import { googleBridgeRouter, type GoogleBridgeOptions } from './googleBridge';
 import { deliveryQuoteInput, verifyAhaWebhook, type DeliveryStore } from './delivery';
-import { cashOrderInput, type OrderOpsStore } from './orders';
+import { cashOrderInput, FAIL_REASONS, type OrderOpsStore } from './orders';
 import { phoneLoginInput } from './phoneLogin';
 import { pushTokenInput, type PushStore } from './push';
 import { reviewInput, type ReviewStore } from './reviews';
+import { storeSettingsInput, type StoreSettingsStore } from './storeSettings';
+import { issueInput, resolveInput, type IssueStore } from './issues';
+import { recordReportedAction, reportedActionInput } from './audit';
 import { otpSendInput, otpVerifyInput, type OtpStore } from './otp';
+import { verifyEmailInput, type AccountStore, type TokenIdentity } from './accounts';
 
 type Options = {
   delivery?: Pick<DeliveryStore, 'quote' | 'createCod' | 'dispatch' | 'refresh' | 'webhook' | 'assertStaff' | 'config'>;
-  otp?: Pick<OtpStore, 'start' | 'verify'>;
+  otp?: Pick<OtpStore, 'start' | 'check'>;
+  accounts?: Pick<AccountStore, 'verifyEmail'>;
   phoneLogin?: (phone: string, password: string) => Promise<{ token: string }>;
-  orders?: Pick<OrderOpsStore, 'list' | 'advance' | 'reject' | 'markRefunded' | 'cancel' | 'createCash' | 'lookup'>;
+  orders?: Pick<OrderOpsStore, 'list' | 'advance' | 'reject' | 'riderOrders' | 'riderAction' | 'riderEarnings' | 'riderFail' | 'unassignRider' | 'riderLedger' | 'settleRider' | 'markRefunded' | 'cancel' | 'createCash' | 'lookup'>;
   googleBridge?: GoogleBridgeOptions;
   rewards?: Pick<RewardStore, 'wallet' | 'redeem'>;
   push?: Pick<PushStore, 'save'>;
   reviews?: Pick<ReviewStore, 'submit'>;
+  issues?: Pick<IssueStore, 'report' | 'forOrder' | 'list' | 'resolve'>;
+  storeSettings?: Pick<StoreSettingsStore, 'assertOpen' | 'get' | 'update'>;
   store: Pick<OrderStore, 'get' | 'reserve' | 'attach' | 'pay'>;
   payos: Pick<PayOS, 'paymentRequests' | 'webhooks'>;
-  verifyToken: (token: string) => Promise<{ uid: string; exp: number }>;
+  verifyToken: (token: string) => Promise<{ uid: string; exp: number } & TokenIdentity>;
   isBlocked?: (uid: string) => Promise<boolean>;
+  isUnverified?: (uid: string) => Promise<boolean>;
   isStaff?: (uid: string) => Promise<boolean>;
+  isRider?: (uid: string) => Promise<boolean>;
+  audit?: (uid: string, input: ReturnType<typeof reportedActionInput.parse>) => Promise<{ success: boolean }>;
   origins: string[]; returnUrl: string; cancelUrl: string;
 };
 const orderIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -63,6 +73,8 @@ export function createPaymentServer(options: Options) {
     void socket.join(`user:${uid}`);
     // Staff also hear about every order change (the server decides; clients never pick rooms).
     void options.isStaff?.(uid).then(staff => { if (staff) void socket.join('staff'); }).catch(() => {});
+    // Riders are outside the store: their own room, never the staff one.
+    void options.isRider?.(uid).then(rider => { if (rider) void socket.join('riders'); }).catch(() => {});
     const expiry = setTimeout(() => socket.disconnect(true), Math.min(exp * 1000 - Date.now(), 2147483647));
     socket.on('disconnect', () => clearTimeout(expiry));
     // No client-selected rooms and no client event that can mark an order paid.
@@ -117,7 +129,8 @@ export function createPaymentServer(options: Options) {
   });
   app.post('/api/otp/verify', rateLimit({ windowMs: 10 * 60_000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false }), async (req, res) => {
     const { email, code } = otpVerifyInput.parse(req.body);
-    otp().verify(email, code);
+    // Only checks the code (the account claims it after sign-up); it is not used up here.
+    otp().check(email, code);
     res.json({ success: true });
   });
   app.use('/api', async (req, res, next) => {
@@ -127,21 +140,39 @@ export function createPaymentServer(options: Options) {
       const identity = await verifyToken(match[1]);
       if (identity.exp * 1000 <= Date.now()) throw new Error('Expired');
       res.locals.uid = identity.uid;
+      res.locals.identity = identity;
       next();
     } catch { next(new HttpError(401, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')); }
   });
   app.use('/api', rateLimit({ windowMs: 60_000, limit: 60, keyGenerator: (_req, res) => res.locals.uid,
     standardHeaders: 'draft-8', legacyHeaders: false }));
+  // Proves the signed-in account's e-mail: automatically for Google, otherwise with the code mailed to it.
+  app.post('/api/account/verify-email', rateLimit({ windowMs: 10 * 60_000, limit: 20, keyGenerator: (_req, res) => res.locals.uid,
+    standardHeaders: 'draft-8', legacyHeaders: false }), async (req, res) => {
+    if (!options.accounts) throw new HttpError(503, 'Xác minh email chưa được cấu hình.');
+    const { code } = verifyEmailInput.parse(req.body ?? {});
+    res.json(await options.accounts.verifyEmail(res.locals.uid, res.locals.identity, code));
+  });
   // Locked accounts may still sign in and see their orders, but not create new ones.
   const canOrder: express.RequestHandler = async (_req, res, next) => {
     try {
       if (await options.isBlocked?.(res.locals.uid)) throw new HttpError(403, 'Tài khoản đã bị khóa đặt hàng. Vui lòng liên hệ cửa hàng.');
+      if (await options.isUnverified?.(res.locals.uid)) throw new HttpError(403, 'Vui lòng xác minh email trước khi đặt hàng hoặc đổi quà (Hồ sơ → Xác minh email).', 'EMAIL_NOT_VERIFIED');
       next();
     } catch (error) { next(error); }
   };
   for (const path of ['/api/delivery/quotes', '/api/delivery/orders', '/api/orders/cash', '/api/payments/payos', '/api/rewards/redeem']) {
     app.post(path, canOrder);
   }
+  // Outside opening hours, or while the store has paused ordering, nothing that creates an order is accepted.
+  const storeOpen: express.RequestHandler = async (_req, _res, next) => {
+    try { await options.storeSettings?.assertOpen(); next(); } catch (error) { next(error); }
+  };
+  for (const path of ['/api/delivery/orders', '/api/orders/cash', '/api/payments/payos']) app.post(path, storeOpen);
+  app.put('/api/admin/store-settings', async (req, res) => {
+    if (!options.storeSettings) throw new HttpError(503, 'Cài đặt cửa hàng chưa được cấu hình.');
+    res.json(await options.storeSettings.update(res.locals.uid, storeSettingsInput.parse(req.body)));
+  });
   const delivery = () => {
     if (!options.delivery) throw new HttpError(503, 'Ahamove staging chưa được cấu hình.');
     return options.delivery;
@@ -180,8 +211,33 @@ export function createPaymentServer(options: Options) {
     const { reason } = z.object({ reason: z.string().trim().min(3).max(200) }).strict().parse(req.body);
     res.json(await orders().reject(res.locals.uid, orderId.parse(req.params.id), reason));
   });
+  app.get('/api/rider/orders', async (_req, res) => {
+    res.json(await orders().riderOrders(res.locals.uid));
+  });
+  app.get('/api/rider/earnings', async (_req, res) => {
+    res.json(await orders().riderEarnings(res.locals.uid));
+  });
+  app.post('/api/rider/orders/:id/fail', async (req, res) => {
+    const { reason, note } = z.object({ reason: z.enum(Object.keys(FAIL_REASONS) as [keyof typeof FAIL_REASONS, ...(keyof typeof FAIL_REASONS)[]]),
+      note: z.string().trim().max(300).optional() }).strict().parse(req.body);
+    res.json(await orders().riderFail(res.locals.uid, orderId.parse(req.params.id), reason, note));
+  });
+  app.post('/api/staff/orders/:id/unassign-rider', async (req, res) => {
+    res.json(await orders().unassignRider(res.locals.uid, orderId.parse(req.params.id)));
+  });
+  app.get('/api/admin/riders/ledger', async (_req, res) => {
+    res.json(await orders().riderLedger(res.locals.uid));
+  });
+  app.post('/api/admin/riders/:uid/settle', async (req, res) => {
+    res.json(await orders().settleRider(res.locals.uid, z.string().min(1).max(128).regex(/^[\w-]+$/).parse(req.params.uid)));
+  });
+  app.post('/api/rider/orders/:id/:action', async (req, res) => {
+    const action = z.enum(['accept', 'release', 'pickup', 'deliver']).parse(req.params.action);
+    res.json(await orders().riderAction(res.locals.uid, orderId.parse(req.params.id), action));
+  });
   app.post('/api/admin/orders/:id/refunded', async (req, res) => {
-    res.json(await orders().markRefunded(res.locals.uid, orderId.parse(req.params.id)));
+    const { note } = z.object({ note: z.string().trim().max(300).optional() }).strict().parse(req.body ?? {});
+    res.json(await orders().markRefunded(res.locals.uid, orderId.parse(req.params.id), note));
   });
   app.post('/api/payments/payos', async (req, res) => {
     const key = z.string().min(16).max(128).regex(/^[\w-]+$/).parse(req.headers['idempotency-key']);
@@ -211,6 +267,27 @@ export function createPaymentServer(options: Options) {
   app.post('/api/orders/:id/review', async (req, res) => {
     if (!options.reviews) throw new HttpError(503, 'Đánh giá chưa được cấu hình.');
     res.json(await options.reviews.submit(res.locals.uid, orderId.parse(req.params.id), reviewInput.parse(req.body)));
+  });
+  const issues = () => {
+    if (!options.issues) throw new HttpError(503, 'Phản ánh đơn hàng chưa được cấu hình.');
+    return options.issues;
+  };
+  app.post('/api/orders/:id/issues', async (req, res) => {
+    res.json(await issues().report(res.locals.uid, orderId.parse(req.params.id), issueInput.parse(req.body)));
+  });
+  app.get('/api/orders/:id/issues', async (req, res) => {
+    res.json(await issues().forOrder(res.locals.uid, orderId.parse(req.params.id)));
+  });
+  app.get('/api/admin/issues', async (req, res) => {
+    const { status } = z.object({ status: z.enum(['OPEN', 'RESOLVED', 'REJECTED']).optional() }).parse(req.query);
+    res.json(await issues().list(res.locals.uid, status));
+  });
+  app.post('/api/admin/issues/:id/resolve', async (req, res) => {
+    res.json(await issues().resolve(res.locals.uid, z.string().min(1).max(200).regex(/^[\w-]+$/).parse(req.params.id), resolveInput.parse(req.body)));
+  });
+  app.post('/api/admin/audit', async (req, res) => {
+    if (!options.audit) throw new HttpError(503, 'Nhật ký thao tác chưa được cấu hình.');
+    res.json(await options.audit(res.locals.uid, reportedActionInput.parse(req.body)));
   });
   app.post('/api/push/token', async (req, res) => {
     await options.push?.save(res.locals.uid, pushTokenInput.parse(req.body).token);

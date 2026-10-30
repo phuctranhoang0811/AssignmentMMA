@@ -34,9 +34,14 @@
   },
   "devDependencies": {
     "@expo/ngrok": "^4.1.3",
+    "@react-native/jest-preset": "^0.88.1",
+    "@testing-library/react-native": "^14.1.0",
+    "@types/jest": "30.0.0",
     "@types/react": "~19.3.0",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~58.0.4",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.13",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -52,7 +57,22 @@
     "lint": "expo lint",
     "test:rules": "npm --prefix firestore-tests install --no-audit --no-fund && npm --prefix firestore-tests test",
     "dev:client": "expo start --dev-client",
-    "google:expo-go": "node scripts/start-google-bridge.mjs"
+    "google:expo-go": "node scripts/start-google-bridge.mjs",
+    "test:app": "jest"
   },
-  "private": true
+  "private": true,
+  "jest": {
+    "preset": "jest-expo",
+    "testMatch": [
+      "<rootDir>/src/**/*.spec.{ts,tsx}"
+    ],
+    "setupFiles": [
+      "<rootDir>/jest.setup.js"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|react-native-svg)"
+    ],
+    "testTimeout": 20000,
+    "maxWorkers": "50%"
+  }
 }

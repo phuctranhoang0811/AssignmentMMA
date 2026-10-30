@@ -18,6 +18,7 @@ import { colors } from '../../../theme/colors';
 import { styles } from '../../../styles/adminProducts.styles';
 import { mockProducts } from '../../../data/mockProducts';
 import { formatCurrency } from '../../../utils/formatCurrency';
+import { reportAdminAction } from '../../../services/orderApi';
 import { PIZZA_CRUSTS, isCustomizablePizza } from '../../../types/pizzaCustomization';
 import type { Product, ProductVariant } from '../../../types/product';
 
@@ -95,6 +96,7 @@ export default function AdminProductDetailScreen() {
           ...(variants.length ? { variants } : {}),
           updatedAt: serverTimestamp(),
         });
+        void reportAdminAction('PRODUCT_UPDATED', `products/${id}`, { name: name.trim(), basePrice: Number(price), isAvailable });
         Alert.alert('Thành công', 'Đã lưu thông tin món ăn và giá theo size');
         router.back();
       }

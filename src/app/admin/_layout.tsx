@@ -34,6 +34,10 @@ export default function AdminLayout() {
       <Stack.Screen name="users" options={{ headerShown: false }} />
       <Stack.Screen name="orders" options={{ headerShown: false }} />
       <Stack.Screen name="reports" options={{ headerShown: false }} />
+      <Stack.Screen name="store" options={{ headerShown: false }} />
+      <Stack.Screen name="issues" options={{ headerShown: false }} />
+      <Stack.Screen name="audit" options={{ headerShown: false }} />
+      <Stack.Screen name="riders" options={{ headerShown: false }} />
     </Stack>
   );
 }

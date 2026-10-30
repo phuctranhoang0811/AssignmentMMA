@@ -35,6 +35,8 @@ import {
 import { styles, BRAND_RED } from '../../styles/cart.styles';
 import { findCoupon, useCatalog, useCoupons } from '../../services/catalog';
 import { QuantityStepper } from '../../components/ui/QuantityStepper';
+import { StoreClosedBanner } from '../../components/store/StoreClosedBanner';
+import { useStoreStatus } from '../../services/storeSettings';
 import { RecycleIcon } from '../../components/cart/RecycleIcon';
 import { EmptyTicketIcon } from '../../components/ui/EmptyTicketIcon';
 import { canEditCartProduct } from '../../utils/cartOperations';
@@ -55,6 +57,7 @@ export default function CartScreen() {
   const { items, removeItem, addItem, updateQuantity, promoCode, setPromoCode, fulfillmentType, setFulfillmentType,
     isLoaded, needCutlery, setNeedCutlery } = useCart();
   const { showToast } = useToast();
+  const store = useStoreStatus();
   const insets = useSafeAreaInsets();
 
   // Cutlery state & modal (Image 2)
@@ -100,6 +103,10 @@ export default function CartScreen() {
 
   const handleProceedToCheckout = async () => {
     if (isProceeding) return;
+    if (!store.open) {
+      showToast({ message: store.message, type: 'info' });
+      return;
+    }
     if (mustSignIn) {
       router.push({ pathname: '/auth/login', params: { returnTo: 'cart-checkout' } });
       return;
@@ -249,6 +256,7 @@ export default function CartScreen() {
         <Text style={styles.headerTitle}>Giỏ hàng</Text>
         <View style={styles.placeholder} />
       </View>
+      <StoreClosedBanner status={store} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}

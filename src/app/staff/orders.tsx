@@ -6,12 +6,13 @@ import { ArrowLeft, CheckCircle2, ChefHat, Clock, LogOut, Phone, Search, Store, 
 import { AppButton } from '../../components/ui/AppButton';
 import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
-import { advanceStaffOrder, listStaffOrders, rejectStaffOrder, type StaffOrder } from '../../services/orderApi';
+import { advanceStaffOrder, listStaffOrders, rejectStaffOrder, unassignRiderOrder, type StaffOrder } from '../../services/orderApi';
+import { Alert } from '../../utils/alert';
 import { watchStaffOrders } from '../../services/payosService';
 import { triggerHaptic } from '../../utils/haptics';
 import { updateDeliveryOrder } from '../../services/deliveryService';
 import { deliveryStatusLabels } from '../../types/delivery';
-import { canRejectStaffOrder, filterStaffOrders, staffDeliveryTime, staffOrderAction, staffOrderTime, type StaffTab } from '../../utils/staff';
+import { canRejectStaffOrder, filterStaffOrders, isAdminRole, staffDeliveryTime, staffOrderAction, staffOrderTime, type StaffTab } from '../../utils/staff';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { colors } from '../../theme/colors';
 import { styles } from '../../styles/staffPortal.styles';
@@ -82,7 +83,13 @@ export default function StaffOrdersScreen() {
           showToast({ message: `Có đơn mới #${event.orderCode ?? ''}`.trim(), type: 'info' });
         }
         void load();
-      }, () => { void load(); });
+      }, () => { void load(); }, alert => {
+        triggerHaptic('warning');
+        const text = alert.kind === 'RIDER_NO_PICKUP' ? `Tài xế nhận đơn #${alert.orderCode} ${alert.waitedMinutes} phút vẫn chưa tới lấy món!`
+          : alert.kind === 'RIDER_OVERDUE' ? `Đơn #${alert.orderCode} đã giao ${alert.waitedMinutes} phút chưa xong. Hãy liên hệ tài xế!`
+          : `Đơn #${alert.orderCode} đã chờ ${alert.waitedMinutes} phút chưa được xác nhận!`;
+        showToast({ message: text, type: 'error' });
+      });
     } catch { /* No backend address configured: the poll below still works. */ }
     const timer = setInterval(() => {
       if (AppState.currentState === 'active' && pendingLoads.current === 0) void load();
@@ -200,6 +207,7 @@ export default function StaffOrdersScreen() {
           <Text style={styles.totalAmountText}>{formatCurrency(order.total)}</Text>
         </View>
         {!!order.delivery && <Text style={styles.fulfillmentText}>Ahamove: {deliveryStatusLabels[order.delivery.status]}</Text>}
+        {!!order.rider && <Text style={styles.fulfillmentText}>Tài xế: {order.rider.name}{order.rider.phone ? ` • ${order.rider.phone}` : ''}</Text>}
         {!!action && <AppButton title={action} disabled={busy !== null} isLoading={busy === order.id}
           onPress={() => order.status === 'PENDING_CONFIRMATION' ? setConfirmation({ order, kind: 'accept' })
             : void run(order, () => advanceStaffOrder(order.id))} />}
@@ -208,6 +216,13 @@ export default function StaffOrdersScreen() {
             onPress={() => void run(order, () => updateDeliveryOrder(order.id, 'dispatch'))} />}
         {!!order.delivery?.providerOrderId && <AppButton title="Kiểm tra chuyến" variant="outline" disabled={busy !== null}
           onPress={() => void run(order, () => updateDeliveryOrder(order.id, 'refresh'))} />}
+        {!!order.rider && (order.status === 'READY' || (order.status === 'OUT_FOR_DELIVERY' && isAdminRole(user?.role))) &&
+          <AppButton title={order.status === 'READY' ? 'Gỡ tài xế' : 'Hủy chuyến giao'} variant="outline" disabled={busy !== null}
+            onPress={() => order.status === 'READY' ? void run(order, () => unassignRiderOrder(order.id))
+              : Alert.alert('Hủy chuyến giao?', `Đơn #${order.orderCode} sẽ bị hủy${order.paymentStatus === 'PAID' ? ' và chuyển vào hàng chờ hoàn tiền' : ''}. Tài xế vẫn được trả công chuyến này.`, [
+                { text: 'Không', style: 'cancel' },
+                { text: 'Hủy chuyến', style: 'destructive', onPress: () => { void run(order, () => unassignRiderOrder(order.id)); } },
+              ])} />}
         {canRejectStaffOrder(order) && <AppButton title="Từ chối đơn" variant="ghost" disabled={busy !== null} onPress={() => openReject(order)} />}
       </View>
     </View>;

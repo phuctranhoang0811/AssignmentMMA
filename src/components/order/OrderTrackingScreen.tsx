@@ -25,6 +25,8 @@ import { FLOATING_CART_CLEARANCE } from '../../styles/tabsLayout.styles';
 import { DeliveryDetails } from './DeliveryDetails';
 import { OrderTimeline } from './OrderTimeline';
 import { OrderReviewCard } from './OrderReviewCard';
+import { OrderIssueCard } from './OrderIssueCard';
+import { OrderCancellationCard } from './OrderCancellationCard';
 import { AppButton } from '../ui/AppButton';
 import { cancelOrder } from '../../services/orderApi';
 
@@ -135,7 +137,9 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             {!['COMPLETED', 'CANCELLED'].includes(selectedOrder.status) && <Text style={styles.orderSuccessTitle}>
               Cảm ơn bạn {selectedOrder.customer?.fullname || user?.fullname || 'Khách hàng'}!
             </Text>}
-            <Text style={styles.orderSuccessSubtitle}>{getStatusText(selectedOrder.status)}</Text>
+            <Text style={styles.orderSuccessSubtitle}>
+              {selectedOrder.status === 'READY' && selectedOrder.rider ? 'Tài xế đang tới lấy món' : getStatusText(selectedOrder.status)}
+            </Text>
             <Text style={styles.orderSuccessCode}>
               #{selectedOrder.orderCode || String(selectedOrder.id).slice(0, 8).toUpperCase()}
             </Text>
@@ -174,7 +178,9 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             )}
           </View>
 
+          <OrderCancellationCard order={selectedOrder} />
           {selectedOrder.status === 'COMPLETED' && <OrderReviewCard orderId={selectedOrder.id} rating={selectedOrder.rating} />}
+          {['READY', 'OUT_FOR_DELIVERY', 'COMPLETED'].includes(selectedOrder.status) && <OrderIssueCard orderId={selectedOrder.id} />}
 
           {/* Card 1: Giao Đến */}
           <View style={styles.infoCard}>
@@ -189,6 +195,20 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
               Muỗng nĩa nhựa: {selectedOrder.needCutlery ? 'Có' : 'Không'}
             </Text>}
           </View>
+
+          {!!selectedOrder.rider && !['COMPLETED', 'CANCELLED'].includes(selectedOrder.status) && (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoCardTitle}>Tài xế giao hàng</Text>
+              <Text style={styles.infoText}>{selectedOrder.rider.name}</Text>
+              <Text style={styles.infoText}>
+                {selectedOrder.status === 'OUT_FOR_DELIVERY' ? 'Đã lấy món, đang trên đường tới bạn.' : 'Đã nhận đơn, đang tới cửa hàng lấy món.'}
+              </Text>
+              {!!selectedOrder.rider.phone && (
+                <AppButton title={`Gọi tài xế ${selectedOrder.rider.phone}`} variant="outline" style={{ marginTop: 8 }}
+                  onPress={() => void Linking.openURL(`tel:${String(selectedOrder.rider.phone).replace(/[^\d+]/g, '')}`).catch(() => {})} />
+              )}
+            </View>
+          )}
 
           {selectedOrder.delivery?.provider === 'AHAMOVE' && <DeliveryDetails orderId={selectedOrder.id} delivery={selectedOrder.delivery} />}
 

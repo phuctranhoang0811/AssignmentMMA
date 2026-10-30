@@ -155,7 +155,7 @@ Web dùng provider Google trong Firebase và không cần native SDK hoặc iOS 
 
 - Chỉ chấp nhận địa chỉ `@gmail.com` đã xác minh và provider Google từ kết quả Firebase.
   Không dùng email người dùng tự nhập để giả lập đăng nhập.
-- Lần đầu tạo `users/{firebaseUid}` với vai trò USER, 100 điểm theo chính sách đăng ký hiện tại.
+- Lần đầu tạo `users/{firebaseUid}` với vai trò USER, 0 điểm (`welcomePending`); backend đánh dấu email đã xác minh nhờ Google, và cộng 100 điểm chào mừng khi đơn đầu tiên hoàn tất.
   Transaction không ghi đè hồ sơ đã có; đăng nhập lại không cấp lại điểm hay đổi vai trò.
 - Không tự gộp hồ sơ theo email. Firebase quản lý việc liên kết provider trên cùng UID.
   Nếu Firebase báo khác phương thức đăng nhập, dùng phương thức cũ để đăng nhập trước.

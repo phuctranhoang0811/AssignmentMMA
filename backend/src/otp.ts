@@ -28,13 +28,19 @@ export class OtpStore {
     for (const [k, v] of this.codes) if (v.expires < this.now()) this.codes.delete(k);
   }
 
-  verify(email: string, code: string) {
+  /** Checks the code without using it up, so the sign-up form can validate it and the account can still claim it. */
+  check(email: string, code: string) {
     const key = email.toLowerCase();
     const entry = this.codes.get(key);
     if (!entry || entry.expires < this.now()) throw new HttpError(410, 'Mã OTP đã hết hạn. Vui lòng gửi lại mã.');
     if (++entry.attempts > MAX_ATTEMPTS) { this.codes.delete(key); throw new HttpError(429, 'Nhập sai quá nhiều lần. Vui lòng gửi lại mã.'); }
     if (!timingSafeEqual(entry.hash, hash(code))) throw new HttpError(400, 'Mã OTP không đúng.');
-    this.codes.delete(key);
+    return key;
+  }
+
+  /** Checks the code and uses it up: one code proves one e-mail address once. */
+  verify(email: string, code: string) {
+    this.codes.delete(this.check(email, code));
   }
 }
 

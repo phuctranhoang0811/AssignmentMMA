@@ -11,6 +11,8 @@ export type DemoUser = {
   role?: UserRole;
   branchId?: string;
   rewardPoints?: number;
+  /** False until the e-mail is proven; such an account cannot order or redeem rewards. Missing = older account, verified. */
+  emailVerified?: boolean;
   isDemo?: boolean;
   hasPassword?: boolean;
 };

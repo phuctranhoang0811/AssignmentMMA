@@ -2,6 +2,7 @@ import { CartItem, FulfillmentType, OrderPricing } from '../types/order';
 import { Product } from '../types/product';
 import { Coupon } from '../types/user';
 import { calculateCustomizationExtra } from '../types/pizzaCustomization';
+import { deliveryFeeQuote, type DeliveryFeeConfig, type LatLng } from './deliveryFee';
 
 // Catalog prices are the displayed item prices; no extra tax is added at checkout.
 export const DEFAULT_TAX_RATE = 0;
@@ -32,13 +33,17 @@ export function getItemLineUnitPrice(item: CartItem, product?: Product): number 
   return unitPrice;
 }
 
+/** Store-delivered orders: the price list and where the food is going. Absent = no shipping fee. */
+export type DeliveryPricing = { config: DeliveryFeeConfig; to: LatLng };
+
 export function calculateOrderTotals(
   items: CartItem[],
   productsMap: Record<string, Product>,
   _fulfillmentType: FulfillmentType = 'DELIVERY',
   coupon?: Coupon | null,
-  taxRate: number = DEFAULT_TAX_RATE
-): OrderPricing {
+  taxRate: number = DEFAULT_TAX_RATE,
+  delivery?: DeliveryPricing
+): OrderPricing & { deliveryDistanceKm?: number; riderPay?: number; outOfRange?: boolean } {
   const subtotal = items.reduce((acc, item) => {
     const product = productsMap[item.productId];
     const unitPrice = getItemLineUnitPrice(item, product);
@@ -58,8 +63,10 @@ export function calculateOrderTotals(
 
   const taxableAmount = Math.max(0, subtotal - discount);
 
-  // shortcut: Keep delivery fees disabled until a delivery pricing API is integrated.
-  const deliveryFee = 0;
+  // Fee by distance from the store (see deliveryFee.ts); Ahamove orders bring their own fee and pass no price list here.
+  const shipping = delivery && _fulfillmentType === 'DELIVERY'
+    ? deliveryFeeQuote(delivery.config, delivery.to, taxableAmount, !!coupon?.freeShipping && subtotal >= coupon.minSubtotal) : undefined;
+  const deliveryFee = shipping?.fee ?? 0;
 
   const tax = Math.round(taxableAmount * taxRate);
   const total = Math.max(0, taxableAmount + deliveryFee + tax);
@@ -70,5 +77,6 @@ export function calculateOrderTotals(
     deliveryFee,
     tax,
     total,
+    ...(shipping ? { deliveryDistanceKm: shipping.distanceKm, riderPay: shipping.riderPay, outOfRange: shipping.outOfRange } : {}),
   };
 }

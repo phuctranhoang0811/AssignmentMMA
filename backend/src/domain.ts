@@ -6,6 +6,7 @@ import type { OrderItemSnapshot } from '../../src/types/order';
 import type { Product } from '../../src/types/product';
 import type { Delivery } from '../../src/types/delivery';
 import type { Coupon } from '../../src/types/user';
+import type { DeliveryFeeConfig } from '../../src/utils/deliveryFee';
 
 export class HttpError extends Error {
   constructor(public status: number, message: string, public code?: string) { super(message); }
@@ -30,6 +31,8 @@ export const checkoutSchema = z.object({
   deliveryTime: z.string().trim().min(1).max(100).optional(),
   promoCode: z.string().trim().min(1).max(30).optional(),
   deliveryQuoteId: z.string().uuid().optional(),
+  // Where the customer picked the address; the shipping fee is the distance from the store to here.
+  deliveryLocation: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }).strict().optional(),
   items: z.array(z.object({
     lineId: identifier, productId: identifier, variantId: identifier.optional(),
     addonIds: z.array(identifier).max(20), quantity: z.number().int().min(1).max(50),
@@ -44,13 +47,15 @@ export type PaymentOrder = {
   reference?: string; payment?: PaymentLink; total: number;
   checkout: Checkout; pricing: ReturnType<typeof calculateOrderTotals>;
   delivery?: Delivery;
+  deliveryDistanceKm?: number;
+  riderPay?: number;
   items: OrderItemSnapshot[];
 };
 export function orderIdentity(uid: string, key: string, checkout: Checkout) {
   return { id: createHash('sha256').update(JSON.stringify([uid, key])).digest('hex'),
     fingerprint: createHash('sha256').update(JSON.stringify(checkout)).digest('hex') };
 }
-export function priceCheckout(checkout: Checkout, products: Product[], coupon?: Coupon) {
+export function priceCheckout(checkout: Checkout, products: Product[], coupon?: Coupon, shipping?: DeliveryFeeConfig) {
   const map = Object.fromEntries(products.map(p => [p.id, p]));
   for (const item of checkout.items) {
     const p = map[item.productId];
@@ -66,9 +71,16 @@ export function priceCheckout(checkout: Checkout, products: Product[], coupon?: 
     const price = getItemLineUnitPrice(item, p);
     if (!Number.isSafeInteger(price) || price < 0) throw new HttpError(422, `Giá món "${p.name}" đang lỗi. Vui lòng thử lại sau.`);
   }
-  const pricing = calculateOrderTotals(checkout.items, map, checkout.fulfillmentType, coupon);
+  // shortcut: the coordinates come from the app (the address the customer picked); the server only range-checks them.
+  // Someone forging them could shave their own fee, so the distance is stored on the order for review.
+  if (shipping && checkout.fulfillmentType === 'DELIVERY' && !checkout.deliveryLocation) {
+    throw new HttpError(422, 'Chưa xác định được vị trí giao hàng. Vui lòng chọn lại địa chỉ.', 'DELIVERY_LOCATION_REQUIRED');
+  }
+  const { outOfRange, deliveryDistanceKm, riderPay, ...pricing } = calculateOrderTotals(checkout.items, map, checkout.fulfillmentType, coupon, undefined,
+    shipping && checkout.deliveryLocation ? { config: shipping, to: checkout.deliveryLocation } : undefined);
+  if (outOfRange) throw new HttpError(422, `Địa chỉ nằm ngoài vùng giao hàng (tối đa ${shipping!.maxKm} km từ cửa hàng).`, 'OUT_OF_DELIVERY_RANGE');
   if (!Number.isSafeInteger(pricing.total) || pricing.total < 1 || pricing.total > 50000000) throw new HttpError(422, 'Tổng đơn hàng không hợp lệ.');
-  return { pricing, items: checkout.items.map(item => {
+  return { pricing, ...(deliveryDistanceKm !== undefined ? { deliveryDistanceKm, riderPay } : {}), items: checkout.items.map(item => {
     const product = map[item.productId];
     const unitPrice = getItemLineUnitPrice(item, product);
     return { productId: item.productId, productName: product.name, quantity: item.quantity, unitPrice, lineTotal: unitPrice * item.quantity,
@@ -105,6 +117,7 @@ export function paidFulfillmentOrder(order: PaymentOrder) {
     deliveryNote: order.checkout.deliveryNote ?? '',
     deliveryTime: order.checkout.deliveryTime ?? (order.delivery ? 'Giao ngay khi món sẵn sàng' : 'Sớm nhất'),
     ...(order.delivery ? { delivery: order.delivery, deliveryQuoteId: order.checkout.deliveryQuoteId } : {}),
+    ...(order.deliveryDistanceKm !== undefined ? { deliveryDistanceKm: order.deliveryDistanceKm, riderPay: order.riderPay ?? 0, deliveryLocation: order.checkout.deliveryLocation } : {}),
     paymentMethod: 'payos', paymentName: 'payOS', paymentStatus: 'PAID',
     voucherCode: order.checkout.promoCode?.toUpperCase() ?? null,
     paymentOrderId: order.id, paidAt: order.paidAt, reference: order.reference,

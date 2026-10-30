@@ -42,12 +42,37 @@ await check('khach tu sua role/diem bi chan; sua ten duoc', async () => {
 });
 await check('dang ky moi: phai giu cho SDT trong cung lan ghi', async () => {
   const db = as('c');
-  const profile = { role: 'USER', rewardPoints: 100, phone: '0900000003', fullName: 'C' };
+  const profile = { role: 'USER', rewardPoints: 0, welcomePending: true, emailVerified: false, phone: '0900000003', fullName: 'C' };
   await assertFails(setDoc(doc(db, 'users/c'), profile));
   const batch = writeBatch(db);
   batch.set(doc(db, 'phone_numbers/0900000003'), { uid: 'c' });
   batch.set(doc(db, 'users/c'), profile);
   await assertSucceeds(batch.commit());
+});
+await check('dang ky moi: khong tu cap diem, khong tu danh dau da xac minh', async () => {
+  const db = as('d');
+  const claim = writeBatch(db);
+  claim.set(doc(db, 'phone_numbers/0900000005'), { uid: 'd' });
+  claim.set(doc(db, 'users/d'), { role: 'USER', rewardPoints: 100, welcomePending: true, emailVerified: false, phone: '0900000005' });
+  await assertFails(claim.commit());
+  const verified = writeBatch(db);
+  verified.set(doc(db, 'phone_numbers/0900000005'), { uid: 'd' });
+  verified.set(doc(db, 'users/d'), { role: 'USER', rewardPoints: 0, welcomePending: true, emailVerified: true, phone: '0900000005' });
+  await assertFails(verified.commit());
+  const noGift = writeBatch(db);
+  noGift.set(doc(db, 'phone_numbers/0900000005'), { uid: 'd' });
+  noGift.set(doc(db, 'users/d'), { role: 'USER', rewardPoints: 0, emailVerified: false, phone: '0900000005' });
+  await assertFails(noGift.commit());
+});
+await check('chu tai khoan khong tu xac minh email hay tu cap qua chao mung', async () => {
+  const db = as('u1');
+  await env.withSecurityRulesDisabled(async ctx => {
+    await setDoc(doc(ctx.firestore(), 'users/u1'), { role: 'USER', rewardPoints: 0, welcomePending: true, emailVerified: false, phone: '' });
+  });
+  await assertFails(updateDoc(doc(db, 'users/u1'), { emailVerified: true }));
+  await assertFails(updateDoc(doc(db, 'users/u1'), { welcomePending: true, rewardPoints: 100 }));
+  await assertFails(updateDoc(doc(db, 'users/u1'), { emailVerifiedAt: 'now' }));
+  await assertSucceeds(updateDoc(doc(db, 'users/u1'), { fullName: 'U1' }));
 });
 await check('dang ky bang SDT da co chu: doc bi tu choi, ghi bi tu choi', async () => {
   const db = as('c');
@@ -55,11 +80,11 @@ await check('dang ky bang SDT da co chu: doc bi tu choi, ghi bi tu choi', async 
   await assertSucceeds(getDoc(doc(db, 'phone_numbers/0900000009')));
   const batch = writeBatch(db);
   batch.set(doc(db, 'phone_numbers/0900000001'), { uid: 'c' });
-  batch.set(doc(db, 'users/c'), { role: 'USER', rewardPoints: 100, phone: '0900000001' });
+  batch.set(doc(db, 'users/c'), { role: 'USER', rewardPoints: 0, welcomePending: true, emailVerified: false, phone: '0900000001' });
   await assertFails(batch.commit());
 });
 await check('dang ky Google khong co SDT van duoc', async () => {
-  await assertSucceeds(setDoc(doc(as('g'), 'users/g'), { role: 'USER', rewardPoints: 100, phone: '' }));
+  await assertSucceeds(setDoc(doc(as('g'), 'users/g'), { role: 'USER', rewardPoints: 0, welcomePending: true, emailVerified: false, phone: '' }));
 });
 await check('doi SDT: can giu cho so moi, nha so cu; khong nha so dang dung', async () => {
   const db = as('a');

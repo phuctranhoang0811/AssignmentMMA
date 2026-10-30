@@ -12,6 +12,7 @@ export function deliveryCheckout(input: CreateOrderInput) {
     fulfillmentType: input.fulfillmentType,
     ...(input.needCutlery ? { needCutlery: true } : {}),
     address: input.address?.trim(), deliveryNote: input.deliveryNote?.trim() || '',
+    ...(input.deliveryLocation ? { deliveryLocation: input.deliveryLocation } : {}),
     items: input.items.map((item, index) => ({ ...item, lineId: `line-${index + 1}` })),
   };
 }

@@ -4,7 +4,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { OrderOpsStore, nextStatus } from '../src/orders';
 import { database } from './fakeDb';
 import type { StaffOrder } from '../../src/types/order';
-import { canRejectStaffOrder, filterStaffOrders, isStaffRole, loginDestination, staffDeliveryTime, staffOrderAction, staffOrderTime } from '../../src/utils/staff';
+import { canRejectStaffOrder, filterStaffOrders, isRiderRole, isStaffRole, loginDestination, staffDeliveryTime, staffOrderAction, staffOrderTime } from '../../src/utils/staff';
 
 const order: StaffOrder = {
   id: 'order-1', orderCode: 'PF-123', status: 'PENDING_CONFIRMATION', fulfillmentType: 'takeaway',
@@ -29,6 +29,8 @@ test('staff portal actions match backend transitions, including Ahamove ownershi
       for (const delivery of [undefined, { provider: 'AHAMOVE', environment: 'staging', serviceId: 'bike', status: 'NOT_REQUESTED', quotedFee: 20000 } as const]) {
         const value = { ...order, status, fulfillmentType, delivery };
         assert.equal(Boolean(staffOrderAction(value)), Boolean(nextStatus(value)), `${status}/${fulfillmentType}/${delivery?.provider}`);
+        const ridden = { ...value, rider: { uid: 'rider', name: 'Tài xế', acceptedAt: '2026-10-30T00:00:00Z' } };
+        assert.equal(Boolean(staffOrderAction(ridden)), Boolean(nextStatus(ridden)), `${status}/${fulfillmentType}/rider`);
       }
     }
   }
@@ -65,9 +67,15 @@ test('staff time reads Admin SDK JSON timestamps and client timestamps consisten
   assert.notEqual(staffDeliveryTime('2026-10-28T03:00:00Z'), 'Chọn lại thời gian nhận');
 });
 
+test('only ROLE_RIDER is a rider; admins and kitchen staff are not', () => {
+  assert.equal(isRiderRole('ROLE_RIDER'), true);
+  for (const role of ['EMPLOYEE', 'ROLE_KITCHEN', 'ADMIN', 'SUPER_ADMIN', 'STORE_MANAGER', 'USER', undefined]) assert.equal(isRiderRole(role), false);
+});
+
 test('every supported staff role, including store manager, can enter the same portal', () => {
-  for (const role of ['EMPLOYEE', 'ROLE_KITCHEN', 'ROLE_RIDER', 'STORE_MANAGER', 'SUPER_ADMIN', 'ADMIN']) assert.equal(isStaffRole(role), true);
-  for (const role of ['USER', '', undefined]) assert.equal(isStaffRole(role), false);
+  for (const role of ['EMPLOYEE', 'ROLE_KITCHEN', 'STORE_MANAGER', 'SUPER_ADMIN', 'ADMIN']) assert.equal(isStaffRole(role), true);
+  // Riders are an outside party: not store staff, and only riders are riders.
+  for (const role of ['USER', '', undefined, 'ROLE_RIDER']) assert.equal(isStaffRole(role), false);
 });
 
 test('staff routing preserves every customer login destination, including checkout and rewards', () => {
@@ -76,7 +84,8 @@ test('staff routing preserves every customer login destination, including checko
     ['rewards', '/(tabs)/rewards'], ['menu', '/(tabs)/menu'], ['cart', '/(tabs)/cart'],
     [undefined, '/(tabs)/home'],
   ]) assert.equal(loginDestination('USER', returnTo), expected);
-  for (const role of ['EMPLOYEE', 'ROLE_KITCHEN', 'ROLE_RIDER']) assert.equal(loginDestination(role), '/staff/orders');
+  for (const role of ['EMPLOYEE', 'ROLE_KITCHEN']) assert.equal(loginDestination(role), '/staff/orders');
+  for (const returnTo of [undefined, 'staff', 'rider']) assert.equal(loginDestination('ROLE_RIDER', returnTo), '/rider');
   // Managers/admins land on the admin portal, and can still open the staff portal on purpose.
   for (const role of ['STORE_MANAGER', 'SUPER_ADMIN', 'ADMIN']) {
     assert.equal(loginDestination(role), '/admin/dashboard');

@@ -36,6 +36,7 @@ import { Coupon } from '../../types/user';
 import { mockCoupons } from '../../data/mockPromotions';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { isCouponExpired } from '../../utils/coupons';
+import { reportAdminAction } from '../../services/orderApi';
 
 export default function AdminPromotionsScreen() {
   const router = useRouter();
@@ -123,6 +124,7 @@ export default function AdminPromotionsScreen() {
         return;
       }
       await setDoc(ref, newCoupon);
+      void reportAdminAction('COUPON_CREATED', `coupons/${newCoupon.code}`, { discountType, value: Number(value) });
       Alert.alert('Thành công', `Đã phát hành mã ưu đãi ${newCoupon.code}`);
       setModalVisible(false);
       setCode('');
@@ -149,6 +151,7 @@ export default function AdminPromotionsScreen() {
           // The snapshot listener removes it from the list once Firestore confirms.
           try {
             await deleteDoc(doc(db, 'coupons', item.code));
+            void reportAdminAction('COUPON_DELETED', `coupons/${item.code}`);
           } catch (e: any) {
             Alert.alert('Chưa gỡ được mã', e?.message || 'Vui lòng thử lại.');
           }
@@ -179,6 +182,8 @@ export default function AdminPromotionsScreen() {
             <TouchableOpacity
               style={styles.createBtn}
               onPress={() => setModalVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Tạo mã giảm giá mới"
             >
               <Plus size={16} color={colors.white} />
               <AppText variant="captionSemiBold" color={colors.white}>
@@ -195,7 +200,7 @@ export default function AdminPromotionsScreen() {
                     {item.code}
                   </AppText>
                 </View>
-                <TouchableOpacity onPress={() => handleDeleteCoupon(item)}>
+                <TouchableOpacity onPress={() => handleDeleteCoupon(item)} accessibilityRole="button" accessibilityLabel={`Gỡ mã ${item.code}`}>
                   <Trash2 size={16} color={colors.error} />
                 </TouchableOpacity>
               </View>

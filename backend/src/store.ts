@@ -5,9 +5,11 @@ import { HttpError, orderIdentity, paidFulfillmentOrder, priceCheckout, settle }
 import type { Product } from '../../src/types/product';
 import { validateQuote, type StoredQuote } from './delivery';
 import { checkCoupon, recordCouponUse } from './orders';
+import type { DeliveryFeeConfig } from '../../src/utils/deliveryFee';
 
 export class OrderStore {
-  constructor(private db: Firestore, private requireDeliveryQuote = false) {}
+  constructor(private db: Firestore, private requireDeliveryQuote = false,
+    private shippingConfig: () => Promise<DeliveryFeeConfig | undefined> = async () => undefined) {}
   async get(id: string) {
     const doc = await this.db.collection('payment_orders').doc(id).get();
     return doc.exists ? doc.data() as PaymentOrder : null;
@@ -15,6 +17,7 @@ export class OrderStore {
   async reserve(uid: string, key: string, checkout: Checkout) {
     const { id, fingerprint } = orderIdentity(uid, key, checkout);
     const ref = this.db.collection('payment_orders').doc(id);
+    const shipping = await this.shippingConfig();
     return this.db.runTransaction(async tx => {
       const existing = await tx.get(ref);
       if (existing.exists) {
@@ -33,7 +36,7 @@ export class OrderStore {
       const voucher = checkout.promoCode ? await checkCoupon(tx, this.db, checkout.promoCode, uid) : undefined;
       const productIds = [...new Set(checkout.items.map(i => i.productId))];
       const products = await tx.getAll(...productIds.map(id => this.db.collection('products').doc(id)));
-      const priced = priceCheckout(checkout, products.filter(p => p.exists).map(p => ({ ...p.data(), id: p.id }) as Product), voucher?.coupon);
+      const priced = priceCheckout(checkout, products.filter(p => p.exists).map(p => ({ ...p.data(), id: p.id }) as Product), voucher?.coupon, quote ? undefined : shipping);
       if (quote) {
         if (quote.pricing.subtotal !== priced.pricing.total) throw new HttpError(409, 'Giá món đã thay đổi. Vui lòng lấy lại phí.');
         priced.pricing = quote.pricing;

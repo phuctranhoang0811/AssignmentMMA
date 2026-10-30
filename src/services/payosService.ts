@@ -62,6 +62,11 @@ export async function request<T>(path: string, options: RequestInit = {}, expect
     });
     if (!response.ok) {
       if (response.status === 401) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      if (response.status === 403) {
+        // The store is closed or has paused ordering: say so instead of a generic failure.
+        const detail = await response.clone().json().catch(() => null);
+        if (detail?.code === 'STORE_CLOSED' && detail.error) throw new Error(detail.error);
+      }
       if (/^\/api\/(rewards|delivery|staff|orders\/(cash|[^/]+\/cancel))/.test(path)) {
         const detail = await response.json().catch(() => null);
         throw new BackendRequestError(detail?.error || 'Chưa thể xử lý yêu cầu. Vui lòng thử lại.', response.status);
@@ -118,6 +123,16 @@ export async function createPayosPayment(input: CreateOrderInput): Promise<Payme
 export const getPayosPayment = (id: string) => request<PaymentSnapshot>(`/api/orders/${encodeURIComponent(id)}`);
 export const reconcilePayosPayment = (id: string) => request<PaymentSnapshot>(`/api/orders/${encodeURIComponent(id)}/reconcile`, { method: 'POST' });
 
+export async function forgetPayosAttempt(id: string) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  const key = `@pizza_payos_attempt:${uid}`;
+  try {
+    const attempt = JSON.parse((await AsyncStorage.getItem(key)) ?? 'null');
+    if (attempt?.orderId === id) await AsyncStorage.removeItem(key);
+  } catch { /* A broken cache entry is replaced on the next attempt anyway. */ }
+}
+
 export async function finishPayosCart(id: string, currentCart: string) {
   const uid = auth.currentUser?.uid;
   if (!uid) return false;
@@ -149,7 +164,25 @@ export function watchPayosPayments(onUpdate: (snapshot: PaymentSnapshot) => void
 export type StaffOrderEvent = { id: string; orderCode?: number; status: string; kind: 'new' | 'updated' };
 
 // Staff sockets are put in the "staff" room by the backend, which checks the account's role.
-export function watchStaffOrders(onEvent: (event: StaffOrderEvent) => void, onConnect: () => void) {
+export type StaffAlert = { id: string; orderCode: string | number; waitedMinutes: number; kind: 'UNCONFIRMED' | 'RIDER_NO_PICKUP' | 'RIDER_OVERDUE' };
+
+export type RiderOrderEvent = { id: string; status: string; available: boolean };
+
+/** Riders' own channel: only store-delivery orders, no customer data. */
+export function watchRiderOrders(onEvent: (event: RiderOrderEvent) => void, onConnect: () => void) {
+  const socket = io(apiUrl(), {
+    auth: callback => {
+      const user = auth.currentUser;
+      if (!user) { callback({}); return; }
+      void user.getIdToken().then(token => callback({ token })).catch(() => callback({}));
+    },
+  });
+  socket.on('rider:orders', onEvent);
+  socket.on('connect', onConnect);
+  return () => { socket.removeAllListeners(); socket.disconnect(); };
+}
+
+export function watchStaffOrders(onEvent: (event: StaffOrderEvent) => void, onConnect: () => void, onAlert?: (alert: StaffAlert) => void) {
   const socket = io(apiUrl(), {
     auth: callback => {
       const user = auth.currentUser;
@@ -158,6 +191,7 @@ export function watchStaffOrders(onEvent: (event: StaffOrderEvent) => void, onCo
     },
   });
   socket.on('staff:orders', onEvent);
+  if (onAlert) socket.on('staff:alert', onAlert);
   socket.on('connect', onConnect);
   return () => { socket.removeAllListeners(); socket.disconnect(); };
 }

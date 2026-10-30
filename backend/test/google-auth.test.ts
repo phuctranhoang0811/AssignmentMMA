@@ -24,7 +24,8 @@ test('Google login creates customer profile and leaves phone for checkout to col
   assert.equal(profile.fullname, identity.displayName);
   assert.equal(profile.phone, '');
   assert.equal(profile.role, 'USER');
-  assert.equal(profile.rewardPoints, 100);
+  assert.equal(profile.rewardPoints, 0); // the welcome points come with the first completed order
+  assert.equal(profile.emailVerified, false); // the backend records Google's verification
   assert.equal(profile.hasPassword, false);
   assert.equal(profile.isDemo, false);
 });

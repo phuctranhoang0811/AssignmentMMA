@@ -215,6 +215,7 @@ export default function RegisterScreen() {
       await registerDemo(fullname, email, cleanPhone, password, {
         gender,
         birthday: `${birthDay}/${birthMonth}/${birthYear}`,
+        otpCode: otp.join(''),
       });
       setCurrentStep(4);
     } catch (e: any) {

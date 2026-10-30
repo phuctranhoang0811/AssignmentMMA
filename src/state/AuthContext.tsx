@@ -6,7 +6,7 @@ import { auth, db } from '../services/firebase';
 import { createUserWithEmailAndPassword, deleteUser, signInWithCustomToken, signInWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, onSnapshot, runTransaction, type Transaction } from 'firebase/firestore';
 import { clearCustomerInfo, clearDeliveryAddress } from '../services/addressStorage';
-import { phoneLoginToken } from '../services/orderApi';
+import { phoneLoginToken, verifyAccountEmail } from '../services/orderApi';
 import { isValidEmail } from '../utils/validators';
 import { normalizePhone } from '../utils/phone';
 import { signInWithGoogle } from '../services/googleSignIn';
@@ -24,7 +24,7 @@ interface AuthContextType {
     email: string,
     phone: string,
     password?: string,
-    extra?: { gender?: string; birthday?: string }
+    extra?: { gender?: string; birthday?: string; otpCode?: string }
   ) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
@@ -64,7 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const data = snapshot.data();
       setUser(previous => {
         if (previous?.id !== accountId) return previous;
-        const next = { ...previous, rewardPoints: data.rewardPoints ?? 0, role: data.role || 'USER' };
+        const next = { ...previous, rewardPoints: data.rewardPoints ?? 0, role: data.role || 'USER', emailVerified: data.emailVerified !== false };
         void AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next)).catch(() => {});
         return next;
       });
@@ -168,15 +168,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const profile = googleAccountProfile(identity, existing.exists() ? existing.data() : undefined);
         if (!existing.exists()) transaction.set(ref, {
           uid: profile.id, email: profile.email, fullName: profile.fullname,
-          phone: profile.phone, role: 'USER', rewardPoints: profile.rewardPoints,
+          phone: profile.phone, role: 'USER', rewardPoints: 0, welcomePending: true, emailVerified: false,
           ...(profile.avatar ? { avatar: profile.avatar } : {}), createdAt: serverTimestamp(),
         });
         return profile;
       });
       if (auth.currentUser?.uid !== identity.uid) throw new Error('Phiên đăng nhập đã thay đổi. Vui lòng thử lại.');
       if (options?.signal?.aborted) throw new Error('Đã hủy đăng nhập Google.');
-      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
-      setUser(profile);
+      // Google already verified the address; the backend records that. If it can't be reached the account stays
+      // unverified and the verify-email screen offers a retry, so a failure here is not fatal.
+      let verified = profile.emailVerified !== false;
+      if (!verified) verified = await verifyAccountEmail().then(() => true, () => false);
+      const session = { ...profile, emailVerified: verified };
+      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+      setUser(session);
       return true;
     } catch (error) {
       if (signedIn) {
@@ -193,7 +198,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     email: string,
     phone: string,
     password: string = 'Password123!',
-    extra?: { gender?: string; birthday?: string }
+    extra?: { gender?: string; birthday?: string; otpCode?: string }
   ) => {
     setIsLoading(true);
     try {
@@ -235,7 +240,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           gender: extra?.gender || 'Nam',
           birthday: extra?.birthday || '01/01/2000',
           role: 'USER',
-          rewardPoints: 100,
+          rewardPoints: 0,
+          welcomePending: true,
+          emailVerified: false,
           createdAt: serverTimestamp(),
         });
         return null;
@@ -254,10 +261,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         gender: stored?.gender ?? (extra?.gender || 'Nam'),
         birthday: stored?.birthday ?? (extra?.birthday || '01/01/2000'),
         role: stored?.role ?? 'USER',
-        rewardPoints: stored?.rewardPoints ?? 100,
+        rewardPoints: stored?.rewardPoints ?? 0,
+        emailVerified: stored ? stored.emailVerified !== false : false,
         isDemo: false,
         hasPassword: true,
       };
+
+      // Claim the code the customer just typed so the backend marks this e-mail as proven.
+      if (!newUser.emailVerified && extra?.otpCode) {
+        newUser.emailVerified = await verifyAccountEmail(extra.otpCode).then(() => true, () => false);
+      }
 
       setUser(newUser);
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newUser));

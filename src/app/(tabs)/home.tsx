@@ -199,6 +199,8 @@ export default function HomeScreen() {
     try {
       const list = await productService.list();
       setProducts(list);
+    } catch {
+      // Keep whatever was shown before; pulling down to refresh tries again.
     } finally {
       setRefreshing(false);
     }

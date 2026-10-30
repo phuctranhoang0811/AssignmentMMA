@@ -47,6 +47,16 @@ const ACCOUNTS = [
     birthday: "15/05/1998",
     rewardPoints: 500,
   },
+  {
+    email: "rider@pizzastore.com",
+    password: "Password123!",
+    fullName: "Tài Xế Giao Hàng (Rider)",
+    phone: "0909000003",
+    role: "ROLE_RIDER",
+    gender: "Nam",
+    birthday: "20/08/1995",
+    rewardPoints: 0,
+  },
 ];
 
 async function createOrUpdateAccount(acc: typeof ACCOUNTS[0]) {
@@ -91,7 +101,6 @@ async function createOrUpdateAccount(acc: typeof ACCOUNTS[0]) {
       gender: acc.gender,
       birthday: acc.birthday,
       rewardPoints: acc.rewardPoints,
-      password: acc.password,
       updatedAt: serverTimestamp(),
       ...(existingDoc.exists() ? {} : { createdAt: serverTimestamp() }),
     },
@@ -103,12 +112,12 @@ async function createOrUpdateAccount(acc: typeof ACCOUNTS[0]) {
   console.log(`   - SĐT:      ${acc.phone}`);
   console.log(`   - Họ tên:   ${acc.fullName}`);
   console.log(`   - Quyền:    ${acc.role}`);
-  console.log(`   - Mật khẩu: ${acc.password}`);
+  console.log(`   - Mật khẩu: (không lưu trong database)`);
 }
 
 async function main() {
   console.log("==================================================");
-  console.log("🔥 BẮT ĐẦU TẠO TÀI KHOẢN ADMIN VÀ EMPLOYEE TRONG DATABASE...");
+  console.log("🔥 BẮT ĐẦU TẠO TÀI KHOẢN ADMIN, EMPLOYEE VÀ RIDER TRONG DATABASE...");
   console.log("==================================================");
 
   for (const acc of ACCOUNTS) {
@@ -116,7 +125,7 @@ async function main() {
   }
 
   console.log("\n==================================================");
-  console.log("🎉 HOÀN TẤT TẠO 2 TÀI KHOẢN TRONG DATABASE FIREBASE!");
+  console.log(`🎉 HOÀN TẤT TẠO ${ACCOUNTS.length} TÀI KHOẢN TRONG DATABASE FIREBASE!`);
   console.log("==================================================");
   process.exit(0);
 }

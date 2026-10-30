@@ -4,12 +4,14 @@ import type { Firestore } from 'firebase-admin/firestore';
 // Transaction fixture exercises the real stores and rejects reads after writes like Firestore.
 export function database(products: Record<string, Record<string, unknown>> = {}) {
   const docs = new Map<string, Record<string, unknown>>();
-  type Ref = { path: string; id: string; get: () => Promise<ReturnType<typeof snapshot>>; create: (value: Record<string, unknown>) => Promise<void>; update: (value: Record<string, unknown>) => Promise<void> };
+  type Ref = { path: string; id: string; get: () => Promise<ReturnType<typeof snapshot>>; create: (value: Record<string, unknown>) => Promise<void>; update: (value: Record<string, unknown>) => Promise<void>; set: (value: Record<string, unknown>) => Promise<void>; delete: () => Promise<void> };
   function reference(name: string, id: string): Ref {
     const path = `${name}/${id}`;
     return { path, id, get: async () => snapshot(reference(name, id), docs),
       create: async value => { assert.ok(!docs.has(path)); docs.set(path, value); },
-      update: async value => { assert.ok(docs.has(path)); docs.set(path, { ...docs.get(path), ...value }); } };
+      update: async value => { assert.ok(docs.has(path)); docs.set(path, { ...docs.get(path), ...value }); },
+      set: async value => { docs.set(path, value); },
+      delete: async () => { docs.delete(path); } };
   }
   function snapshot(ref: Ref, source: typeof docs) { return { ref, id: ref.id, exists: source.has(ref.path), data: () => source.get(ref.path) }; }
   // '==' / 'in' filters, one descending orderBy and a limit: enough for the stores' queries.
@@ -34,7 +36,7 @@ export function database(products: Record<string, Record<string, unknown>> = {})
   }
   let tail = Promise.resolve();
   const db = {
-    collection: (name: string) => ({ doc: (id: string) => reference(name, id), ...query(name) }),
+    collection: (name: string) => ({ doc: (id: string = crypto.randomUUID()) => reference(name, id), ...query(name) }),
     getAll: async (...refs: Ref[]) => refs.map(ref => snapshot(ref, docs)),
     runTransaction: async <T>(callback: (tx: unknown) => Promise<T>) => {
       const before = tail;

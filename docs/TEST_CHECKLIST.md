@@ -59,7 +59,7 @@ Mở app ─► Splash
            ├─ chưa đăng nhập ─► Welcome ─► Trang chủ (khách vãng lai)
            └─ đã đăng nhập ─► theo role:
                  SUPER_ADMIN / ADMIN / STORE_MANAGER ─► /admin/dashboard
-                 EMPLOYEE / ROLE_KITCHEN / ROLE_RIDER  ─► /staff/orders
+                 EMPLOYEE / ROLE_KITCHEN  ─► /staff/orders;  ROLE_RIDER (bên thứ ba) ─► /rider
                  USER (và role khác)                   ─► Trang chủ
 ```
 
@@ -147,7 +147,7 @@ Chạy theo thứ tự; nếu bước nào FAIL thì dừng và ghi lỗi.
 | A02 | Đăng ký: nhập email → gửi OTP → nhập sai → nhập đúng | Mã sai bị từ chối; mã đúng chuyển sang bước hồ sơ | |
 | A03 | Gửi lại OTP trong 30 giây; nhập mã sau 5 phút; nhập sai 5 lần | Báo chờ gửi lại; mã hết hạn; khóa sau 5 lần sai, phải lấy mã mới | |
 | A04 | Đăng ký thiếu tên/SĐT, SĐT sai, mật khẩu yếu, xác nhận không khớp, không tick điều khoản | Không đăng ký được, báo đúng lỗi (web hiện hộp thoại) | |
-| A05 | Đăng ký hợp lệ | Tạo tài khoản role `USER`, 100 điểm; đăng nhập được | |
+| A05 | Đăng ký hợp lệ | Tạo tài khoản role `USER`, 0 điểm, email được xác minh bằng mã OTP; đăng nhập được. 100 điểm chào mừng cộng khi đơn đầu tiên hoàn tất | |
 | A06 | Đăng nhập email → đăng xuất → đăng nhập bằng SĐT + cùng mật khẩu | Cùng tài khoản; sai mật khẩu không vào được; SĐT không tồn tại và sai mật khẩu báo **cùng** một thông báo | |
 | A07 | Google trên web: chọn Gmail; đóng popup | Gmail đăng nhập được; đóng popup không báo thành công | |
 | A08 | Đóng/mở lại app sau khi đăng nhập; đăng xuất rồi mở lại | Giữ phiên; sau đăng xuất không tự vào lại | |

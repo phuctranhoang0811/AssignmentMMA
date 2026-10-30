@@ -26,7 +26,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 import { styles } from '../../styles/profile.styles';
-import { isAdminRole, isStaffRole } from '../../utils/staff';
+import { isAdminRole, isRiderRole, isStaffRole } from '../../utils/staff';
 
 // Custom Pizza Reward Slice Badge Icon (exact match to user mockup)
 const PizzaRewardIcon = ({ size = 22, color = '#1E2024' }: { size?: number; color?: string }) => (
@@ -173,6 +173,36 @@ export default function ProfileScreen() {
                     </View>
                     <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
                       Quản lý đơn hàng (Nhân viên)
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.divider} />
+                </>
+              )}
+
+              {/* Email chưa xác minh: chưa đặt hàng hoặc đổi quà được */}
+              {!!user && !user.isDemo && user.emailVerified === false && (
+                <>
+                  <TouchableOpacity style={styles.menuRow} activeOpacity={0.7} onPress={() => router.push('/auth/verify-email')}>
+                    <View style={styles.menuIconCol}>
+                      <Sparkles size={22} color="#CF4226" strokeWidth={1.8} />
+                    </View>
+                    <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
+                      Xác minh email để đặt hàng
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.divider} />
+                </>
+              )}
+
+              {/* Tài xế giao hàng (bên thứ ba, không thuộc nhân viên cửa hàng) */}
+              {isRiderRole(user?.role) && (
+                <>
+                  <TouchableOpacity style={styles.menuRow} activeOpacity={0.7} onPress={() => router.push('/rider')}>
+                    <View style={styles.menuIconCol}>
+                      <Sparkles size={22} color="#CF4226" strokeWidth={1.8} />
+                    </View>
+                    <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
+                      Nhận đơn giao (Tài xế)
                     </Text>
                   </TouchableOpacity>
                   <View style={styles.divider} />
