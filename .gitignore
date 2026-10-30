@@ -53,3 +53,7 @@ emulator_current.png
 
 # Firebase emulator logs
 *-debug.log
+
+# Local dev logs
+.backend-dev.log
+.expo-run-android.log

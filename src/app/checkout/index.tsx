@@ -37,7 +37,7 @@ import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { calculateOrderTotals, getItemLineUnitPrice } from '../../utils/calculateTotals';
-import { geocodeAddress } from '../../services/addressService';
+import { geocodeAddressStrict } from '../../services/addressService';
 import { colors } from '../../theme/colors';
 import type { LatLng } from '../../utils/deliveryFee';
 import { triggerHaptic } from '../../utils/haptics';
@@ -253,7 +253,7 @@ export default function CheckoutScreen() {
     if (!shippingConfig || !address.trim()) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      geocodeAddress(address)
+      geocodeAddressStrict(address)
         .then(point => { if (!cancelled) setLocated({ address, point }); })
         .catch(() => { if (!cancelled) setLocated({ address, point: null }); });
     }, 400);

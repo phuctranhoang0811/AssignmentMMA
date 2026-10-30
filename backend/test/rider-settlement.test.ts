@@ -138,3 +138,26 @@ test('staff are alerted once when a rider does not pick up or does not finish in
   assert.deepEqual(alerts.map(a => [a.id, a.kind]).sort(), [['late', 'RIDER_OVERDUE'], ['slow', 'RIDER_NO_PICKUP']]);
   assert.equal((await sweeper.run()).warnedRiders, 0); // already told
 });
+
+test('the unsettled figures stay exact even when the rider has more orders than the history cap', async () => {
+  const { ops, docs } = fixture();
+  for (let i = 0; i < 205; i++) {
+    docs.set(`orders/bulk${i}`, { ...base, status: 'COMPLETED', riderUid: 'rider', riderEarned: 1000, riderCash: 2000, riderSettled: false,
+      deliveredAt: Timestamp.fromMillis(Date.now() - i * 1000) });
+  }
+  const earnings = await ops.riderEarnings('rider');
+  assert.deepEqual(earnings.unsettled, { trips: 205, earned: 205000, cash: 410000 });
+});
+
+test('guest lookup shows who is bringing the food but never the rider\'s pay, cash or account id', async () => {
+  const { ops, docs } = fixture();
+  docs.set('orders/tracked', { ...base, orderCode: 'PF-TRACK1', status: 'OUT_FOR_DELIVERY', riderUid: 'rider', riderPay: 35000, riderEarned: 35000,
+    riderCash: 235000, riderSettled: false, deliveryFailure: { reason: 'OTHER' }, riderWarnedAt: Timestamp.now(),
+    rider: { uid: 'rider', name: 'Anh Tài', phone: '0911111111', acceptedAt: '2026-10-30T09:00:00Z' } });
+  const result = await ops.lookup('0900000000', 'PF-TRACK1') as Record<string, unknown>;
+  assert.deepEqual(result.rider, { name: 'Anh Tài', phone: '0911111111' });
+  for (const field of ['riderPay', 'riderEarned', 'riderCash', 'riderSettled', 'riderUid', 'deliveryFailure', 'riderWarnedAt', 'userId']) {
+    assert.equal(field in result, false, field);
+  }
+  assert.equal(result.status, 'OUT_FOR_DELIVERY');
+});

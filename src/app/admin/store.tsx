@@ -10,7 +10,7 @@ import { colors } from '../../theme/colors';
 import { spacing, radius } from '../../theme/spacing';
 import { useStoreStatus } from '../../services/storeSettings';
 import { updateStoreSettings } from '../../services/orderApi';
-import { geocodeAddress, getCurrentPhoneLocation } from '../../services/addressService';
+import { geocodeAddressStrict, getCurrentPhoneLocation } from '../../services/addressService';
 import type { DeliveryFeeConfig } from '../../utils/deliveryFee';
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -57,7 +57,8 @@ export default function AdminStoreScreen() {
     if (!shipping.storeAddress.trim()) { Alert.alert('Chưa có địa chỉ', 'Nhập địa chỉ cửa hàng rồi bấm lại.'); return; }
     setLocating(true);
     try {
-      const point = await geocodeAddress(shipping.storeAddress);
+      const point = await geocodeAddressStrict(shipping.storeAddress);
+      if (!point) { Alert.alert('Không tìm thấy địa chỉ', 'Hãy nhập địa chỉ đầy đủ hơn hoặc dùng vị trí hiện tại.'); return; }
       setShipping(current => ({ ...current, storeLat: point.lat.toFixed(6), storeLng: point.lng.toFixed(6) }));
     } finally { setLocating(false); }
   };

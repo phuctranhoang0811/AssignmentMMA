@@ -17,7 +17,7 @@ Kiểm tra tự động hiện tại: lint 0 lỗi/0 cảnh báo, TypeScript app
 | P1 | Deploy Firestore rules (admin cần quyền mới) | `npx firebase-tools deploy --only firestore:rules` | Console Firebase → Firestore → Rules có hàm `isAdmin()` |
 | P2 | Đồng bộ catalog + sửa ảnh hỏng | `npm --prefix backend run seed:catalog` | Terminal in `repaired images ST_04, PA003` (lần sau in `none`) |
 | P3 | Gán role cho tài khoản test | Firebase Console → `users/{uid}` → field `role` | Xem bảng tài khoản 1.2 |
-| P4 | (Tùy chọn) nhận OTP qua Gmail | `SMTP_USER`, `SMTP_PASS` trong `backend/.env` | Không có SMTP: backend dev in `[OTP dev] email: 1234` ra terminal |
+| P4 | Nhận OTP qua Gmail (bắt buộc để đăng ký) | `SMTP_USER`, `SMTP_PASS` trong `backend/.env` | Không có SMTP: `/api/otp/send` trả 503, mã không bao giờ in ra terminal |
 | P5 | Đăng nhập bằng SĐT | `FIREBASE_WEB_API_KEY` trong `backend/.env` | Thiếu thì đăng nhập SĐT báo lỗi cấu hình |
 | P6 | Giữ chỗ SĐT cho tài khoản cũ (mỗi số một tài khoản) | `npm --prefix backend run backfill:phones` | In số SĐT đã giữ chỗ; danh sách số đang bị nhiều tài khoản dùng chung cần admin xử lý |
 

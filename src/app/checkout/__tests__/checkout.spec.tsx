@@ -13,7 +13,7 @@ const product = { id: 'PZ1', name: 'Pizza bò', categoryId: 'pizza', basePrice: 
 
 let mockStore: { open: boolean; reason: string | null; message: string; settings?: unknown } = { open: true, reason: null, message: '' };
 const mockGeocode = jest.fn();
-jest.mock('../../../services/addressService', () => ({ geocodeAddress: (...args: unknown[]) => mockGeocode(...args) }));
+jest.mock('../../../services/addressService', () => ({ geocodeAddressStrict: (...args: unknown[]) => mockGeocode(...args) }));
 const shipping = { storeLat: 10.8, storeLng: 106.8, baseKm: 3, baseFee: 15000, perKm: 5000, maxKm: 10 };
 const northKm = (km: number) => ({ lat: 10.8 + km / 111.2, lng: 106.8 });
 jest.mock('../../../services/storeSettings', () => ({ useStoreStatus: () => mockStore }));
@@ -159,6 +159,15 @@ describe('shipping fee by distance', () => {
     await act(async () => { await placeOrder(); });
     expect(createCashOrder).not.toHaveBeenCalled();
     expect(mockAlert).toHaveBeenCalledWith('Ngoài vùng giao hàng', expect.stringContaining('10 km'));
+  });
+
+  test('an address that cannot be located is never priced as if it were next door', async () => {
+    mockGeocode.mockResolvedValue(null);
+    await render(<CheckoutScreen />);
+    expect(await screen.findByText('Chọn địa chỉ để tính')).toBeTruthy();
+    await act(async () => { await placeOrder(); });
+    expect(createCashOrder).not.toHaveBeenCalled();
+    expect(mockAlert).toHaveBeenCalledWith('Chưa xác định được vị trí', expect.stringContaining('chọn lại địa chỉ'));
   });
 
   test('pickup orders never show or pay a shipping fee', async () => {

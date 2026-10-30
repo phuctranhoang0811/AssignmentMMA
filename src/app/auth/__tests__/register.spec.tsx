@@ -27,6 +27,12 @@ async function passOtp() {
   await act(async () => { await fireEvent.press(confirmButtons()[1]); });
 }
 
+const typeBirthday = async (day: string, month: string, year: string) => {
+  await fireEvent.changeText(screen.getByLabelText('Ngày sinh: ngày'), day);
+  await fireEvent.changeText(screen.getByLabelText('Ngày sinh: tháng'), month);
+  await fireEvent.changeText(screen.getByLabelText('Ngày sinh: năm'), year);
+};
+
 beforeEach(() => { jest.clearAllMocks(); });
 
 test('step 1 refuses an invalid email and never asks for a code', async () => {
@@ -64,6 +70,12 @@ test('a correct code (sent to the lower-cased email) opens the personal-info ste
   await fireEvent.press(screen.getByText('Xác nhận'));
   expect(mockAlert).toHaveBeenLastCalledWith('Thông báo', 'Vui lòng nhập tên của bạn.');
   await fireEvent.changeText(screen.getByPlaceholderText('Nhập tên của bạn'), 'An Tran');
+  await fireEvent.press(screen.getByText('Xác nhận'));
+  expect(mockAlert).toHaveBeenLastCalledWith('Thông báo', expect.stringContaining('đầy đủ ngày sinh'));
+  await typeBirthday('31', '02', '2000');
+  await fireEvent.press(screen.getByText('Xác nhận'));
+  expect(mockAlert).toHaveBeenLastCalledWith('Thông báo', 'Ngày sinh không tồn tại.');
+  await typeBirthday('15', '03', '2000');
   await fireEvent.changeText(screen.getByPlaceholderText('Nhập số điện thoại của bạn'), '12345');
   await fireEvent.press(screen.getByText('Xác nhận'));
   expect(mockAlert).toHaveBeenLastCalledWith('Thông báo', expect.stringContaining('không hợp lệ'));
@@ -73,6 +85,7 @@ test('the password step enforces the strength rules and matching confirmation, t
   mockRegister.mockResolvedValue(undefined);
   await passOtp();
   await fireEvent.changeText(screen.getByPlaceholderText('Nhập tên của bạn'), 'An Tran');
+  await typeBirthday('5', '3', '2000');
   await fireEvent.changeText(screen.getByPlaceholderText('Nhập số điện thoại của bạn'), '0912 345 678');
   await fireEvent.press(screen.getByText('Xác nhận'));
 
@@ -88,7 +101,7 @@ test('the password step enforces the strength rules and matching confirmation, t
 
   await fireEvent.changeText(screen.getByPlaceholderText('Nhập lại mật khẩu của bạn'), 'Strong#Pass1');
   await act(async () => { await fireEvent.press(screen.getByText('Đăng ký')); });
-  expect(mockRegister).toHaveBeenCalledWith('An Tran', 'An@Gmail.com', '0912345678', 'Strong#Pass1', expect.objectContaining({ gender: 'Nam' }));
+  expect(mockRegister).toHaveBeenCalledWith('An Tran', 'An@Gmail.com', '0912345678', 'Strong#Pass1', expect.objectContaining({ gender: 'Nam', birthday: '05/03/2000' }));
   expect(screen.getByText('Cảm ơn bạn đã đăng ký')).toBeTruthy();
   await fireEvent.press(screen.getByText('Quay về trang chủ'));
   expect(router.replace).toHaveBeenCalledWith('/(tabs)/home');
@@ -98,6 +111,7 @@ test('a registration the server refuses is reported, not celebrated', async () =
   mockRegister.mockRejectedValue(new Error('Email này đã được đăng ký.'));
   await passOtp();
   await fireEvent.changeText(screen.getByPlaceholderText('Nhập tên của bạn'), 'An Tran');
+  await typeBirthday('15', '03', '2000');
   await fireEvent.changeText(screen.getByPlaceholderText('Nhập số điện thoại của bạn'), '0912345678');
   await fireEvent.press(screen.getByText('Xác nhận'));
   await fireEvent.changeText(screen.getByPlaceholderText('Vui lòng nhập mật khẩu của bạn'), 'Strong#Pass1');

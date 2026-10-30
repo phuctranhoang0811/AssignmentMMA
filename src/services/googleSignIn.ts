@@ -8,7 +8,9 @@ import type { GoogleLoginOptions } from '../types/googleLogin';
 export async function signInWithGoogle(options?: GoogleLoginOptions) {
   if (options?.signal?.aborted) return null;
   if (isRunningInExpoGo()) {
-    const { signInViaGoogleBrowser } = await import('./googleBridge');
+    // Loaded only inside Expo Go; require() keeps it lazy on Metro and works under Jest (which cannot run import()).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { signInViaGoogleBrowser } = require('./googleBridge') as typeof import('./googleBridge');
     return signInViaGoogleBrowser(options);
   }
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim();
@@ -17,7 +19,8 @@ export async function signInWithGoogle(options?: GoogleLoginOptions) {
     throw new Error('Chưa cấu hình Web OAuth Client ID cho Google Login.');
   }
   if (Platform.OS === 'ios' && !iosClientId) throw new Error('Chưa cấu hình iOS OAuth Client ID cho Google Login.');
-  const { GoogleSignin, isSuccessResponse } = await import('@react-native-google-signin/google-signin');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { GoogleSignin, isSuccessResponse } = require('@react-native-google-signin/google-signin') as typeof import('@react-native-google-signin/google-signin');
   GoogleSignin.configure({ webClientId, iosClientId });
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
   await GoogleSignin.signOut();

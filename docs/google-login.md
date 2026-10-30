@@ -108,6 +108,15 @@ trên trang web quản lý OAuth. Development build tiếp tục dùng cấu hì
 3. Nếu OAuth consent screen còn Testing, thêm Gmail thử nghiệm vào Test users.
    Cấu hình/phát hành consent screen trước khi cho người dùng ngoài danh sách thử nghiệm đăng nhập.
 
+## Kiểm tra nhanh cấu hình trong repo
+
+```powershell
+npm run google:check
+```
+
+Lệnh này đọc `.env`, `app.json` và các gói đã cài, rồi liệt kê việc còn thiếu (Web client ID, iOS client ID, development build).
+Nó không thấy được Google Cloud / Firebase console, nên SHA-1, OAuth client Android và Test users vẫn phải tự kiểm tra.
+
 ## Android
 
 - Package hiện tại: `com.pizzatime.app` trong `app.json`.

@@ -37,14 +37,14 @@ catch {
 const db = getFirestore();
 db.settings({ ignoreUndefinedProperties: true });
 const ahamoveConfig = readAhamoveConfig(process.env);
-// Gmail App Password from backend/.env. Without it, development prints the code here (never to the app).
+// Gmail App Password from backend/.env. Without it the OTP endpoints answer 503: a code is never printed in the terminal.
 const mailer = env.SMTP_USER && env.SMTP_PASS
   ? nodemailer.createTransport({ service: 'gmail', auth: { user: env.SMTP_USER, pass: env.SMTP_PASS } }) : null;
 const sendOtp = mailer
   ? async (to: string, code: string) => { await mailer.sendMail({ from: `"Pizza FPT" <${env.SMTP_USER}>`, to,
       subject: '[Pizza FPT] Mã xác thực đăng ký tài khoản', html: otpEmailHtml(code) }); }
-  : process.env.NODE_ENV === 'production' ? null
-  : async (to: string, code: string) => { console.log(`[OTP dev] ${to}: ${code}`); };
+  : null;
+if (!sendOtp) console.warn('SMTP_USER/SMTP_PASS chưa được cấu hình: không thể gửi mã OTP qua email, đăng ký sẽ trả lỗi 503.');
 const staffUids = (env.STAFF_UIDS || process.env.AHAMOVE_STAFF_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
 const otp = sendOtp ? new OtpStore(sendOtp) : undefined;
 const push = new PushStore(db);
@@ -63,7 +63,7 @@ const { server, io } = createPaymentServer({
   delivery: ahamoveConfig ? new DeliveryStore(db, ahamoveConfig) : undefined,
   rewards: new RewardStore(db),
   otp,
-  accounts: otp ? new AccountStore(db, otp) : undefined,
+  accounts: new AccountStore(db, otp),
   phoneLogin: env.FIREBASE_WEB_API_KEY
     ? (phone, password) => phoneLogin({ db, apiKey: env.FIREBASE_WEB_API_KEY!, createCustomToken: uid => getAuth().createCustomToken(uid) }, phone, password)
     : undefined,

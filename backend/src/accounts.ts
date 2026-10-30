@@ -14,7 +14,8 @@ export type TokenIdentity = { email?: string; email_verified?: boolean; firebase
  * only this backend flips the flag.
  */
 export class AccountStore {
-  constructor(private db: Firestore, private otp: Pick<OtpStore, 'verify'>) {}
+  /** `otp` is absent when no mail service is configured: Google accounts still verify, e-mail sign-ups cannot. */
+  constructor(private db: Firestore, private otp?: Pick<OtpStore, 'verify'>) {}
 
   async verifyEmail(uid: string, identity: TokenIdentity, code?: string) {
     const ref = this.db.collection('users').doc(uid);
@@ -27,6 +28,7 @@ export class AccountStore {
     const byGoogle = identity.firebase?.sign_in_provider === 'google.com' && identity.email_verified === true;
     if (!byGoogle) {
       if (!code) throw new HttpError(400, 'Vui lòng nhập mã xác minh gửi tới email của bạn.');
+      if (!this.otp) throw new HttpError(503, 'Dịch vụ gửi mã OTP chưa được cấu hình.');
       this.otp.verify(email, code);
     }
     await ref.update({ emailVerified: true, emailVerifiedAt: Timestamp.now() });

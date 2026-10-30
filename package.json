@@ -38,6 +38,7 @@
     "@testing-library/react-native": "^14.1.0",
     "@types/jest": "30.0.0",
     "@types/react": "~19.3.0",
+    "concurrently": "^9.2.1",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~58.0.4",
     "jest": "~30.5.2",
@@ -49,6 +50,7 @@
     "dev": "expo start --go",
     "android": "expo start --android --go",
     "android:dev": "node scripts/dev-android.mjs",
+    "share": "node scripts/share-test.mjs",
     "ios": "expo start --ios --go",
     "web": "expo start --web",
     "seed:firebase": "npm --prefix backend run seed:catalog",
@@ -57,8 +59,11 @@
     "lint": "expo lint",
     "test:rules": "npm --prefix firestore-tests install --no-audit --no-fund && npm --prefix firestore-tests test",
     "dev:client": "expo start --dev-client",
+    "dev:all": "concurrently -k -n api,app -c blue,green \"npm run dev --prefix backend\" \"expo start --go\"",
+    "dev:all:client": "concurrently -k -n api,app -c blue,green \"npm run dev --prefix backend\" \"expo start --dev-client\"",
     "google:expo-go": "node scripts/start-google-bridge.mjs",
-    "test:app": "jest"
+    "test:app": "jest",
+    "google:check": "node scripts/check-google-setup.mjs"
   },
   "private": true,
   "jest": {

@@ -224,17 +224,19 @@ export class OrderOpsStore {
   /** The rider's finished trips and what they earned: today, this week (from Monday) and all time, Vietnam time. */
   async riderEarnings(uid: string, now = Date.now()) {
     await this.assertRider(uid);
-    // shortcut: the rider's 200 most recent orders; totals beyond that need a stored running total.
+    // shortcut: history and totals come from up to 200 of the rider's orders (Firestore returns them unordered, and an
+    // ordered query would need a composite index); only the unsettled figures below are exact.
     const result = await this.db.collection('orders').where('riderUid', '==', uid).limit(200).get();
     // A trip counts once it is finished: delivered, or failed through no fault of the rider's.
     const trips = result.docs.filter(doc => !!doc.data().deliveredAt).map(doc => {
       const data = doc.data();
       return { id: doc.id, orderCode: data.orderCode as string, earned: (data.riderEarned as number) ?? 0,
         distanceKm: (data.deliveryDistanceKm as number | undefined) ?? null, failed: data.status === 'CANCELLED',
-        cash: (data.riderCash as number) ?? 0, settled: data.riderSettled !== false,
         deliveredAt: (data.deliveredAt?.toMillis?.() as number | undefined) ?? 0 };
     }).sort((a, b) => b.deliveredAt - a.deliveredAt);
-    const open = trips.filter(trip => !trip.settled);
+    // The money still to be squared up must not depend on that cap: it is read exactly, like the admin ledger.
+    const openTrips = (await this.db.collection('orders').where('riderUid', '==', uid).where('riderSettled', '==', false).limit(400).get()).docs
+      .map(doc => doc.data());
     const VN = 7 * 3_600_000, DAY = 86_400_000;
     const today = Math.floor((now + VN) / DAY) * DAY - VN;
     const weekday = (new Date(now + VN).getUTCDay() + 6) % 7; // Monday = 0
@@ -242,8 +244,8 @@ export class OrderOpsStore {
     const sum = (from: number) => trips.filter(trip => trip.deliveredAt >= from).reduce((total, trip) => total + trip.earned, 0);
     return { today: sum(today), week: sum(week), total: sum(0), trips: trips.length,
       // Not yet squared up with the store: wages owed to the rider and cash the rider collected and still holds.
-      unsettled: { trips: open.length, earned: open.reduce((total, trip) => total + trip.earned, 0), cash: open.reduce((total, trip) => total + trip.cash, 0) },
-      recent: trips.slice(0, 30).map(({ cash: _cash, settled: _settled, ...trip }) => ({ ...trip, deliveredAt: trip.deliveredAt ? new Date(trip.deliveredAt).toISOString() : null })) };
+      unsettled: { trips: openTrips.length, earned: openTrips.reduce((total, trip) => total + (trip.riderEarned ?? 0), 0), cash: openTrips.reduce((total, trip) => total + (trip.riderCash ?? 0), 0) },
+      recent: trips.slice(0, 30).map(trip => ({ ...trip, deliveredAt: trip.deliveredAt ? new Date(trip.deliveredAt).toISOString() : null })) };
   }
 
   /** accept → pickup → deliver; release hands an untouched order back to the queue. */
@@ -447,7 +449,11 @@ export class OrderOpsStore {
     const digits = (value: string) => value.replace(/\D/g, '').replace(/^84/, '0');
     if (!order || digits(order.customer?.phone ?? '') !== digits(phone)) throw new HttpError(404, 'Không tìm thấy đơn hàng.');
     // Phone + code proves it is the customer's order; drop internal fields only.
-    const { userId: _u, checkoutFingerprint: _f, paymentOrderId: _p, reference: _r, deliveryQuoteId: _q, createdAt, ...visible } = order;
-    return { ...visible, id: result.docs[0].id, createdAt: createdAt?.toDate?.().toISOString?.() ?? null };
+    const { userId: _u, checkoutFingerprint: _f, paymentOrderId: _p, reference: _r, deliveryQuoteId: _q, createdAt,
+      riderPay: _pay, riderEarned: _earned, riderCash: _cash, riderSettled: _settled, riderSettledAt: _settledAt, riderUid: _riderUid,
+      riderWarnedAt: _warned, riderOverdueWarnedAt: _overdue, deliveryFailure: _failure, rider, ...visible } = order;
+    // The tracking screen shows who is bringing the food, never the rider's account id or earnings.
+    return { ...visible, ...(rider ? { rider: { name: rider.name, phone: rider.phone } } : {}), id: result.docs[0].id,
+      createdAt: createdAt?.toDate?.().toISOString?.() ?? null };
   }
 }

@@ -137,3 +137,13 @@ test('HTTP: an unverified account cannot order or redeem; verifying with the mai
   // The code is single-use.
   assert.equal((await f.call('/api/account/verify-email', 'pending', { code })).status, 200); // already verified: nothing to do
 });
+
+test('without a mail service a Google account still verifies, while a password account is told the service is missing', async () => {
+  const { db, docs } = database();
+  docs.set('users/g', { emailVerified: false });
+  docs.set('users/p', { emailVerified: false });
+  const accounts = new AccountStore(db);
+  await accounts.verifyEmail('g', { email: 'g@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } });
+  assert.equal(docs.get('users/g')!.emailVerified, true);
+  await assert.rejects(accounts.verifyEmail('p', { email: 'p@gmail.com', firebase: { sign_in_provider: 'password' } }, '1234'), status(503));
+});

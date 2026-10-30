@@ -13,11 +13,12 @@ import {
 import { Alert } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, ChevronDown, Check, Eye, EyeOff } from 'lucide-react-native';
+import { ChevronLeft, ChevronDown, Check, Eye, EyeOff, CalendarDays } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 import { sendOtpToEmail, verifyOtp } from '../../services/otpService';
 import { styles, BRAND_RED } from '../../styles/register.styles';
 import { CelebrationPopper } from '../../components/auth/CelebrationPopper';
+import { birthdayError, birthdayText } from '../../utils/birthday';
 
 
 export default function RegisterScreen() {
@@ -30,9 +31,9 @@ export default function RegisterScreen() {
   // Form State
   const [email, setEmail] = useState('');
   const [fullname, setFullname] = useState('');
-  const [birthYear, setBirthYear] = useState('2000');
-  const [birthMonth, setBirthMonth] = useState('01');
-  const [birthDay, setBirthDay] = useState('01');
+  const [birthYear, setBirthYear] = useState('');
+  const [birthMonth, setBirthMonth] = useState('');
+  const [birthDay, setBirthDay] = useState('');
   const [gender, setGender] = useState('Nam');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -48,9 +49,10 @@ export default function RegisterScreen() {
   const [timerSeconds, setTimerSeconds] = useState(300);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
 
-  // Modals for Step 2 Date/Gender
   const [showGenderPicker, setShowGenderPicker] = useState(false);
-  const [datePickerType, setDatePickerType] = useState<'year' | 'month' | 'day' | null>(null);
+  const dayRef = useRef<any>(null);
+  const monthRef = useRef<any>(null);
+  const yearRef = useRef<any>(null);
 
   // Refs for OTP inputs
   const otpInputRefs = [
@@ -161,10 +163,25 @@ export default function RegisterScreen() {
     }
   };
 
+  // Birthday is typed as dd / mm / yyyy; each box jumps to the next one when it is full.
+  const typeBirthPart = (text: string, max: number, set: (value: string) => void, next?: React.RefObject<any>) => {
+    const digits = text.replace(/\D/g, '').slice(0, max);
+    set(digits);
+    if (digits.length === max) next?.current?.focus();
+  };
+  const backFromEmpty = (value: string, previous: React.RefObject<any>) => (e: any) => {
+    if (e.nativeEvent.key === 'Backspace' && !value) previous.current?.focus();
+  };
+
   // Step 2: Submit Personal Info
   const handleStep2Submit = () => {
     if (!fullname.trim()) {
       Alert.alert('Thông báo', 'Vui lòng nhập tên của bạn.');
+      return;
+    }
+    const dateProblem = birthdayError(birthDay, birthMonth, birthYear);
+    if (dateProblem) {
+      Alert.alert('Thông báo', dateProblem);
       return;
     }
     const cleanPhone = phone.trim().replace(/[\s.-]/g, '');
@@ -214,7 +231,7 @@ export default function RegisterScreen() {
       const cleanPhone = phone.trim().replace(/[\s.-]/g, '');
       await registerDemo(fullname, email, cleanPhone, password, {
         gender,
-        birthday: `${birthDay}/${birthMonth}/${birthYear}`,
+        birthday: birthdayText(birthDay, birthMonth, birthYear),
         otpCode: otp.join(''),
       });
       setCurrentStep(4);
@@ -222,11 +239,6 @@ export default function RegisterScreen() {
       Alert.alert('Đăng ký thất bại', e.message || 'Có lỗi xảy ra.');
     }
   };
-
-  // Options for pickers
-  const years = Array.from({ length: 70 }, (_, i) => String(2010 - i));
-  const months = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
-  const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -371,30 +383,46 @@ export default function RegisterScreen() {
                 <Text style={styles.fieldLabel}>
                   Ngày sinh <Text style={styles.requiredStar}>*</Text>
                 </Text>
-                <View style={styles.dateRow}>
-                  <TouchableOpacity
-                    style={styles.datePickerBtn}
-                    onPress={() => setDatePickerType('year')}
-                  >
-                    <Text style={styles.datePickerBtnText}>{birthYear || 'Năm'}</Text>
-                    <ChevronDown size={16} color="#6B7280" />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.datePickerBtn}
-                    onPress={() => setDatePickerType('month')}
-                  >
-                    <Text style={styles.datePickerBtnText}>Tháng {birthMonth || ''}</Text>
-                    <ChevronDown size={16} color="#6B7280" />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.datePickerBtn}
-                    onPress={() => setDatePickerType('day')}
-                  >
-                    <Text style={styles.datePickerBtnText}>Ngày {birthDay || ''}</Text>
-                    <ChevronDown size={16} color="#6B7280" />
-                  </TouchableOpacity>
+                <View style={styles.dateBox}>
+                  <TextInput
+                    ref={dayRef}
+                    style={[styles.dateInput, styles.dateInputShort]}
+                    placeholder="DD"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    value={birthDay}
+                    onChangeText={t => typeBirthPart(t, 2, setBirthDay, monthRef)}
+                    accessibilityLabel="Ngày sinh: ngày"
+                  />
+                  <Text style={styles.dateSeparator}>/</Text>
+                  <TextInput
+                    ref={monthRef}
+                    style={[styles.dateInput, styles.dateInputShort]}
+                    placeholder="MM"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    value={birthMonth}
+                    onChangeText={t => typeBirthPart(t, 2, setBirthMonth, yearRef)}
+                    onKeyPress={backFromEmpty(birthMonth, dayRef)}
+                    accessibilityLabel="Ngày sinh: tháng"
+                  />
+                  <Text style={styles.dateSeparator}>/</Text>
+                  <TextInput
+                    ref={yearRef}
+                    style={[styles.dateInput, styles.dateInputYear]}
+                    placeholder="YYYY"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={4}
+                    value={birthYear}
+                    onChangeText={t => typeBirthPart(t, 4, setBirthYear)}
+                    onKeyPress={backFromEmpty(birthYear, monthRef)}
+                    accessibilityLabel="Ngày sinh: năm"
+                  />
+                  <View style={{ flex: 1 }} />
+                  <CalendarDays size={18} color="#9CA3AF" />
                 </View>
               </View>
 
@@ -645,40 +673,6 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
           </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Date Picker Modal */}
-      <Modal
-        visible={datePickerType !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDatePickerType(null)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setDatePickerType(null)}>
-          <View style={styles.pickerModalContent}>
-            <Text style={styles.modalPickerTitle}>
-              Chọn {datePickerType === 'year' ? 'Năm sinh' : datePickerType === 'month' ? 'Tháng sinh' : 'Ngày sinh'}
-            </Text>
-            <ScrollView style={{ maxHeight: 280 }}>
-              {(datePickerType === 'year' ? years : datePickerType === 'month' ? months : days).map((item) => (
-                <TouchableOpacity
-                  key={item}
-                  style={styles.pickerItem}
-                  onPress={() => {
-                    if (datePickerType === 'year') setBirthYear(item);
-                    if (datePickerType === 'month') setBirthMonth(item);
-                    if (datePickerType === 'day') setBirthDay(item);
-                    setDatePickerType(null);
-                  }}
-                >
-                  <Text style={styles.pickerItemText}>
-                    {datePickerType === 'month' ? `Tháng ${item}` : datePickerType === 'day' ? `Ngày ${item}` : item}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
         </Pressable>
       </Modal>
 
