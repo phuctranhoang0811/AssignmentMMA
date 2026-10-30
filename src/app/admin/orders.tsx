@@ -71,7 +71,7 @@ export default function AdminOrdersScreen() {
               const data = d.data();
               list.push({
                 id: d.id,
-                createdAt: data.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
+                createdAt: data.createdAt?.toDate?.()?.toISOString?.() || (typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString()),
                 userId: data.userId,
                 customer: {
                   fullname: data.customerName || data.customer?.fullname || 'Khách hàng',
