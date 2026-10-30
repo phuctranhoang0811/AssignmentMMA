@@ -28,7 +28,6 @@ import {
 import { productService } from '../../services';
 import { Product, CategoryId } from '../../types/product';
 import { mockCategories } from '../../data/mockCategories';
-import { mockProducts } from '../../data/mockProducts';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
@@ -151,6 +150,7 @@ export default function HomeScreen() {
   const bannerScrollRef = useRef<any>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [lunchCombos, setLunchCombos] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -210,6 +210,8 @@ export default function HomeScreen() {
         categoryId: cat === 'all' ? undefined : cat,
       });
       setProducts(list);
+      const allCombos = await productService.list();
+      setLunchCombos(allCombos.filter((p) => p.tags?.includes('Combo Trưa') || p.id.startsWith('CB')));
     } finally {
       setRefreshing(false);
     }
@@ -226,9 +228,7 @@ export default function HomeScreen() {
 
   const favoritePizzas = products.slice(0, 4);
 
-  const lunchCombos = mockProducts.filter(
-    (p) => p.tags?.includes('Combo Trưa') || p.id.startsWith('CB')
-  );
+  // lunchCombos is loaded dynamically from Firestore productService
 
   const handleAddCombo = (combo: Product) => {
     addItem({

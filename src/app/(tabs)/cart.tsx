@@ -24,6 +24,8 @@ import { useCart } from '../../state/CartContext';
 import { useToast } from '../../state/ToastContext';
 import { triggerHaptic } from '../../utils/haptics';
 import { mockProducts } from '../../data/mockProducts';
+import { productService } from '../../services';
+import { Product } from '../../types/product';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { getItemLineUnitPrice } from '../../utils/calculateTotals';
 import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
@@ -36,7 +38,7 @@ import {
 import { styles, BRAND_RED } from '../../styles/cart.styles';
 import { formatCustomizationSummary } from '../../types/pizzaCustomization';
 
-const productsMap = mockProducts.reduce((acc, p) => {
+const initialProductsMap = mockProducts.reduce((acc, p) => {
   acc[p.id] = p;
   return acc;
 }, {} as Record<string, (typeof mockProducts)[0]>);
@@ -129,6 +131,19 @@ const EmptyTicketIcon = () => (
 );
 
 export default function CartScreen() {
+  const [productsMap, setProductsMap] = useState<Record<string, Product>>(initialProductsMap);
+
+  useEffect(() => {
+    productService.list().then((list) => {
+      if (list && list.length > 0) {
+        const map = list.reduce((acc, p) => {
+          acc[p.id] = p;
+          return acc;
+        }, {} as Record<string, Product>);
+        setProductsMap(map);
+      }
+    }).catch(() => {});
+  }, []);
   const router = useRouter();
   const { items, removeItem, addItem } = useCart();
   const { showToast } = useToast();

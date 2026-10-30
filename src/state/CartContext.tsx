@@ -4,6 +4,8 @@ import { CartItem } from '../types/order';
 import { generateCartLineKey } from '../utils/cartLineKey';
 import { mockProducts } from '../data/mockProducts';
 import { getItemLineUnitPrice } from '../utils/calculateTotals';
+import { productService } from '../services';
+import { Product } from '../types/product';
 
 interface CartContextType {
   items: CartItem[];
@@ -17,16 +19,33 @@ interface CartContextType {
 
 const CART_STORAGE_KEY = '@pizza_time_cart_v1';
 
-const productsMap = mockProducts.reduce((acc, p) => {
+const defaultProductsMap = mockProducts.reduce((acc, p) => {
   acc[p.id] = p;
   return acc;
-}, {} as Record<string, (typeof mockProducts)[0]>);
+}, {} as Record<string, Product>);
 
 const CartContext = createContext<CartContextType>({} as CartContextType);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<CartItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [productsMap, setProductsMap] = useState<Record<string, Product>>(defaultProductsMap);
+
+  // Sync productsMap from Firebase Firestore via productService
+  useEffect(() => {
+    productService
+      .list()
+      .then((list) => {
+        if (list && list.length > 0) {
+          const map = list.reduce((acc, p) => {
+            acc[p.id] = p;
+            return acc;
+          }, {} as Record<string, Product>);
+          setProductsMap(map);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -139,7 +158,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const qty = Number(item.quantity) || 1;
       return acc + unitPrice * qty;
     }, 0);
-  }, [items]);
+  }, [items, productsMap]);
 
   return (
     <CartContext.Provider

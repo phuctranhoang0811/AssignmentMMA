@@ -36,6 +36,7 @@ export interface OrderService {
   getById(id: string): Promise<Order | null>;
   cancel(id: string): Promise<Order>;
   advanceDemoStatus(id: string): Promise<Order>;
+  resetSeed?: () => Promise<void>;
 }
 
 export interface AuthService {

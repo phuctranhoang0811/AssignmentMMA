@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, FlatList } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -8,14 +8,20 @@ import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { ProductCard } from '../components/product/ProductCard';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useFavorites } from '../state/FavoritesContext';
-import { mockProducts } from '../data/mockProducts';
+import { productService } from '../services';
+import { Product } from '../types/product';
 import { styles } from '../styles/favorites.styles';
 
 export default function FavoritesScreen() {
   const insets = useSafeAreaInsets();
   const { favoriteIds } = useFavorites();
+  const [favoriteProducts, setFavoriteProducts] = useState<Product[]>([]);
 
-  const favoriteProducts = mockProducts.filter((p) => favoriteIds.includes(p.id));
+  useEffect(() => {
+    productService.list().then((all) => {
+      setFavoriteProducts(all.filter((p) => favoriteIds.includes(p.id)));
+    }).catch(() => {});
+  }, [favoriteIds]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
