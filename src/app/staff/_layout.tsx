@@ -5,6 +5,7 @@ import { ShieldAlert, ArrowLeft, LogIn } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 import { colors } from '../../theme/colors';
 import { spacing, radius } from '../../theme/spacing';
+import { isStaffRole } from '../../utils/staff';
 
 export default function StaffLayout() {
   const router = useRouter();
@@ -19,10 +20,7 @@ export default function StaffLayout() {
     );
   }
 
-  const isStaff =
-    user?.role === 'EMPLOYEE' ||
-    user?.role === 'SUPER_ADMIN' ||
-    user?.role === 'ADMIN';
+  const isStaff = isStaffRole(user?.role);
 
   // Nếu chưa đăng nhập hoặc không phải nhân viên, hiển thị màn hình bảo vệ quyền truy cập (Route Guard)
   if (!isStaff) {

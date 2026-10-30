@@ -11,17 +11,15 @@ import {
   TrendingUp,
   ShoppingBag,
   BarChart2,
-  Clock,
   XCircle,
-  Award,
 } from 'lucide-react-native';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../../services/firebase';
+import { Alert } from '../../utils/alert';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { AppText } from '../../components/ui/AppText';
 import { colors } from '../../theme/colors';
 import { styles } from '../../styles/adminReports.styles';
-import { initialMockOrders } from '../../data/mockOrders';
 import { formatCurrency } from '../../utils/formatCurrency';
 
 type Period = 'today' | 'week' | 'month';
@@ -68,35 +66,19 @@ export default function AdminReportsScreen() {
       unsub = onSnapshot(
         q,
         (snapshot: any) => {
-          if (!snapshot.empty) {
-            processOrders(snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })));
-          } else {
-            processOrders(initialMockOrders.map(o => ({
-              ...o,
-              totalAmount: o.total,
-              status: o.status,
-              items: o.items.map(i => ({ ...i, name: i.productName })),
-              createdAt: { toDate: () => new Date(o.createdAt) },
-            })));
-          }
+          // An empty store means no sales yet; never fill reports with demo orders.
+          processOrders(snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })));
         },
         (err: any) => {
-          console.warn('Reports onSnapshot error:', err.message);
-          processOrders(initialMockOrders.map(o => ({
-            ...o,
-            totalAmount: o.total,
-            createdAt: { toDate: () => new Date(o.createdAt) },
-          })));
+          processOrders([]);
+          Alert.alert('Không tải được báo cáo', err.message);
         }
       );
-    } catch (e) {
-      processOrders(initialMockOrders.map(o => ({
-        ...o,
-        totalAmount: o.total,
-        createdAt: { toDate: () => new Date(o.createdAt) },
-      })));
+    } catch {
+      processOrders([]);
     }
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- processOrders reads `period`, which is the dependency
   }, [period]);
 
   const processOrders = (orders: any[]) => {
@@ -133,11 +115,12 @@ export default function AdminReportsScreen() {
       }
     });
 
-    // Fallback demo data nếu tất cả bằng 0
-    const hasRealData = dailyRevenue.some(v => v > 0);
-    const chartData = hasRealData
-      ? dailyRevenue
-      : [820000, 1250000, 980000, 1560000, 2100000, 1750000, 890000];
+    // Minutes from "xác nhận" to "sẵn sàng", from each finished order's own status history.
+    const prepMinutes = completed.map((o: any) => {
+      const at = (status: string) => Date.parse((o.statusHistory ?? []).find((h: any) => h.status === status)?.at ?? '');
+      return (at('READY') - at('CONFIRMED')) / 60000;
+    }).filter((minutes: number) => Number.isFinite(minutes) && minutes >= 0);
+    const avgPrepTime = prepMinutes.length ? Math.round(prepMinutes.reduce((sum: number, m: number) => sum + m, 0) / prepMinutes.length) : 0;
 
     // Top 5 sản phẩm bán chạy
     const productMap: Record<string, { count: number; revenue: number }> = {};
@@ -154,21 +137,8 @@ export default function AdminReportsScreen() {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    setData({
-      totalRevenue: totalRevenue || 8350000,
-      totalOrders: totalOrders || 24,
-      avgOrderValue: avgOrderValue || 347917,
-      cancelRate: cancelRate || 8,
-      avgPrepTime: 18, // phút — placeholder
-      dailyRevenue: chartData,
-      topProducts: topProducts.length > 0 ? topProducts : [
-        { name: 'Margherita Pizza', count: 28, revenue: 4452000 },
-        { name: 'Pepperoni Pizza', count: 22, revenue: 3498000 },
-        { name: 'BBQ Chicken Pizza', count: 17, revenue: 2975000 },
-        { name: 'Hawaiian Pizza', count: 14, revenue: 2380000 },
-        { name: 'Seafood Pizza', count: 11, revenue: 2090000 },
-      ],
-    });
+    // Real numbers only: a shop with no sales yet shows zeros and an empty list, never invented figures.
+    setData({ totalRevenue, totalOrders, avgOrderValue, cancelRate, avgPrepTime, dailyRevenue, topProducts });
   };
 
   const maxRevenue = Math.max(...data.dailyRevenue, 1);
@@ -308,6 +278,9 @@ export default function AdminReportsScreen() {
             Top 5 Món Pizza Bán Chạy Nhất
           </AppText>
 
+          {data.topProducts.length === 0 && (
+            <AppText variant="body" color={colors.textSecondary}>Chưa có món nào được bán trong kỳ này.</AppText>
+          )}
           {data.topProducts.map((product, index) => (
             <View
               key={product.name}
@@ -363,7 +336,7 @@ export default function AdminReportsScreen() {
             </View>
             <View style={styles.kpiValueWrap}>
               <AppText variant="price" color={colors.warning}>
-                {data.avgPrepTime} phút
+                {data.avgPrepTime > 0 ? `${data.avgPrepTime} phút` : 'Chưa có dữ liệu'}
               </AppText>
             </View>
           </View>

@@ -8,26 +8,22 @@ import {
   RefreshControl,
   Modal,
   Pressable,
-  useWindowDimensions,
-  Alert,
   Linking,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useContentWidth } from '../../utils/layout';
 import {
   Bell,
   MapPin,
   ChevronRight,
   Plus,
-  ChevronUp,
   ChevronDown,
-  ShoppingBag,
-  Check,
 } from 'lucide-react-native';
 import { productService } from '../../services';
-import { Product, CategoryId } from '../../types/product';
-import { mockCategories } from '../../data/mockCategories';
+import { Product } from '../../types/product';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
@@ -143,31 +139,26 @@ const TermsDocsSvg = () => (
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { addItem, itemCount, subtotal } = useCart();
+  const { addItem, fulfillmentType: fulfillmentMode, setFulfillmentType: setFulfillmentMode } = useCart();
   const { showToast } = useToast();
-  const { width: windowWidth } = useWindowDimensions();
-  const bannerWidth = Math.min(windowWidth - 32, 450);
+  // Width of the screen's own column (phone, desktop-web frame or tablet column), minus side padding.
+  const bannerWidth = useContentWidth() - 32;
   const bannerScrollRef = useRef<any>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [lunchCombos, setLunchCombos] = useState<Product[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
   const [refreshing, setRefreshing] = useState(false);
 
   // Store Location / Address Autocomplete Modal
   const [showStoreLocationModal, setShowStoreLocationModal] = useState(false);
   const [currentAddress, setCurrentAddress] = useState('');
-  const [fulfillmentMode, setFulfillmentMode] = useState<'delivery' | 'takeaway'>('delivery');
 
+  // Re-read when the account changes: logging out clears the saved address.
   useEffect(() => {
-    getSavedDeliveryAddress().then((saved) => {
-      if (saved) setCurrentAddress(saved);
-    });
-  }, []);
+    getSavedDeliveryAddress().then((saved) => setCurrentAddress(saved || ''));
+  }, [user?.id]);
 
   // Lunch Combo 3/4 Sheet State
   const [showLunchSheet, setShowLunchSheet] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Carousel banner index
   const [bannerIndex, setBannerIndex] = useState(0);
@@ -204,31 +195,31 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  const loadData = useCallback(async (cat: CategoryId = selectedCategory) => {
+  const loadData = useCallback(async () => {
     try {
-      const list = await productService.list({
-        categoryId: cat === 'all' ? undefined : cat,
-      });
+      const list = await productService.list();
       setProducts(list);
-      const allCombos = await productService.list();
-      setLunchCombos(allCombos.filter((p) => p.tags?.includes('Combo Trưa') || p.id.startsWith('CB')));
+    } catch {
+      // Keep whatever was shown before; pulling down to refresh tries again.
     } finally {
       setRefreshing(false);
     }
-  }, [selectedCategory]);
+  }, []);
 
   useEffect(() => {
-    loadData(selectedCategory);
-  }, [loadData, selectedCategory]);
+    loadData();
+  }, [loadData]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadData(selectedCategory);
+    loadData();
   };
 
   const favoritePizzas = products.slice(0, 4);
 
-  // lunchCombos is loaded dynamically from Firestore productService
+  const lunchCombos = products.filter(
+    (p) => p.tags?.includes('Combo Trưa') || p.id.startsWith('CB')
+  );
 
   const handleAddCombo = (combo: Product) => {
     addItem({
@@ -347,7 +338,11 @@ export default function HomeScreen() {
         {/* GREETING & LOCATION (Chào mừng bạn trở lại)              */}
         {/* ======================================================== */}
         <View style={styles.greetingSection}>
-          <Text style={styles.greetingTitle}>Chào mừng bạn trở lại</Text>
+          <Text style={styles.greetingTitle} numberOfLines={1}>
+            {user && !user.isDemo && user.fullname
+              ? `Chào ${user.fullname.trim().split(/\s+/).pop()}, mừng bạn trở lại`
+              : 'Chào mừng bạn đến Pizza FPT'}
+          </Text>
           <Text style={styles.greetingSubtitle}>
             Chọn địa chỉ nhận hàng để bắt đầu đặt món
           </Text>
@@ -406,6 +401,8 @@ export default function HomeScreen() {
                   </View>
                   <TouchableOpacity
                     style={styles.addBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Thêm ${item.name} vào giỏ`}
                     activeOpacity={0.8}
                     onPress={() => {
                       addItem({
@@ -700,6 +697,8 @@ export default function HomeScreen() {
 
                         <TouchableOpacity
                           style={styles.simpleAddBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Thêm ${combo.name} vào giỏ`}
                           activeOpacity={0.8}
                           onPress={() => handleAddCombo(combo)}
                         >

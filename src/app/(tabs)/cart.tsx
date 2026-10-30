@@ -7,6 +7,7 @@ import {
   Image,
   Modal,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -15,19 +16,15 @@ import {
   ChevronRight,
   Plus,
   ShoppingBag,
-  Info,
   X,
   Check,
 } from 'lucide-react-native';
-import Svg, { Path, Polygon } from 'react-native-svg';
 import { useCart } from '../../state/CartContext';
+import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
 import { triggerHaptic } from '../../utils/haptics';
-import { mockProducts } from '../../data/mockProducts';
-import { productService } from '../../services';
-import { Product } from '../../types/product';
 import { formatCurrency } from '../../utils/formatCurrency';
-import { getItemLineUnitPrice } from '../../utils/calculateTotals';
+import { calculateOrderTotals, getItemLineUnitPrice } from '../../utils/calculateTotals';
 import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
 import {
   checkHasChosenAddress,
@@ -36,133 +33,42 @@ import {
 } from '../../services/addressStorage';
 
 import { styles, BRAND_RED } from '../../styles/cart.styles';
+import { findCoupon, useCatalog, useCoupons } from '../../services/catalog';
+import { QuantityStepper } from '../../components/ui/QuantityStepper';
+import { StoreClosedBanner } from '../../components/store/StoreClosedBanner';
+import { useStoreStatus } from '../../services/storeSettings';
+import { RecycleIcon } from '../../components/cart/RecycleIcon';
+import { EmptyTicketIcon } from '../../components/ui/EmptyTicketIcon';
+import { canEditCartProduct } from '../../utils/cartOperations';
+import { CartItem } from '../../types/order';
+import { Product } from '../../types/product';
 import { formatCustomizationSummary } from '../../types/pizzaCustomization';
 
-const initialProductsMap = mockProducts.reduce((acc, p) => {
-  acc[p.id] = p;
-  return acc;
-}, {} as Record<string, (typeof mockProducts)[0]>);
-
 // Recommendation items for "Bạn sẽ thích"
-const RECOMMENDATIONS = [
-  {
-    id: 'PA002',
-    name: 'Mỳ Ý Bò Bằm Xốt Cà Chua',
-    description: 'Mì Ý với thịt bò bằm đậm đà thơm ngon chuẩn vị truyền thống.',
-    price: 129000,
-    image: 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=400&q=80',
-  },
-  {
-    id: 'PZ002',
-    name: 'Pepperoni Pizza',
-    description: 'Xúc xích Ý cay nhẹ phủ đầy lớp phô mai béo ngậy.',
-    price: 159000,
-    image: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?auto=format&fit=crop&w=400&q=80',
-  },
-  {
-    id: 'PA001',
-    name: 'Spaghetti Carbonara',
-    description: 'Mì Ý sốt kem trứng béo ngậy kèm thịt xông khói giòn rụm.',
-    price: 139000,
-    image: 'https://images.unsplash.com/photo-1612874742237-6526221588e3?auto=format&fit=crop&w=400&q=80',
-  },
-];
+const RECOMMENDATION_IDS = ['PA002', 'PZ002', 'PA001'];
 
-// Valid vouchers for test / live usage
-const VALID_VOUCHERS: Record<
-  string,
-  { title: string; discountAmount: number; isFreeShip?: boolean; minSubtotal: number }
-> = {
-  PIZZAFPT: { title: 'Giảm 40.000 đ', discountAmount: 40000, minSubtotal: 100000 },
-  FPT40: { title: 'Giảm 40.000 đ', discountAmount: 40000, minSubtotal: 200000 },
-  FREESHIP: { title: 'Miễn phí giao hàng', discountAmount: 22000, isFreeShip: true, minSubtotal: 0 },
-};
 
-/* SVG: Green Recycling Emblem with Center Checkmark */
-const RecycleIcon = () => (
-  <Svg width={74} height={74} viewBox="0 0 100 100" fill="none">
-    {/* Arrow 1: Top / Right */}
-    <Path
-      d="M38 18 L56 18 C66 18 74 26 74 36 L74 38 L82 32 L75 50 L60 37 L68 40 L68 36 C68 30 63 24 56 24 L38 24 Z"
-      fill="#4ADE80"
-    />
-    {/* Arrow 2: Bottom / Right */}
-    <Path
-      d="M76 56 L67 73 C62 82 52 86 42 83 L39 82 L45 90 L27 88 L35 72 L37 80 L40 81 C47 83 54 80 58 73 L67 56 Z"
-      fill="#4ADE80"
-    />
-    {/* Arrow 3: Left / Up */}
-    <Path
-      d="M30 68 L20 51 C15 42 17 32 25 25 L28 23 L22 17 L40 21 L34 39 L30 31 L27 34 C21 39 19 46 23 53 L33 70 Z"
-      fill="#4ADE80"
-    />
-    {/* Center Checkmark */}
-    <Path
-      d="M45 52 L50 57 L59 45"
-      stroke="#16A34A"
-      strokeWidth={5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </Svg>
-);
-
-/* SVG: Empty Voucher Ticket with Star */
-const EmptyTicketIcon = () => (
-  <Svg width={116} height={74} viewBox="0 0 116 74" fill="none">
-    {/* Ticket background with side notches */}
-    <Path
-      d="M10 5 C5 5 0 10 0 15 L0 27 C6 27 10 31 10 37 C10 43 6 47 0 47 L0 59 C0 64 5 69 10 69 L106 69 C111 69 116 64 116 59 L116 47 C110 47 106 43 106 37 C106 31 110 27 116 27 L116 15 C116 10 111 5 106 5 Z"
-      fill="#E6E8EE"
-    />
-    {/* Vertical Dashed Notch Line */}
-    <Path
-      d="M28 10 L28 64"
-      stroke="#D5D9E2"
-      strokeWidth={2}
-      strokeDasharray="4 4"
-    />
-    {/* White Star in Center */}
-    <Polygon
-      points="72,21 76,32 87,33 79,40 82,51 72,45 62,51 65,40 57,33 68,32"
-      fill="#FFFFFF"
-    />
-  </Svg>
-);
 
 export default function CartScreen() {
-  const [productsMap, setProductsMap] = useState<Record<string, Product>>(initialProductsMap);
-
-  useEffect(() => {
-    productService.list().then((list) => {
-      if (list && list.length > 0) {
-        const map = list.reduce((acc, p) => {
-          acc[p.id] = p;
-          return acc;
-        }, {} as Record<string, Product>);
-        setProductsMap(map);
-      }
-    }).catch(() => {});
-  }, []);
+  const { productsMap } = useCatalog();
+  const coupons = useCoupons();
+  const RECOMMENDATIONS = RECOMMENDATION_IDS.map(id => productsMap[id]).filter(product => product?.isAvailable);
   const router = useRouter();
-  const { items, removeItem, addItem } = useCart();
+  const { items, removeItem, addItem, updateQuantity, promoCode, setPromoCode, fulfillmentType, setFulfillmentType,
+    isLoaded, needCutlery, setNeedCutlery } = useCart();
   const { showToast } = useToast();
+  const store = useStoreStatus();
   const insets = useSafeAreaInsets();
 
   // Cutlery state & modal (Image 2)
-  const [needCutlery, setNeedCutlery] = useState(false);
   const [cutleryModalVisible, setCutleryModalVisible] = useState(false);
   const [cutleryChecked, setCutleryChecked] = useState(false);
 
   // Voucher screen state (Image 1)
   const [voucherScreenVisible, setVoucherScreenVisible] = useState(false);
   const [inputVoucherCode, setInputVoucherCode] = useState('');
-  const [selectedVoucher, setSelectedVoucher] = useState<{
-    code: string;
-    discountAmount: number;
-    title: string;
-    isFreeShip?: boolean;
-  } | null>(null);
+  const selectedVoucher = (promoCode && findCoupon(coupons, promoCode)) || null;
+  const setSelectedVoucher = (voucher: { code: string } | null) => setPromoCode(voucher?.code || '');
 
   // Modal xác nhận xóa món
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
@@ -183,6 +89,7 @@ export default function CartScreen() {
   // Address selection modal flow
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [isProceeding, setIsProceeding] = useState(false);
 
   useEffect(() => {
     getSavedDeliveryAddress().then((saved) => {
@@ -190,7 +97,22 @@ export default function CartScreen() {
     });
   }, []);
 
+  const { user } = useAuth();
+  // Ordering needs a real account; say so here instead of after the guest has filled in checkout.
+  const mustSignIn = !user || user.isDemo;
+
   const handleProceedToCheckout = async () => {
+    if (isProceeding) return;
+    if (!store.open) {
+      showToast({ message: store.message, type: 'info' });
+      return;
+    }
+    if (mustSignIn) {
+      router.push({ pathname: '/auth/login', params: { returnTo: 'cart-checkout' } });
+      return;
+    }
+    setIsProceeding(true);
+    try {
     const hasChosen = await checkHasChosenAddress();
     if (!hasChosen) {
       // Khách chưa chọn địa chỉ ở trang chủ -> Hiện modal nhập địa chỉ
@@ -199,6 +121,9 @@ export default function CartScreen() {
       // Khách đã chọn địa chỉ rồi -> Chuyển thẳng sang thanh toán
       router.push('/checkout');
     }
+    } catch {
+      showToast({ message: 'Chưa thể mở thanh toán. Vui lòng thử lại.', type: 'error' });
+    } finally { setIsProceeding(false); }
   };
 
   // Calculate totals safely
@@ -211,23 +136,20 @@ export default function CartScreen() {
 
   const itemCount = items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
 
-  // Delivery fee logic
-  const FREE_SHIPPING_THRESHOLD = 300000;
-  const isFreeDelivery = subtotal >= FREE_SHIPPING_THRESHOLD || selectedVoucher?.isFreeShip;
-  const baseDeliveryFee = isFreeDelivery || items.length === 0 ? 0 : 22000;
-  const voucherDiscount = selectedVoucher?.isFreeShip ? 0 : (selectedVoucher?.discountAmount || 0);
-
-  const total = Math.max(0, subtotal + baseDeliveryFee - voucherDiscount);
+  const totals = calculateOrderTotals(items, productsMap, fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP', selectedVoucher);
+  const { discount: voucherDiscount, total } = totals;
   const earnedPoints = Math.floor(total / 10000);
 
-  const handleEditItem = (productId: string) => {
-    router.push({
-      pathname: '/product/[id]',
-      params: { id: productId },
-    });
+  const handleEditItem = (item: CartItem) => {
+    if (!canEditCartProduct(productsMap[item.productId])) return;
+    router.push({ pathname: '/product/[id]', params: { id: item.productId, lineId: item.lineId } });
   };
 
-  const handleAddRecommendation = (rec: (typeof RECOMMENDATIONS)[0]) => {
+  const handleAddRecommendation = (rec: Product) => {
+    if (rec.variants?.length) {
+      router.push({ pathname: '/product/[id]', params: { id: rec.id } });
+      return;
+    }
     addItem({
       productId: rec.id,
       addonIds: [],
@@ -254,7 +176,7 @@ export default function CartScreen() {
     const code = inputVoucherCode.trim().toUpperCase();
     if (!code) return;
 
-    const voucher = VALID_VOUCHERS[code];
+    const voucher = findCoupon(coupons, code);
     if (voucher) {
       if (subtotal < voucher.minSubtotal) {
         triggerHaptic('warning');
@@ -264,19 +186,23 @@ export default function CartScreen() {
         });
         return;
       }
-      setSelectedVoucher({
-        code,
-        title: voucher.title,
-        discountAmount: voucher.discountAmount,
-        isFreeShip: voucher.isFreeShip,
-      });
+      setSelectedVoucher(voucher);
       triggerHaptic('success');
-      showToast({ message: `Đã áp dụng mã ${code}: ${voucher.title}`, type: 'success' });
+      showToast({ message: `Đã áp dụng mã ${code}: ${voucher.description}`, type: 'success' });
     } else {
       triggerHaptic('error');
       showToast({ message: 'Mã giảm giá không hợp lệ. Vui lòng kiểm tra lại!', type: 'error' });
     }
   };
+
+  if (!isLoaded) {
+    return <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.emptyContainer}>
+        <ActivityIndicator color={BRAND_RED} />
+        <Text style={styles.emptySubtitle}>Đang tải giỏ hàng…</Text>
+      </View>
+    </SafeAreaView>;
+  }
 
   if (items.length === 0) {
     return (
@@ -330,6 +256,7 @@ export default function CartScreen() {
         <Text style={styles.headerTitle}>Giỏ hàng</Text>
         <View style={styles.placeholder} />
       </View>
+      <StoreClosedBanner status={store} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -351,7 +278,11 @@ export default function CartScreen() {
             const unitPrice = getItemLineUnitPrice(item, product) || (item as any).basePrice || 0;
             const lineTotal = unitPrice * (Number(item.quantity) || 1);
 
-            const variantName = variant?.name || 'Đế Kéo Tay Truyền Thống(Nhỏ)';
+            const options = [
+              ...(item.customization ? formatCustomizationSummary(item.customization) : variant ? [variant.name] : []),
+              ...item.addonIds.map(id => product?.addons?.find(addon => addon.id === id)?.name).filter(Boolean),
+              item.specialInstructions,
+            ].filter(Boolean).join(' • ');
             const isLast = index === items.length - 1;
 
             return (
@@ -371,48 +302,49 @@ export default function CartScreen() {
                     style={styles.itemImage}
                     resizeMode="cover"
                   />
-                  <View style={styles.discountBadge}>
-                    <Text style={styles.discountBadgeText}>GIÁ ƯU ĐÃI</Text>
-                    <Text style={styles.discountBadgePercent}>-50%</Text>
-                  </View>
+
                 </View>
 
                 {/* Details */}
                 <View style={styles.itemDetails}>
                   <View style={styles.itemTopLine}>
-                    <Text style={styles.itemName} numberOfLines={1}>
+                    <Text style={styles.itemName} numberOfLines={2}>
                       {product?.name || (item as any).name || 'Sản phẩm'}
                     </Text>
-                    <Text style={styles.itemQuantity}>{item.quantity}</Text>
                   </View>
 
-                  <Text style={styles.itemOptions} numberOfLines={3}>
-                    {item.customization ? formatCustomizationSummary(item.customization).join(' • ') || variantName : variantName}
-                  </Text>
+                  {!!options && <Text style={styles.itemOptions} numberOfLines={3}>{options}</Text>}
 
                   {/* Actions & Price */}
                   <View style={styles.itemBottomLine}>
+                    <QuantityStepper value={item.quantity} onChange={value => updateQuantity(item.lineId, value)} />
+                    <Text style={styles.itemPriceText}>{formatCurrency(lineTotal)}</Text>
+                  </View>
                     <View style={styles.actionLinksRow}>
-                      <TouchableOpacity
-                        onPress={() => item.productId && handleEditItem(item.productId)}
+                      {canEditCartProduct(product) && (
+                        <TouchableOpacity
+                        accessibilityLabel={`Sửa ${product?.name || "món"}`}
+                        accessibilityRole="button"
+                        style={styles.itemAction}
+                        onPress={() => handleEditItem(item)}
                         activeOpacity={0.7}
                       >
                         <Text style={styles.editActionText}>Sửa</Text>
                       </TouchableOpacity>
+                        )}
                       <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={`Xóa ${product?.name || 'món'} khỏi giỏ hàng`}
                         onPress={() => {
                           triggerHaptic('light');
                           setItemToDelete(item.lineId);
                         }}
                         activeOpacity={0.7}
-                        style={{ marginLeft: 16 }}
+                        style={styles.itemAction}
                       >
                         <Text style={styles.deleteActionText}>Xóa</Text>
                       </TouchableOpacity>
                     </View>
-
-                    <Text style={styles.itemPriceText}>{formatCurrency(lineTotal)}</Text>
-                  </View>
                 </View>
               </View>
             );
@@ -450,8 +382,10 @@ export default function CartScreen() {
                     {rec.description}
                   </Text>
                   <View style={styles.recBottomRow}>
-                    <Text style={styles.recPrice}>{formatCurrency(rec.price)}</Text>
+                    <Text style={styles.recPrice}>{rec.variants?.length ? 'Từ ' : ''}{formatCurrency(rec.basePrice)}</Text>
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={rec.variants?.length ? `Chọn kích cỡ ${rec.name}` : `Thêm ${rec.name} vào giỏ hàng`}
                       style={styles.recAddBtn}
                       onPress={() => handleAddRecommendation(rec)}
                       activeOpacity={0.8}
@@ -517,14 +451,11 @@ export default function CartScreen() {
             <Text style={styles.pricingValue}>{formatCurrency(subtotal)}</Text>
           </View>
 
-          <View style={styles.pricingRow}>
-            <View style={styles.infoLabelWrap}>
-              <Text style={styles.pricingLabel}>Giảm giá thành viên</Text>
-              <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
-            </View>
-            <Text style={styles.pricingValue}>0 đ</Text>
-          </View>
-
+          {selectedVoucher && subtotal < selectedVoucher.minSubtotal && (
+            <Text style={{ color: BRAND_RED, marginBottom: 12 }}>
+              Mã {selectedVoucher.code} cần đơn từ {formatCurrency(selectedVoucher.minSubtotal)}. Chưa áp dụng giảm giá.
+            </Text>
+          )}
           {selectedVoucher && voucherDiscount > 0 && (
             <View style={styles.pricingRow}>
               <Text style={[styles.pricingLabel, { color: BRAND_RED }]}>
@@ -536,15 +467,6 @@ export default function CartScreen() {
             </View>
           )}
 
-          <View style={styles.pricingRow}>
-            <View style={styles.infoLabelWrap}>
-              <Text style={styles.pricingLabel}>Phí giao hàng</Text>
-              <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
-            </View>
-            <Text style={styles.pricingValue}>
-              {baseDeliveryFee === 0 ? 'Miễn phí' : formatCurrency(baseDeliveryFee)}
-            </Text>
-          </View>
 
           <View style={styles.pricingDivider} />
 
@@ -552,7 +474,7 @@ export default function CartScreen() {
             <View>
               <Text style={styles.totalLabel}>Tổng cộng</Text>
               <Text style={styles.rewardPointsNote}>
-                Nhận <Text style={{ fontWeight: '700', color: '#111827' }}>{earnedPoints} điểm</Text> FPT rewards
+                Điểm dự kiến: <Text style={{ fontWeight: '700', color: '#111827' }}>{earnedPoints} điểm</Text> FPT Rewards
               </Text>
             </View>
             <Text style={styles.totalValue}>{formatCurrency(total)}</Text>
@@ -566,20 +488,17 @@ export default function CartScreen() {
       {/* BOTTOM STICKY CHECKOUT BAR                               */}
       {/* ======================================================== */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        {!isFreeDelivery && (
-          <View style={styles.freeShipHintRow}>
-            <Text style={styles.freeShipHintText}>
-              🎉 Thêm <Text style={{ fontWeight: '700' }}>{formatCurrency(FREE_SHIPPING_THRESHOLD - subtotal)}</Text> để nhận <Text style={{ fontWeight: '700' }}>Miễn phí</Text> giao hàng
-            </Text>
-          </View>
-        )}
 
         <TouchableOpacity
           style={styles.checkoutBtn}
           onPress={handleProceedToCheckout}
+          disabled={isProceeding}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: isProceeding, busy: isProceeding }}
           activeOpacity={0.88}
         >
-          <Text style={styles.checkoutBtnText}>Thanh toán</Text>
+          {isProceeding ? <ActivityIndicator color="#FFFFFF" /> :
+            <Text style={styles.checkoutBtnText}>{mustSignIn ? 'Đăng nhập để thanh toán' : 'Thanh toán'} • {formatCurrency(total)}</Text>}
         </TouchableOpacity>
       </View>
 
@@ -589,7 +508,9 @@ export default function CartScreen() {
         onClose={() => setShowAddressModal(false)}
         currentAddress={deliveryAddress}
         redirectToMenuOnConfirm={false}
-        onConfirmAddress={(addr) => {
+        initialFulfillment={fulfillmentType}
+        onConfirmAddress={(addr, mode) => {
+          setFulfillmentType(mode);
           saveDeliveryAddress(addr);
           setDeliveryAddress(addr);
           setShowAddressModal(false);
@@ -658,7 +579,7 @@ export default function CartScreen() {
               <View style={styles.appliedVoucherBadge}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.appliedVoucherCode}>Đã áp dụng: {selectedVoucher.code}</Text>
-                  <Text style={styles.appliedVoucherTitle}>{selectedVoucher.title}</Text>
+                  <Text style={styles.appliedVoucherTitle}>{selectedVoucher.description}</Text>
                 </View>
                 <TouchableOpacity
                   onPress={() => setSelectedVoucher(null)}

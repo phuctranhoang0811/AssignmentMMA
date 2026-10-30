@@ -7,19 +7,21 @@ import { colors } from '../theme/colors';
 import { AppText } from '../components/ui/AppText';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { styles } from '../styles/offers.styles';
-import { mockCoupons } from '../data/mockPromotions';
-import { updateCheckoutDraft } from '../state/checkoutDraft';
+import { useActiveCoupons } from '../services/catalog';
+import { useCart } from '../state/CartContext';
 import { useToast } from '../state/ToastContext';
 import { triggerHaptic } from '../utils/haptics';
 
 export default function OffersScreen() {
+  const coupons = useActiveCoupons();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
+  const { setPromoCode } = useCart();
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const handleCopyCode = (code: string) => {
-    updateCheckoutDraft({ promoCode: code });
+    setPromoCode(code);
     setCopiedCode(code);
     triggerHaptic('success');
     showToast({
@@ -44,7 +46,7 @@ export default function OffersScreen() {
           Các mã giảm giá đang áp dụng cho Pizza Time:
         </AppText>
 
-        {mockCoupons.map((coupon) => {
+        {coupons.map((coupon) => {
           const isCopied = copiedCode === coupon.code;
           return (
             <View key={coupon.code} style={styles.couponCard}>
@@ -65,7 +67,7 @@ export default function OffersScreen() {
                   <View style={styles.expiryRow}>
                     <Clock size={12} color={colors.textDisabled} />
                     <AppText variant="caption" color={colors.textDisabled} style={{ marginLeft: 4 }}>
-                      HSD: {coupon.expiresAt}
+                      HSD: {coupon.expiresAt || 'Không giới hạn'}
                     </AppText>
                   </View>
 

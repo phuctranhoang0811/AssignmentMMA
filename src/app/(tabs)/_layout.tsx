@@ -8,7 +8,7 @@ import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { triggerHaptic } from '../../utils/haptics';
 import { fontFamilies } from '../../theme/typography';
-import { styles, BRAND_RED } from '../../styles/tabsLayout.styles';
+import { styles, BRAND_RED, FLOATING_CART_OFFSET, FLOATING_CART_OFFSET_HOME } from '../../styles/tabsLayout.styles';
 
 // Custom Pizza Slice Icon for Menu Tab (matches user screenshot)
 const MenuPizzaIcon = ({ size = 22, color = '#6B7280' }: { size?: number; color?: any }) => (
@@ -126,7 +126,7 @@ export default function TabsLayout() {
                 e.preventDefault();
                 router.push({
                   pathname: '/auth/login',
-                  params: { returnTo: 'profile' },
+                  params: { returnTo: 'rewards' },
                 });
               }
             },
@@ -163,7 +163,7 @@ export default function TabsLayout() {
           style={[
             styles.floatingCartWrap,
             {
-              bottom: isHome ? tabHeight + 68 : tabHeight + 14,
+              bottom: tabHeight + (isHome ? FLOATING_CART_OFFSET_HOME : FLOATING_CART_OFFSET),
               transform: [{ scale: cartScaleAnim }],
             },
           ]}

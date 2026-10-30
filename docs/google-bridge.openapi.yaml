@@ -1,0 +1,150 @@
+openapi: 3.1.0
+info:
+  title: Pizza FPT Google login handoff for Expo Go
+  version: 1.0.0
+  description: >-
+    Browser Google/Firebase login handed to the device that created the request.
+    Use one HTTPS backend process. Requests expire in 5 minutes. Pairing codes are
+    visual checks only; authorization requires the 256-bit browser key or device verifier.
+    Tokens and verifiers must never be placed in query parameters or logs.
+paths:
+  /auth/bridge/start:
+    post:
+      summary: Start a request using SHA-256 hex of a device-generated random verifier
+      operationId: startGoogleLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge]
+              properties:
+                challenge: { $ref: '#/components/schemas/Secret' }
+      responses:
+        '201':
+          description: Keep verifier on device; open browserUrl. Its fragment contains a separate browser key.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessionId, browserUrl, pairingCode, expiresAt, projectId]
+                properties:
+                  sessionId: { $ref: '#/components/schemas/Secret' }
+                  browserUrl: { type: string, format: uri }
+                  pairingCode: { type: string, pattern: '^\d{6}$' }
+                  expiresAt: { type: integer, description: Unix time in milliseconds }
+                  projectId: { type: string }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/bridge/info:
+    post:
+      summary: Browser verifies its key and retrieves pairing metadata
+      operationId: inspectGoogleLogin
+      requestBody: { $ref: '#/components/requestBodies/Browser' }
+      responses:
+        '200': { description: JSON pairingCode and expiresAt; no user identity or tokens }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/bridge/approve:
+    post:
+      summary: Approve after browser user confirms matching code and Gmail
+      operationId: approveGoogleLogin
+      description: >-
+        Requires Origin equal to GOOGLE_BRIDGE_ORIGIN. Bearer must be a fresh,
+        non-revoked Firebase ID token from Google with a verified gmail.com email,
+        from the backend Firebase project. UID is derived from this token.
+      security: [{ firebaseIdToken: [] }]
+      requestBody: { $ref: '#/components/requestBodies/Browser' }
+      responses:
+        '200': { description: Approved; repeated approval by the same account is allowed }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/bridge/status:
+    post:
+      summary: Device polls only while foregrounded
+      operationId: getGoogleLoginStatus
+      requestBody: { $ref: '#/components/requestBodies/Device' }
+      responses:
+        '200':
+          description: No tokens; show approved email on the device for final user confirmation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state, pairingCode, expiresAt]
+                properties:
+                  state: { type: string, enum: [pending, approved] }
+                  pairingCode: { type: string }
+                  expiresAt: { type: integer }
+                  email: { type: string, format: email }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/bridge/claim:
+    post:
+      summary: Device consumes approved request exactly once after user confirms email
+      operationId: claimGoogleLogin
+      description: >-
+        Returns a Firebase custom token for signInWithCustomToken. Consumed before
+        minting; lost responses or signing failure require a new login request.
+        The browser key cannot claim. Client-selected UIDs are rejected.
+      requestBody: { $ref: '#/components/requestBodies/Device' }
+      responses:
+        '200':
+          description: Sensitive response; Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [customToken]
+                properties:
+                  customToken: { type: string }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/bridge/cancel:
+    post:
+      summary: Cancel a device request; never reopens consumed requests
+      operationId: cancelGoogleLogin
+      requestBody: { $ref: '#/components/requestBodies/Device' }
+      responses:
+        '200': { description: Cancelled or already consumed }
+        default: { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    firebaseIdToken: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    Secret: { type: string, pattern: '^[a-f0-9]{64}$' }
+    DeviceProof:
+      type: object
+      additionalProperties: false
+      required: [sessionId, verifier]
+      properties:
+        sessionId: { $ref: '#/components/schemas/Secret' }
+        verifier: { $ref: '#/components/schemas/Secret' }
+    BrowserProof:
+      type: object
+      additionalProperties: false
+      required: [sessionId, browserKey]
+      properties:
+        sessionId: { $ref: '#/components/schemas/Secret' }
+        browserKey: { $ref: '#/components/schemas/Secret' }
+  requestBodies:
+    Device:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeviceProof' }
+    Browser:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BrowserProof' }
+  responses:
+    Error:
+      description: >-
+        400 invalid shape; 401 invalid Firebase token; 403 wrong proof, origin or
+        Google identity; 409 pending/conflicting approval; 410 expired/cancelled/consumed;
+        429 rate limit; 503 disabled/capacity limit; 500 internal signing failure.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error: { type: string }

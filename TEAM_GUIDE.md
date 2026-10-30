@@ -1,56 +1,41 @@
-# 🍕 HƯỚNG DẪN KIỂM THỬ DÀNH CHO THÀNH VIÊN TRONG NHÓM (TEAM GUIDE)
+# Hướng dẫn test cho nhóm — Pizza FPT
 
-> **Dự án**: Pizza FPT Mobile App (React Native - Expo SDK)  
-> **Cơ sở dữ liệu đám mây chung**: Firebase Project `pizzastore-59bad`
+Backend (thanh toán, OTP email, đơn hàng) cần khóa bí mật nên **chỉ chạy trên máy của chủ dự án**. Mọi người khác chỉ cần điện thoại + Expo Go.
 
----
+## Người host (máy có `backend/.env` và file service account Firebase)
 
-## 🚀 1. Khởi Động Dự Án (Chạy Lần Đầu)
-
-Sau khi pull code về máy:
+Làm một lần:
 
 ```bash
-# 1. Cài đặt các thư viện phụ thuộc
 npm install
-
-# 2. Khởi chạy ứng dụng với Expo
-npm run dev
+npm --prefix backend install
+winget install --id Cloudflare.cloudflared --exact   # chỉ Windows, rồi mở terminal mới
 ```
 
-* Nhấn phím `a` trên terminal để mở máy ảo Android.
-* Hoặc quét mã QR bằng ứng dụng **Expo Go** trên điện thoại thật.
-
----
-
-## ⚡ 2. Cấu Hình Cơ Sở Dữ Liệu Dùng Chung (Firebase)
-
-* Dự án đã được cấu hình sẵn trong file [`src/services/firebase.ts`](file:///src/services/firebase.ts). **Tất cả thành viên trong nhóm không cần tạo thêm file `.env` cá nhân** — clone về là kết nối trực tiếp vào database chung của nhóm.
-* Quản lý dữ liệu trực tiếp trên Web Console:
-  - **Quản lý tài khoản User**: [Firebase Auth Console](https://console.firebase.google.com/u/0/project/pizzastore-59bad/authentication/users)
-  - **Quản lý dữ liệu (Menu, Orders)**: [Firestore Database Console](https://console.firebase.google.com/u/0/project/pizzastore-59bad/firestore)
-
----
-
-## 🍕 3. Khởi Tạo Menu Món Ăn Mẫu (One-Click Seed)
-
-Bất kỳ khi nào muốn cập nhật lại toàn bộ danh mục thực đơn (Pizza, Mì Ý, Sushi, Nước uống) lên Firebase, chỉ cần chạy 1 lệnh:
+Mỗi lần cho nhóm test:
 
 ```bash
-npm run seed:firebase
+npm run share
 ```
 
-Dữ liệu sẽ tự động đồng bộ vào collection `products` trên Cloud Firestore.
+Lệnh này tự làm: tạo link HTTPS công khai cho backend, chạy backend với link đó, đăng ký webhook payOS, rồi mở Expo ở chế độ tunnel và in mã QR. **Giữ terminal mở** trong lúc nhóm test; Ctrl+C là dừng tất cả.
 
----
+- Cùng Wi-Fi, không cần tunnel của Expo: `npm run share -- --lan`
+- Không đụng webhook payOS: `npm run share -- --no-webhook`
+- Backend lỗi: xem `.expo/share-backend.log`.
+- Đã có backend chạy sẵn ở cổng 3001 (`npm run dev`)? Tắt nó trước, vì backend cần nhận link công khai mới.
+- Đăng nhập Google trong Expo Go: thêm hostname `*.trycloudflare.com` mà script in ra vào Firebase → Authentication → Settings → Authorized domains (đổi mỗi lần chạy). Đăng ký/đăng nhập bằng email hoặc SĐT không cần bước này.
 
-## 👤 4. Kiểm Thử Đăng Ký / Đăng Nhập
+## Bạn bè trong nhóm
 
-* **Đăng ký tài khoản mới**:
-  - Không cần mã OTP xác thực email (tiện lợi cho kiểm thử nhóm).
-  - Nhập Email $\rightarrow$ Nhập Họ tên, SĐT $\rightarrow$ Nhập Mật khẩu (tối thiểu 8 ký tự).
-  - Dữ liệu tài khoản sẽ tự động lưu vào **Firebase Auth** và tạo hồ sơ người dùng trong collection `users` trên Firestore.
-* **Tài khoản test có sẵn**:
-  - Email: `testuser@pizzastore.com`
-  - Mật khẩu: `Password123!`
-* **Đăng nhập nhanh (Quick Demo)**:
-  - Có thể bấm nút *"Đăng nhập nhanh với tài khoản Demo"* trên màn hình Đăng nhập để vào ngay app.
+1. Cài **Expo Go** (Google Play / App Store).
+2. Quét mã QR host gửi (iPhone: quét bằng app Camera).
+3. Đăng ký tài khoản mới (mã OTP gửi về email thật của bạn) rồi test theo [docs/TEST_CHECKLIST.md](docs/TEST_CHECKLIST.md).
+
+## Lưu ý khi test
+
+- Dữ liệu là Firebase `pizzastore-59bad` **dùng chung**: đơn, tài khoản bạn tạo ai cũng thấy. Đặt tên rõ ràng, đừng xóa dữ liệu của người khác.
+- Thanh toán QR payOS là **tiền thật**. Khi test hãy chọn thanh toán khi nhận hàng (COD).
+- Expo Go không nhận được thông báo đẩy (push) và không có Google Sign-In native; các phần này cần development build (`npm run dev:all:client`).
+- Tài khoản nhân viên / admin / shipper: host gán `role` trong Firestore `users/{uid}` (xem bảng 1.2 trong TEST_CHECKLIST).
+- Admin mới cần deploy rules và seed menu một lần: `npx firebase-tools deploy --only firestore:rules`, `npm run seed:firebase`.

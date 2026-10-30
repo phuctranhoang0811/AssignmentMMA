@@ -9,7 +9,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
   UtensilsCrossed,
-  ChefHat,
   Ticket,
   Users,
   TrendingUp,
@@ -17,7 +16,6 @@ import {
   CheckCircle,
   PackageCheck,
   ChevronRight,
-  ExternalLink,
   ClipboardList,
   BarChart2,
 } from 'lucide-react-native';
@@ -28,8 +26,6 @@ import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { AppText } from '../../components/ui/AppText';
 import { colors } from '../../theme/colors';
 import { styles } from '../../styles/adminDashboard.styles';
-import { mockProducts } from '../../data/mockProducts';
-import { initialMockOrders } from '../../data/mockOrders';
 import { formatCurrency } from '../../utils/formatCurrency';
 
 export default function AdminDashboardScreen() {
@@ -56,45 +52,26 @@ export default function AdminDashboardScreen() {
           let pendingCount = 0;
           let completedCount = 0;
 
-          if (!snapshot.empty) {
-            snapshot.forEach((doc: any) => {
-              const data = doc.data();
-              const total = Number(data.totalAmount || data.total || 0);
-              const status = data.status;
+          snapshot.forEach((doc: any) => {
+            const data = doc.data();
+            const total = Number(data.totalAmount || data.total || 0);
+            const status = data.status;
 
-              if (status === 'COMPLETED' || status === 'DELIVERED') {
-                revenue += total;
-                completedCount++;
-              } else if (status === 'PENDING' || status === 'PENDING_CONFIRMATION') {
-                pendingCount++;
-              }
-            });
+            if (status === 'COMPLETED' || status === 'DELIVERED') {
+              revenue += total;
+              completedCount++;
+            } else if (status === 'PENDING' || status === 'PENDING_CONFIRMATION') {
+              pendingCount++;
+            }
+          });
 
-            setStats((prev) => ({
-              ...prev,
-              totalRevenue: revenue,
-              pendingOrdersCount: pendingCount,
-              completedOrdersCount: completedCount,
-            }));
-          } else {
-            // Fallback từ initialMockOrders nếu Firestore trống
-            const mockRev = initialMockOrders
-              .filter((o: any) => o.status === 'COMPLETED')
-              .reduce((sum: number, o: any) => sum + (o.total || 0), 0);
-            const mockPending = initialMockOrders.filter(
-              (o: any) => o.status === 'PENDING_CONFIRMATION'
-            ).length;
-            const mockCompleted = initialMockOrders.filter(
-              (o: any) => o.status === 'COMPLETED'
-            ).length;
-
-            setStats((prev) => ({
-              ...prev,
-              totalRevenue: mockRev,
-              pendingOrdersCount: mockPending,
-              completedOrdersCount: mockCompleted,
-            }));
-          }
+          // No orders yet means zeros, not demo numbers.
+          setStats((prev) => ({
+            ...prev,
+            totalRevenue: revenue,
+            pendingOrdersCount: pendingCount,
+            completedOrdersCount: completedCount,
+          }));
         },
         (err: any) => {
           console.warn('Lỗi đọc realtime orders:', err.message);
@@ -121,11 +98,8 @@ export default function AdminDashboardScreen() {
             });
             setStats((prev) => ({ ...prev, activeProductsCount: active }));
           } else {
-            // Fallback mockProducts
-            setStats((prev) => ({
-              ...prev,
-              activeProductsCount: mockProducts.length,
-            }));
+            // An empty catalog is zero products, not the built-in demo list.
+            setStats((prev) => ({ ...prev, activeProductsCount: 0 }));
           }
         },
         (err: any) => {
@@ -200,7 +174,7 @@ export default function AdminDashboardScreen() {
               </View>
             </View>
             <AppText variant="price" color={colors.success} style={styles.statValue} numberOfLines={1}>
-              {formatCurrency(stats.totalRevenue || 1250000)}
+              {formatCurrency(stats.totalRevenue)}
             </AppText>
             <AppText variant="small" color={colors.textSecondary}>
               Đã bao gồm đơn hoàn tất
@@ -236,7 +210,7 @@ export default function AdminDashboardScreen() {
               </View>
             </View>
             <AppText variant="price" color={colors.primary} style={styles.statValue} numberOfLines={1}>
-              {stats.activeProductsCount || mockProducts.length} món
+              {stats.activeProductsCount} món
             </AppText>
             <AppText variant="small" color={colors.textSecondary}>
               Trạng thái In-Stock
@@ -350,6 +324,98 @@ export default function AdminDashboardScreen() {
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
                   Phân quyền Admin, Manager, Bếp, Rider & chặn tài khoản.
+                </AppText>
+              </View>
+            </View>
+            <ChevronRight size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.moduleCard}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Giờ mở cửa và nhận đơn"
+            onPress={() => router.push('/admin/store')}
+          >
+            <View style={styles.moduleLeft}>
+              <View style={[styles.moduleIconBox, { backgroundColor: colors.warningSoft }]}>
+                <ClipboardList size={24} color={colors.warning} />
+              </View>
+              <View style={styles.moduleTextBox}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Giờ Mở Cửa & Nhận Đơn
+                </AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Đặt giờ mở cửa và tạm ngưng nhận đơn khi bếp quá tải.
+                </AppText>
+              </View>
+            </View>
+            <ChevronRight size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.moduleCard}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Phản ánh của khách"
+            onPress={() => router.push('/admin/issues')}
+          >
+            <View style={styles.moduleLeft}>
+              <View style={[styles.moduleIconBox, { backgroundColor: colors.warningSoft }]}>
+                <ClipboardList size={24} color={colors.warning} />
+              </View>
+              <View style={styles.moduleTextBox}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Phản Ánh Của Khách
+                </AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Xử lý các vấn đề khách báo: thiếu món, giao trễ, món nguội.
+                </AppText>
+              </View>
+            </View>
+            <ChevronRight size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.moduleCard}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Đối soát tài xế"
+            onPress={() => router.push('/admin/riders')}
+          >
+            <View style={styles.moduleLeft}>
+              <View style={[styles.moduleIconBox, { backgroundColor: colors.warningSoft }]}>
+                <ClipboardList size={24} color={colors.warning} />
+              </View>
+              <View style={styles.moduleTextBox}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Đối Soát Tài Xế
+                </AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Chốt tiền mặt tài xế đã thu và tiền công cần trả.
+                </AppText>
+              </View>
+            </View>
+            <ChevronRight size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.moduleCard}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Nhật ký thao tác"
+            onPress={() => router.push('/admin/audit')}
+          >
+            <View style={styles.moduleLeft}>
+              <View style={[styles.moduleIconBox, { backgroundColor: colors.warningSoft }]}>
+                <ClipboardList size={24} color={colors.warning} />
+              </View>
+              <View style={styles.moduleTextBox}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Nhật Ký Thao Tác
+                </AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Xem ai đã đổi giá, hoàn tiền, đổi quyền hay hủy đơn.
                 </AppText>
               </View>
             </View>

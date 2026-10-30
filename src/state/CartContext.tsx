@@ -2,15 +2,23 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from '
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CartItem } from '../types/order';
 import { generateCartLineKey } from '../utils/cartLineKey';
-import { mockProducts } from '../data/mockProducts';
+import { cachedProduct, useCatalog } from '../services/catalog';
 import { getItemLineUnitPrice } from '../utils/calculateTotals';
-import { productService } from '../services';
-import { Product } from '../types/product';
+import { replaceCartItem } from '../utils/cartOperations';
+import { isCustomizablePizza } from '../types/pizzaCustomization';
 
 interface CartContextType {
   items: CartItem[];
   itemCount: number;
   subtotal: number;
+  isLoaded: boolean;
+  needCutlery: boolean;
+  setNeedCutlery: (value: boolean) => void;
+  promoCode: string;
+  setPromoCode: (code: string) => void;
+  fulfillmentType: 'delivery' | 'takeaway';
+  setFulfillmentType: (mode: 'delivery' | 'takeaway') => void;
+  updateItem: (lineId: string, item: Omit<CartItem, 'lineId'>) => void;
   addItem: (item: Omit<CartItem, 'lineId'>) => void;
   updateQuantity: (lineId: string, quantity: number) => void;
   removeItem: (lineId: string) => void;
@@ -18,38 +26,40 @@ interface CartContextType {
 }
 
 const CART_STORAGE_KEY = '@pizza_time_cart_v1';
+const CHECKOUT_STORAGE_KEY = '@pizza_checkout_preferences_v1';
 
-const defaultProductsMap = mockProducts.reduce((acc, p) => {
-  acc[p.id] = p;
-  return acc;
-}, {} as Record<string, Product>);
+// Quick-add buttons send no size; the backend rejects a sized product without one. A customized pizza's size
+// must equal its variant, so use that, else the first (default) size.
+const withVariant = (productId: string, variantId?: string, sizeId?: string) => {
+  const variants = cachedProduct(productId)?.variants ?? [];
+  return variantId ?? variants.find(v => v.id === sizeId)?.id ?? variants[0]?.id;
+};
+// Older carts may hold a pizza builder state on combos; the backend rejects it there.
+const validCustomization = (productId: string, customization?: CartItem['customization']) =>
+  isCustomizablePizza(cachedProduct(productId)) ? customization : undefined;
 
 const CartContext = createContext<CartContextType>({} as CartContextType);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { productsMap } = useCatalog();
   const [items, setItems] = useState<CartItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [productsMap, setProductsMap] = useState<Record<string, Product>>(defaultProductsMap);
-
-  // Sync productsMap from Firebase Firestore via productService
-  useEffect(() => {
-    productService
-      .list()
-      .then((list) => {
-        if (list && list.length > 0) {
-          const map = list.reduce((acc, p) => {
-            acc[p.id] = p;
-            return acc;
-          }, {} as Record<string, Product>);
-          setProductsMap(map);
-        }
-      })
-      .catch(() => {});
-  }, []);
+  const [needCutlery, setNeedCutlery] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'takeaway'>('delivery');
 
   useEffect(() => {
     (async () => {
       try {
+        const preferences = await AsyncStorage.getItem(CHECKOUT_STORAGE_KEY);
+        if (preferences) {
+          try {
+            const saved = JSON.parse(preferences);
+            if (typeof saved?.promoCode === 'string') setPromoCode(saved.promoCode);
+            if (typeof saved?.needCutlery === 'boolean') setNeedCutlery(saved.needCutlery);
+            if (saved?.fulfillmentType === 'delivery' || saved?.fulfillmentType === 'takeaway') setFulfillmentType(saved.fulfillmentType);
+          } catch { /* Invalid preferences must not prevent restoring the cart. */ }
+        }
         const stored = await AsyncStorage.getItem(CART_STORAGE_KEY);
         if (stored) {
           const parsed = JSON.parse(stored);
@@ -60,17 +70,19 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .map((item: any) => {
                   const pid = item.productId || item.id;
                   const addons = Array.isArray(item.addonIds) ? item.addonIds : [];
+                  const variantId = withVariant(pid, item.variantId, item.customization?.sizeId);
+                  const customization = validCustomization(pid, item.customization);
                   const lid =
-                    item.lineId && !item.lineId.startsWith('undefined')
+                    item.lineId && !item.lineId.startsWith('undefined') && variantId === item.variantId && customization === item.customization
                       ? item.lineId
-                      : generateCartLineKey(pid, item.variantId, addons, item.specialInstructions, item.customization);
+                      : generateCartLineKey(pid, variantId, addons, item.specialInstructions, customization);
                   return {
                     productId: pid,
-                    variantId: item.variantId,
+                    variantId,
                     addonIds: addons,
                     specialInstructions: item.specialInstructions,
                     quantity: Number(item.quantity) || 1,
-                    customization: item.customization,
+                    customization,
                     lineId: lid,
                   };
                 })
@@ -91,17 +103,25 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [items, isLoaded]);
 
+  useEffect(() => {
+    if (isLoaded) {
+      AsyncStorage.setItem(CHECKOUT_STORAGE_KEY, JSON.stringify({ promoCode, fulfillmentType, needCutlery })).catch(() => {});
+    }
+  }, [promoCode, fulfillmentType, needCutlery, isLoaded]);
+
   const addItem = (item: any) => {
     const productId = item.productId || item.id;
     if (!productId) return;
     const qty = Number(item.quantity) || 1;
     const addonIds = Array.isArray(item.addonIds) ? item.addonIds : [];
+    const variantId = withVariant(productId, item.variantId, item.customization?.sizeId);
+    const customization = validCustomization(productId, item.customization);
     const lineId = generateCartLineKey(
       productId,
-      item.variantId,
+      variantId,
       addonIds,
       item.specialInstructions,
-      item.customization
+      customization
     );
 
     setItems((prev) => {
@@ -117,11 +137,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...prev,
         {
           productId,
-          variantId: item.variantId,
+          variantId,
           addonIds,
           specialInstructions: item.specialInstructions,
           quantity: qty,
-          customization: item.customization,
+          customization,
           lineId,
         },
       ];
@@ -145,6 +165,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearCart = () => {
     setItems([]);
+    setPromoCode('');
+    setNeedCutlery(false);
+  };
+
+  const updateItem = (lineId: string, item: Omit<CartItem, 'lineId'>) => {
+    setItems(prev => replaceCartItem(prev, lineId, item));
   };
 
   const itemCount = useMemo(() => {
@@ -166,6 +192,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         items,
         itemCount,
         subtotal,
+        isLoaded, needCutlery, setNeedCutlery,
+        promoCode, setPromoCode, fulfillmentType, setFulfillmentType, updateItem,
         addItem,
         updateQuantity,
         removeItem,

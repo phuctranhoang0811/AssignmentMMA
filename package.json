@@ -7,44 +7,77 @@
     "@expo/metro-runtime": "~58.0.15",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "^2.2.0",
-    "@types/nodemailer": "^8.0.2",
+    "@react-native-google-signin/google-signin": "16.1.5",
     "expo": "^58.0.0",
     "expo-constants": "~58.0.13",
+    "expo-crypto": "~58.0.7",
+    "expo-dev-client": "~58.0.15",
     "expo-font": "~58.0.10",
     "expo-haptics": "~58.0.0",
     "expo-linking": "~58.0.14",
     "expo-location": "~58.0.19",
+    "expo-notifications": "~58.1.7",
     "expo-router": "~58.0.26",
     "expo-status-bar": "~58.0.4",
     "firebase": "^13.1.0",
     "lucide-react-native": "^1.58.0",
-    "nodemailer": "^10.2.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.0",
+    "react-native-qrcode-svg": "^6.3.28",
     "react-native-safe-area-context": "~5.10.1",
     "react-native-screens": "~4.30.0",
     "react-native-svg": "15.16.0",
     "react-native-web": "^0.21.4",
-    "react-native-webview": "14.0.1"
+    "react-native-webview": "14.0.1",
+    "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
     "@expo/ngrok": "^4.1.3",
+    "@react-native/jest-preset": "^0.88.1",
+    "@testing-library/react-native": "^14.1.0",
+    "@types/jest": "30.0.0",
     "@types/react": "~19.3.0",
+    "concurrently": "^9.2.1",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~58.0.4",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.13",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start --go",
     "dev": "expo start --go",
     "android": "expo start --android --go",
+    "android:dev": "node scripts/dev-android.mjs",
+    "share": "node scripts/share-test.mjs",
     "ios": "expo start --ios --go",
     "web": "expo start --web",
-    "seed:firebase": "npx tsx scripts/seed-firebase-products.ts",
+    "seed:firebase": "npm --prefix backend run seed:catalog",
     "seed:accounts": "npx tsx scripts/create-admin-employee-accounts.ts",
     "view:firebase": "npx tsx scripts/view-firebase-data.ts",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test:rules": "npm --prefix firestore-tests install --no-audit --no-fund && npm --prefix firestore-tests test",
+    "dev:client": "expo start --dev-client",
+    "dev:all": "concurrently -k -n api,app -c blue,green \"npm run dev --prefix backend\" \"expo start --go\"",
+    "dev:all:client": "concurrently -k -n api,app -c blue,green \"npm run dev --prefix backend\" \"expo start --dev-client\"",
+    "google:expo-go": "node scripts/start-google-bridge.mjs",
+    "test:app": "jest",
+    "google:check": "node scripts/check-google-setup.mjs"
   },
-  "private": true
+  "private": true,
+  "jest": {
+    "preset": "jest-expo",
+    "testMatch": [
+      "<rootDir>/src/**/*.spec.{ts,tsx}"
+    ],
+    "setupFiles": [
+      "<rootDir>/jest.setup.js"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|react-native-svg)"
+    ],
+    "testTimeout": 20000,
+    "maxWorkers": "50%"
+  }
 }

@@ -6,49 +6,20 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
-  Alert,
   Modal,
   Pressable,
   KeyboardAvoidingView,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, ChevronDown, Check, Eye, EyeOff } from 'lucide-react-native';
-import Svg, { Path, Polygon, Circle, G } from 'react-native-svg';
+import { ChevronLeft, ChevronDown, Check, Eye, EyeOff, CalendarDays } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
-import { generateOtpCode, sendOtpToEmail } from '../../services/otpService';
+import { sendOtpToEmail, verifyOtp } from '../../services/otpService';
 import { styles, BRAND_RED } from '../../styles/register.styles';
+import { CelebrationPopper } from '../../components/auth/CelebrationPopper';
+import { birthdayError, birthdayText } from '../../utils/birthday';
 
-// Party Popper Celebration SVG for Step 4
-const CelebrationPopper = () => (
-  <Svg width={120} height={120} viewBox="0 0 120 120" fill="none">
-    {/* Confetti streamers */}
-    <Path d="M60 45 C65 25, 75 20, 85 22" stroke="#00B4D8" strokeWidth={5} strokeLinecap="round" />
-    <Path d="M52 42 C45 28, 50 15, 60 12" stroke="#FFB703" strokeWidth={4} strokeLinecap="round" />
-    <Path d="M68 48 C80 38, 92 40, 96 32" stroke="#E63946" strokeWidth={4} strokeLinecap="round" />
-
-    {/* Stars / Confetti dots */}
-    <Circle cx="40" cy="30" r="3.5" fill="#E63946" />
-    <Circle cx="72" cy="18" r="4" fill="#00B4D8" />
-    <Circle cx="88" cy="42" r="3" fill="#FFB703" />
-    <Circle cx="48" cy="16" r="3" fill="#FB8500" />
-    <Circle cx="98" cy="24" r="2.5" fill="#E63946" />
-
-    {/* Sparkle Stars */}
-    <Path d="M42 24 L44 19 L46 24 L51 26 L46 28 L44 33 L42 28 L37 26 Z" fill="#FFB703" />
-    <Path d="M78 32 L79.5 28 L81 32 L85 33.5 L81 35 L79.5 39 L78 35 L74 33.5 Z" fill="#FB8500" />
-
-    {/* Party Cone with Stripes */}
-    <G transform="rotate(35 50 75)">
-      {/* Base Cone */}
-      <Polygon points="50,40 25,95 75,95" fill="#FB8500" />
-      {/* Red Stripes */}
-      <Polygon points="40,62 33,78 67,78 60,62" fill="#E63946" />
-      <Polygon points="46,48 43,55 57,55 54,48" fill="#E63946" />
-      <Polygon points="28,88 25,95 75,95 72,88" fill="#E63946" />
-    </G>
-  </Svg>
-);
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -60,9 +31,9 @@ export default function RegisterScreen() {
   // Form State
   const [email, setEmail] = useState('');
   const [fullname, setFullname] = useState('');
-  const [birthYear, setBirthYear] = useState('2000');
-  const [birthMonth, setBirthMonth] = useState('01');
-  const [birthDay, setBirthDay] = useState('01');
+  const [birthYear, setBirthYear] = useState('');
+  const [birthMonth, setBirthMonth] = useState('');
+  const [birthDay, setBirthDay] = useState('');
   const [gender, setGender] = useState('Nam');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -76,12 +47,12 @@ export default function RegisterScreen() {
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '']);
   const [timerSeconds, setTimerSeconds] = useState(300);
-  const [serverOtp, setServerOtp] = useState('');
   const [isSendingOtp, setIsSendingOtp] = useState(false);
 
-  // Modals for Step 2 Date/Gender
   const [showGenderPicker, setShowGenderPicker] = useState(false);
-  const [datePickerType, setDatePickerType] = useState<'year' | 'month' | 'day' | null>(null);
+  const dayRef = useRef<any>(null);
+  const monthRef = useRef<any>(null);
+  const yearRef = useRef<any>(null);
 
   // Refs for OTP inputs
   const otpInputRefs = [
@@ -124,27 +95,20 @@ export default function RegisterScreen() {
     }
 
     setIsSendingOtp(true);
-    const newOtp = generateOtpCode();
-    setServerOtp(newOtp);
-
-    const result = await sendOtpToEmail(trimmedEmail, newOtp);
+    const result = await sendOtpToEmail(trimmedEmail);
     setIsSendingOtp(false);
+    if (!result.success) {
+      Alert.alert('Chưa gửi được mã', result.error);
+      return;
+    }
 
     setTimerSeconds(300);
     setOtp(['', '', '', '']);
     setShowOtpModal(true);
-
-    if (result.success) {
-      Alert.alert(
-        'Đã gửi mã OTP',
-        `Mã xác nhận 4 số đã được gửi đến email:\n${trimmedEmail}\n\nVui lòng kiểm tra hộp thư đến (hoặc hòm thư Spam).`
-      );
-    } else {
-      Alert.alert(
-        'Thông báo xác thực',
-        `Không thể kết nối dịch vụ gửi email: ${result.error}\n(Mã xác thực tạm thời của bạn là: ${newOtp})`
-      );
-    }
+    Alert.alert(
+      'Đã gửi mã OTP',
+      `Mã xác nhận 4 số đã được gửi đến email:\n${trimmedEmail}\n\nVui lòng kiểm tra hộp thư đến (hoặc hòm thư Spam).`
+    );
   };
 
   // Resend OTP
@@ -154,17 +118,13 @@ export default function RegisterScreen() {
     if (!trimmedEmail) return;
 
     setIsSendingOtp(true);
-    const newOtp = generateOtpCode();
-    setServerOtp(newOtp);
-
-    const result = await sendOtpToEmail(trimmedEmail, newOtp);
+    const result = await sendOtpToEmail(trimmedEmail);
     setIsSendingOtp(false);
-    setTimerSeconds(300);
-
     if (result.success) {
+      setTimerSeconds(300);
       Alert.alert('Đã gửi lại mã', `Mã OTP mới đã được gửi đến email:\n${trimmedEmail}`);
     } else {
-      Alert.alert('Thông báo', `Không thể gửi email. Mã OTP dự phòng của bạn là: ${newOtp}`);
+      Alert.alert('Chưa gửi được mã', result.error);
     }
   };
 
@@ -186,26 +146,42 @@ export default function RegisterScreen() {
     }
   };
 
-  const handleVerifyOtp = () => {
+  const handleVerifyOtp = async () => {
     const codeStr = otp.join('');
     if (codeStr.length < 4) {
       Alert.alert('Thông báo', 'Vui lòng nhập đủ 4 số mã xác nhận.');
       return;
     }
 
-    // Xác nhận mã hợp lệ (hoặc mã 1234 dự phòng cho test offline)
-    if (codeStr === serverOtp || codeStr === '1234') {
+    // The code only exists on the server, which checks expiry and limits attempts.
+    const result = await verifyOtp(email.trim().toLowerCase(), codeStr);
+    if (result.success) {
       setShowOtpModal(false);
       setCurrentStep(2);
     } else {
-      Alert.alert('Sai mã xác nhận', 'Mã OTP không chính xác. Vui lòng kiểm tra lại email của bạn!');
+      Alert.alert('Sai mã xác nhận', result.error);
     }
+  };
+
+  // Birthday is typed as dd / mm / yyyy; each box jumps to the next one when it is full.
+  const typeBirthPart = (text: string, max: number, set: (value: string) => void, next?: React.RefObject<any>) => {
+    const digits = text.replace(/\D/g, '').slice(0, max);
+    set(digits);
+    if (digits.length === max) next?.current?.focus();
+  };
+  const backFromEmpty = (value: string, previous: React.RefObject<any>) => (e: any) => {
+    if (e.nativeEvent.key === 'Backspace' && !value) previous.current?.focus();
   };
 
   // Step 2: Submit Personal Info
   const handleStep2Submit = () => {
     if (!fullname.trim()) {
       Alert.alert('Thông báo', 'Vui lòng nhập tên của bạn.');
+      return;
+    }
+    const dateProblem = birthdayError(birthDay, birthMonth, birthYear);
+    if (dateProblem) {
+      Alert.alert('Thông báo', dateProblem);
       return;
     }
     const cleanPhone = phone.trim().replace(/[\s.-]/g, '');
@@ -255,18 +231,14 @@ export default function RegisterScreen() {
       const cleanPhone = phone.trim().replace(/[\s.-]/g, '');
       await registerDemo(fullname, email, cleanPhone, password, {
         gender,
-        birthday: `${birthDay}/${birthMonth}/${birthYear}`,
+        birthday: birthdayText(birthDay, birthMonth, birthYear),
+        otpCode: otp.join(''),
       });
       setCurrentStep(4);
     } catch (e: any) {
       Alert.alert('Đăng ký thất bại', e.message || 'Có lỗi xảy ra.');
     }
   };
-
-  // Options for pickers
-  const years = Array.from({ length: 70 }, (_, i) => String(2010 - i));
-  const months = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
-  const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -411,30 +383,46 @@ export default function RegisterScreen() {
                 <Text style={styles.fieldLabel}>
                   Ngày sinh <Text style={styles.requiredStar}>*</Text>
                 </Text>
-                <View style={styles.dateRow}>
-                  <TouchableOpacity
-                    style={styles.datePickerBtn}
-                    onPress={() => setDatePickerType('year')}
-                  >
-                    <Text style={styles.datePickerBtnText}>{birthYear || 'Năm'}</Text>
-                    <ChevronDown size={16} color="#6B7280" />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.datePickerBtn}
-                    onPress={() => setDatePickerType('month')}
-                  >
-                    <Text style={styles.datePickerBtnText}>Tháng {birthMonth || ''}</Text>
-                    <ChevronDown size={16} color="#6B7280" />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.datePickerBtn}
-                    onPress={() => setDatePickerType('day')}
-                  >
-                    <Text style={styles.datePickerBtnText}>Ngày {birthDay || ''}</Text>
-                    <ChevronDown size={16} color="#6B7280" />
-                  </TouchableOpacity>
+                <View style={styles.dateBox}>
+                  <TextInput
+                    ref={dayRef}
+                    style={[styles.dateInput, styles.dateInputShort]}
+                    placeholder="DD"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    value={birthDay}
+                    onChangeText={t => typeBirthPart(t, 2, setBirthDay, monthRef)}
+                    accessibilityLabel="Ngày sinh: ngày"
+                  />
+                  <Text style={styles.dateSeparator}>/</Text>
+                  <TextInput
+                    ref={monthRef}
+                    style={[styles.dateInput, styles.dateInputShort]}
+                    placeholder="MM"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    value={birthMonth}
+                    onChangeText={t => typeBirthPart(t, 2, setBirthMonth, yearRef)}
+                    onKeyPress={backFromEmpty(birthMonth, dayRef)}
+                    accessibilityLabel="Ngày sinh: tháng"
+                  />
+                  <Text style={styles.dateSeparator}>/</Text>
+                  <TextInput
+                    ref={yearRef}
+                    style={[styles.dateInput, styles.dateInputYear]}
+                    placeholder="YYYY"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={4}
+                    value={birthYear}
+                    onChangeText={t => typeBirthPart(t, 4, setBirthYear)}
+                    onKeyPress={backFromEmpty(birthYear, monthRef)}
+                    accessibilityLabel="Ngày sinh: năm"
+                  />
+                  <View style={{ flex: 1 }} />
+                  <CalendarDays size={18} color="#9CA3AF" />
                 </View>
               </View>
 
@@ -685,40 +673,6 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
           </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Date Picker Modal */}
-      <Modal
-        visible={datePickerType !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDatePickerType(null)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setDatePickerType(null)}>
-          <View style={styles.pickerModalContent}>
-            <Text style={styles.modalPickerTitle}>
-              Chọn {datePickerType === 'year' ? 'Năm sinh' : datePickerType === 'month' ? 'Tháng sinh' : 'Ngày sinh'}
-            </Text>
-            <ScrollView style={{ maxHeight: 280 }}>
-              {(datePickerType === 'year' ? years : datePickerType === 'month' ? months : days).map((item) => (
-                <TouchableOpacity
-                  key={item}
-                  style={styles.pickerItem}
-                  onPress={() => {
-                    if (datePickerType === 'year') setBirthYear(item);
-                    if (datePickerType === 'month') setBirthMonth(item);
-                    if (datePickerType === 'day') setBirthDay(item);
-                    setDatePickerType(null);
-                  }}
-                >
-                  <Text style={styles.pickerItemText}>
-                    {datePickerType === 'month' ? `Tháng ${item}` : datePickerType === 'day' ? `Ngày ${item}` : item}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
         </Pressable>
       </Modal>
 

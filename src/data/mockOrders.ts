@@ -73,7 +73,7 @@ export const initialMockOrders: Order[] = [
       },
     ],
     status: 'PREPARING',
-    paymentMethod: 'MOCK_WALLET',
+    paymentMethod: 'PAYOS',
     paymentStatus: 'PAID_DEMO',
     subtotal: 164000,
     discount: 0,

@@ -6,15 +6,14 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  Alert,
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Info, Package } from 'lucide-react-native';
-import { db } from '../../services/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { lookupOrder } from '../../services/orderApi';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { triggerHaptic } from '../../utils/haptics';
 import { styles, BRAND_RED } from '../../styles/orderLookup.styles';
@@ -23,14 +22,14 @@ export default function OrderLookupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
+  const [codeQuery, setCodeQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
 
   const handleSearch = async () => {
-    const rawQuery = searchQuery.trim();
-    if (!rawQuery) {
-      Alert.alert('Vui lòng nhập thông tin', 'Hãy nhập số điện thoại hoặc mã đơn hàng để tìm kiếm.');
+    if (searchQuery.replace(/\D/g, '').length < 9 || codeQuery.trim().length < 4) {
+      Alert.alert('Vui lòng nhập đủ thông tin', 'Nhập số điện thoại đặt hàng và mã đơn hàng (in trên màn hình đặt hàng thành công).');
       return;
     }
 
@@ -40,56 +39,13 @@ export default function OrderLookupScreen() {
     setHasSearched(true);
     setSelectedOrder(null);
 
+    // Both phone and code are required so nobody can read another customer's order from a phone number alone.
     try {
-      const ordersCol = collection(db, 'orders');
-      const cleanCode = rawQuery.replace(/^#/, '').toUpperCase();
-      const foundOrders: any[] = [];
-
-      // 1. Tìm chính xác theo mã đơn hàng
-      const codeQuery = query(ordersCol, where('orderCode', '==', cleanCode));
-      const codeSnapshot = await getDocs(codeQuery);
-      codeSnapshot.forEach((doc) => {
-        foundOrders.push({ id: doc.id, ...doc.data() });
-      });
-
-      // 2. Tìm theo số điện thoại (chỉ tìm bằng SĐT hoặc Mã đơn hàng, KHÔNG tìm theo tên hay gmail)
-      const cleanDigits = rawQuery.replace(/\D/g, '');
-      if (cleanDigits.length >= 8) {
-        const phoneVariations = new Set<string>();
-        phoneVariations.add(rawQuery);
-        phoneVariations.add(cleanDigits);
-        phoneVariations.add(cleanDigits.startsWith('0') ? cleanDigits.slice(1) : '0' + cleanDigits);
-        phoneVariations.add(cleanDigits.startsWith('84') ? cleanDigits.slice(2) : '84' + cleanDigits);
-        phoneVariations.add(cleanDigits.startsWith('84') ? '0' + cleanDigits.slice(2) : cleanDigits);
-        phoneVariations.add('+84' + (cleanDigits.startsWith('0') ? cleanDigits.slice(1) : cleanDigits));
-
-        for (const phone of phoneVariations) {
-          const phoneQuery = query(ordersCol, where('customer.phone', '==', phone));
-          const phoneSnapshot = await getDocs(phoneQuery);
-          phoneSnapshot.forEach((doc) => {
-            if (!foundOrders.some((o) => o.id === doc.id)) {
-              foundOrders.push({ id: doc.id, ...doc.data() });
-            }
-          });
-        }
-      }
-
-      // Sắp xếp đơn mới nhất lên đầu
-      foundOrders.sort((a, b) => {
-        const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0;
-        const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0;
-        return timeB - timeA;
-      });
-
-      if (foundOrders.length > 0) {
-        triggerHaptic('success');
-        setSelectedOrder(foundOrders[0]);
-      } else {
-        triggerHaptic('warning');
-      }
-    } catch (error: any) {
-      console.error('Lỗi tra cứu đơn hàng:', error);
-      Alert.alert('Lỗi tra cứu', 'Không thể kết nối đến máy chủ. Vui lòng thử lại sau.');
+      const order = await lookupOrder(searchQuery, codeQuery);
+      triggerHaptic(order ? 'success' : 'warning');
+      setSelectedOrder(order);
+    } catch (error) {
+      Alert.alert('Lỗi tra cứu', error instanceof Error ? error.message : 'Không thể kết nối đến máy chủ. Vui lòng thử lại sau.');
     } finally {
       setIsSearching(false);
     }
@@ -161,11 +117,14 @@ export default function OrderLookupScreen() {
           <View style={styles.infoCard}>
             <Text style={styles.infoCardTitle}>Giao Đến</Text>
             <Text style={styles.infoDeliveryTime}>
-              Thời gian nhận: {selectedOrder.deliveryTime || '10:30'}
+              Thời gian nhận: {selectedOrder.deliveryTime || 'Chưa có thời gian dự kiến'}
             </Text>
             <Text style={styles.infoText}>{selectedOrder.customer?.fullname || 'Khách hàng'}</Text>
             <Text style={styles.infoText}>{selectedOrder.customer?.phone || ''}</Text>
             <Text style={styles.infoText}>{selectedOrder.address || ''}</Text>
+            {typeof selectedOrder.needCutlery === 'boolean' && <Text style={styles.infoText}>
+              Muỗng nĩa nhựa: {selectedOrder.needCutlery ? 'Có' : 'Không'}
+            </Text>}
           </View>
 
           {/* Card 2: Phương thức thanh toán */}
@@ -182,7 +141,7 @@ export default function OrderLookupScreen() {
               Có {selectedOrder.itemCount || selectedOrder.items?.length || 0} sản phẩm trong giỏ hàng của bạn
             </Text>
             <Text style={styles.orderTimestampText}>
-              {selectedOrder.createdAtFormatted || '26/10/2026'}
+              {selectedOrder.createdAtFormatted || (selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString('vi-VN') : '')}
             </Text>
 
             {/* Product list */}
@@ -201,10 +160,10 @@ export default function OrderLookupScreen() {
                     </Text>
                   </View>
                   <Text style={styles.orderItemOptions}>
-                    {Array.isArray(item.customizationSummary) && item.customizationSummary.length > 0
-                      ? item.customizationSummary.join(' • ')
-                      : item.variantName || 'Đế Truyền Thống'}
+                    {[item.variantName, ...(item.addonNames ?? []), ...(Array.isArray(item.customizationSummary)
+                      ? item.customizationSummary : [item.customizationSummary])].filter(Boolean).join(' • ')}
                   </Text>
+                  {!!item.note && <Text style={styles.orderItemOptions}>Ghi chú bếp: {item.note}</Text>}
                 </View>
               ))}
 
@@ -237,15 +196,6 @@ export default function OrderLookupScreen() {
               </View>
             )}
 
-            <View style={styles.pricingRow}>
-              <View style={styles.infoLabelWrap}>
-                <Text style={styles.pricingLabel}>Phí giao hàng</Text>
-                <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
-              </View>
-              <Text style={styles.pricingValue}>
-                {formatCurrency(selectedOrder.deliveryFee || 22000)}
-              </Text>
-            </View>
 
             <View style={styles.pricingDivider} />
 
@@ -257,7 +207,7 @@ export default function OrderLookupScreen() {
                   <Text style={{ fontWeight: '700', color: '#111827' }}>
                     {selectedOrder.earnedPoints || Math.floor((selectedOrder.total || 0) / 10000)} điểm
                   </Text>{' '}
-                  Hut rewards
+                  FPT Rewards
                 </Text>
               </View>
               <Text style={styles.totalValue}>
@@ -309,16 +259,30 @@ export default function OrderLookupScreen() {
           {/* Input field */}
           <TextInput
             style={styles.input}
-            placeholder="Nhập số điện thoại hoặc mã đơn hàng"
+            placeholder="Số điện thoại đặt hàng"
             placeholderTextColor="#9CA3AF"
             value={searchQuery}
             onChangeText={(text) => {
               setSearchQuery(text);
               if (hasSearched) setHasSearched(false);
             }}
+            keyboardType="phone-pad"
+            accessibilityLabel="Số điện thoại đặt hàng"
+            returnKeyType="next"
+          />
+          <TextInput
+            style={[styles.input, { marginTop: 12 }]}
+            placeholder="Mã đơn hàng, ví dụ PF-1A2B3C4D5E"
+            placeholderTextColor="#9CA3AF"
+            value={codeQuery}
+            onChangeText={(text) => {
+              setCodeQuery(text);
+              if (hasSearched) setHasSearched(false);
+            }}
+            accessibilityLabel="Mã đơn hàng"
             returnKeyType="search"
             onSubmitEditing={handleSearch}
-            autoCapitalize="none"
+            autoCapitalize="characters"
           />
 
           {/* Action Buttons */}

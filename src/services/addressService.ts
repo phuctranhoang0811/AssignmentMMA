@@ -461,6 +461,23 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
 }
 
 /**
+ * Vị trí thật của địa chỉ từ bộ định vị của thiết bị, hoặc null nếu không tìm được.
+ * Dùng cho việc tính tiền (phí giao hàng, vị trí cửa hàng): tuyệt đối không rơi về tọa độ đoán của danh mục cục bộ,
+ * vì một địa chỉ gõ bậy sẽ bị tính như ngay cạnh cửa hàng.
+ */
+export async function geocodeAddressStrict(address: string): Promise<{ lat: number; lng: number } | null> {
+  const clean = (address || '').trim();
+  if (!clean) return null;
+  for (const query of [clean, `${clean}, Việt Nam`]) {
+    try {
+      const found = await Location.geocodeAsync(query);
+      if (found?.length) return { lat: found[0].latitude, lng: found[0].longitude };
+    } catch { /* try the next form */ }
+  }
+  return null;
+}
+
+/**
  * Lấy tọa độ tương ứng với địa chỉ (giữ đúng vị trí không bị nhảy tỉnh khác)
  */
 export function getCoordinatesForAddress(address: string): { lat: number; lng: number } {

@@ -118,6 +118,9 @@ export const AppButton: React.FC<AppButtonProps> = ({
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         disabled={disabled || isLoading}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        accessibilityState={{ disabled: disabled || isLoading, busy: isLoading }}
         style={[styles.base, getContainerStyle(), style]}
       >
         {isLoading ? (

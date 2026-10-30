@@ -17,6 +17,13 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  statusBarBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+  },
   scrollContent: {
     paddingBottom: 120,
   },
@@ -75,6 +82,63 @@ export const styles = StyleSheet.create({
     color: '#4B5563',
     lineHeight: 22,
     marginBottom: spacing.md,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: spacing.sm,
+  },
+  badgeChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: colors.primarySoft,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: spacing.xs,
+  },
+  priceValue: {
+    fontFamily: fontFamilies.bold,
+    fontWeight: '700',
+  },
+  originalPrice: {
+    textDecorationLine: 'line-through',
+  },
+  discountChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: colors.primary,
+    alignSelf: 'center',
+  },
+  memberNote: {
+    marginBottom: spacing.sm,
+  },
+  soldOutBox: {
+    backgroundColor: colors.warningSoft,
+    borderRadius: 12,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  relatedSection: {
+    paddingTop: spacing.lg,
+    backgroundColor: '#FFFFFF',
+  },
+  relatedTitle: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  relatedList: {
+    paddingHorizontal: spacing.lg,
+    gap: 12,
+  },
+  relatedCard: {
+    width: 180,
   },
   ingredientsBox: {
     backgroundColor: '#F9FAFB',

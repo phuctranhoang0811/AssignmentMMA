@@ -5,8 +5,8 @@ import {
   TextInput,
   TouchableOpacity,
   Modal,
-  Alert,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
@@ -20,7 +20,10 @@ import {
 import {
   collection,
   onSnapshot,
-  addDoc,
+  doc,
+  getDoc,
+  setDoc,
+  deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -32,11 +35,14 @@ import { styles } from '../../styles/adminPromotions.styles';
 import { Coupon } from '../../types/user';
 import { mockCoupons } from '../../data/mockPromotions';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { isCouponExpired } from '../../utils/coupons';
+import { reportAdminAction } from '../../services/orderApi';
 
 export default function AdminPromotionsScreen() {
   const router = useRouter();
 
-  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  // Built-in coupons ship with the app; only coupons stored in Firestore can be removed here.
+  const [coupons, setCoupons] = useState<(Coupon & { stored?: boolean })[]>(mockCoupons);
   const [modalVisible, setModalVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -47,14 +53,16 @@ export default function AdminPromotionsScreen() {
   const [minSubtotal, setMinSubtotal] = useState('150000');
   const [maxDiscount, setMaxDiscount] = useState('50000');
   const [desc, setDesc] = useState('');
+  const [expiresAt, setExpiresAt] = useState('31/12/2026');
+  const [usageLimit, setUsageLimit] = useState('');
 
   useEffect(() => {
     // Lắng nghe Firestore collection 'coupons'
     const unsub = onSnapshot(
       collection(db, 'coupons'),
       (snapshot: any) => {
-        if (!snapshot.empty) {
-          const list: (Coupon & { id?: string })[] = [];
+        {
+          const list: (Coupon & { stored?: boolean })[] = [];
           snapshot.forEach((d: any) => {
             const data = d.data();
             list.push({
@@ -64,12 +72,12 @@ export default function AdminPromotionsScreen() {
               minSubtotal: Number(data.minSubtotal || 0),
               maxDiscount: data.maxDiscount ? Number(data.maxDiscount) : undefined,
               description: data.description || '',
-              expiresAt: data.expiresAt || '31/12/2026',
+              expiresAt: data.expiresAt || undefined,
+              ...(data.usageLimit ? { usageLimit: Number(data.usageLimit), usedCount: Number(data.usedCount || 0) } : {}),
+              stored: true,
             });
           });
-          setCoupons(list);
-        } else {
-          setCoupons(mockCoupons);
+          setCoupons([...list, ...mockCoupons.filter(m => !list.some(c => c.code === m.code))]);
         }
       },
       (err: any) => {
@@ -87,6 +95,12 @@ export default function AdminPromotionsScreen() {
       return;
     }
 
+    // dd/mm/yyyy, checked by the backend at order time (through that day).
+    if (!/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(expiresAt.trim()) || isCouponExpired({ expiresAt })) {
+      Alert.alert('Lỗi', 'Hạn dùng phải là ngày trong tương lai, dạng dd/mm/yyyy');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const newCoupon = {
@@ -94,15 +108,23 @@ export default function AdminPromotionsScreen() {
         discountType,
         value: Number(value),
         minSubtotal: Number(minSubtotal) || 0,
-        maxDiscount: discountType === 'PERCENT' ? Number(maxDiscount) || 50000 : undefined,
+        ...(discountType === 'PERCENT' ? { maxDiscount: Number(maxDiscount) || 50000 } : {}),
         description:
           desc.trim() ||
           `Giảm ${discountType === 'PERCENT' ? `${value}%` : formatCurrency(Number(value))} cho đơn từ ${formatCurrency(Number(minSubtotal))}`,
-        expiresAt: '31/12/2026',
+        expiresAt: expiresAt.trim(),
+        ...(Number(usageLimit) > 0 ? { usageLimit: Math.floor(Number(usageLimit)), usedCount: 0 } : {}),
         createdAt: serverTimestamp(),
       };
 
-      await addDoc(collection(db, 'coupons'), newCoupon);
+      // Doc id = code, so the backend finds it directly and codes stay unique.
+      const ref = doc(db, 'coupons', newCoupon.code);
+      if ((await getDoc(ref)).exists() || mockCoupons.some(c => c.code === newCoupon.code)) {
+        Alert.alert('Mã đã tồn tại', `Mã ${newCoupon.code} đang được sử dụng.`);
+        return;
+      }
+      await setDoc(ref, newCoupon);
+      void reportAdminAction('COUPON_CREATED', `coupons/${newCoupon.code}`, { discountType, value: Number(value) });
       Alert.alert('Thành công', `Đã phát hành mã ưu đãi ${newCoupon.code}`);
       setModalVisible(false);
       setCode('');
@@ -115,14 +137,24 @@ export default function AdminPromotionsScreen() {
     }
   };
 
-  const handleDeleteCoupon = (item: Coupon) => {
+  const handleDeleteCoupon = (item: Coupon & { stored?: boolean }) => {
+    if (!item.stored) {
+      Alert.alert('Mã mặc định', `Mã "${item.code}" có sẵn trong ứng dụng nên không gỡ được tại đây.`);
+      return;
+    }
     Alert.alert('Xóa Voucher', `Bạn có muốn gỡ mã "${item.code}"?`, [
       { text: 'Hủy', style: 'cancel' },
       {
         text: 'Gỡ bỏ',
         style: 'destructive',
-        onPress: () => {
-          setCoupons((prev) => prev.filter((c) => c.code !== item.code));
+        onPress: async () => {
+          // The snapshot listener removes it from the list once Firestore confirms.
+          try {
+            await deleteDoc(doc(db, 'coupons', item.code));
+            void reportAdminAction('COUPON_DELETED', `coupons/${item.code}`);
+          } catch (e: any) {
+            Alert.alert('Chưa gỡ được mã', e?.message || 'Vui lòng thử lại.');
+          }
         },
       },
     ]);
@@ -150,6 +182,8 @@ export default function AdminPromotionsScreen() {
             <TouchableOpacity
               style={styles.createBtn}
               onPress={() => setModalVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Tạo mã giảm giá mới"
             >
               <Plus size={16} color={colors.white} />
               <AppText variant="captionSemiBold" color={colors.white}>
@@ -166,7 +200,7 @@ export default function AdminPromotionsScreen() {
                     {item.code}
                   </AppText>
                 </View>
-                <TouchableOpacity onPress={() => handleDeleteCoupon(item)}>
+                <TouchableOpacity onPress={() => handleDeleteCoupon(item)} accessibilityRole="button" accessibilityLabel={`Gỡ mã ${item.code}`}>
                   <Trash2 size={16} color={colors.error} />
                 </TouchableOpacity>
               </View>
@@ -183,9 +217,14 @@ export default function AdminPromotionsScreen() {
                 <AppText variant="small" color={colors.textSecondary}>
                   Đơn tối thiểu: {formatCurrency(item.minSubtotal)}
                 </AppText>
-                <AppText variant="small" color={colors.textSecondary}>
-                  Hạn dùng: {item.expiresAt || '31/12/2026'}
+                <AppText variant="small" color={isCouponExpired(item) ? colors.error : colors.textSecondary}>
+                  {item.expiresAt ? `Hạn dùng: ${item.expiresAt}${isCouponExpired(item) ? ' (đã hết hạn)' : ''}` : 'Không giới hạn thời gian'}
                 </AppText>
+                {!!item.usageLimit && (
+                  <AppText variant="small" color={colors.textSecondary}>
+                    Đã dùng: {item.usedCount ?? 0}/{item.usageLimit}
+                  </AppText>
+                )}
               </View>
             </View>
           ))}
@@ -396,6 +435,34 @@ export default function AdminPromotionsScreen() {
                   />
                 </View>
               )}
+
+              <View style={styles.formGroup}>
+                <AppText variant="captionSemiBold" style={styles.inputLabel}>
+                  Hạn dùng (dd/mm/yyyy)
+                </AppText>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="31/12/2026"
+                  value={expiresAt}
+                  onChangeText={setExpiresAt}
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <AppText variant="captionSemiBold" style={styles.inputLabel}>
+                  Tổng số lượt dùng (để trống = không giới hạn)
+                </AppText>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Ví dụ: 100"
+                  keyboardType="numeric"
+                  value={usageLimit}
+                  onChangeText={setUsageLimit}
+                />
+                <AppText variant="small" color={colors.textSecondary}>
+                  Mỗi khách hàng chỉ dùng được mỗi mã một lần.
+                </AppText>
+              </View>
 
               <View style={styles.formGroup}>
                 <AppText variant="captionSemiBold" style={styles.inputLabel}>

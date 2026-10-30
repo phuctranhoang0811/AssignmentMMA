@@ -5,9 +5,9 @@ import {
   TextInput,
   TouchableOpacity,
   Modal,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
@@ -24,6 +24,9 @@ import { AppText } from '../../components/ui/AppText';
 import { colors } from '../../theme/colors';
 import { styles } from '../../styles/adminUsers.styles';
 import { DemoUser } from '../../types/user';
+import { useAuth } from '../../state/AuthContext';
+import { canChangeRole } from '../../utils/staff';
+import { reportAdminAction } from '../../services/orderApi';
 
 const ROLE_OPTIONS = [
   { key: 'SUPER_ADMIN', label: 'Admin', desc: 'Toàn quyền cấu hình và quản trị hệ thống' },
@@ -36,6 +39,7 @@ const ROLE_OPTIONS = [
 export default function AdminUsersScreen() {
   const router = useRouter();
 
+  const { user: me } = useAuth();
   const [users, setUsers] = useState<DemoUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,33 +68,8 @@ export default function AdminUsersScreen() {
           });
           setUsers(list);
         } else {
-          // Fallback mock accounts
-          setUsers([
-            {
-              id: 'USR-ADMIN',
-              fullname: 'Quản Trị Viên (Admin)',
-              email: 'admin@pizzastore.com',
-              phone: '0909000001',
-              role: 'SUPER_ADMIN',
-              rewardPoints: 9999,
-            },
-            {
-              id: 'USR-STAFF',
-              fullname: 'Nhân Viên Bếp & Vận Hành',
-              email: 'employee@pizzastore.com',
-              phone: '0909000002',
-              role: 'EMPLOYEE',
-              rewardPoints: 500,
-            },
-            {
-              id: 'USR-TEST',
-              fullname: 'Khách Hàng Thân Thiết',
-              email: 'testuser@pizzastore.com',
-              phone: '0909123456',
-              role: 'USER',
-              rewardPoints: 240,
-            },
-          ]);
+          // No accounts means an empty list, not made-up people the admin could try to edit.
+          setUsers([]);
         }
         setLoading(false);
       },
@@ -119,13 +98,10 @@ export default function AdminUsersScreen() {
       setUsers((prev) =>
         prev.map((u) => (u.id === selectedUser.id ? { ...u, role: newRole } : u))
       );
+      void reportAdminAction('ROLE_CHANGED', `users/${selectedUser.id}`, { from: selectedUser.role ?? 'USER', to: newRole });
       Alert.alert('Thành công', `Đã cấp quyền ${newRole} cho ${selectedUser.fullname}`);
     } catch (e: any) {
-      // Cập nhật local nếu offline
-      setUsers((prev) =>
-        prev.map((u) => (u.id === selectedUser.id ? { ...u, role: newRole } : u))
-      );
-      Alert.alert('Thông báo', `Đã cập nhật quyền thành công`);
+      Alert.alert('Chưa cập nhật được quyền', e?.message || 'Vui lòng thử lại.');
     } finally {
       setRoleModalVisible(false);
     }
@@ -147,14 +123,14 @@ export default function AdminUsersScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const userRef = doc(db, 'users', u.id);
-              await updateDoc(userRef, { role: nextRole });
-            } catch {
-              // fallback
+              await updateDoc(doc(db, 'users', u.id), { role: nextRole, updatedAt: serverTimestamp() });
+              setUsers((prev) =>
+                prev.map((item) => (item.id === u.id ? { ...item, role: nextRole } : item))
+              );
+              void reportAdminAction(isBlocked ? 'USER_UNLOCKED' : 'USER_LOCKED', `users/${u.id}`);
+            } catch (e: any) {
+              Alert.alert('Chưa cập nhật được', e?.message || 'Vui lòng thử lại.');
             }
-            setUsers((prev) =>
-              prev.map((item) => (item.id === u.id ? { ...item, role: nextRole } : item))
-            );
           },
         },
       ]
@@ -272,6 +248,8 @@ export default function AdminUsersScreen() {
                     </AppText>
                   </View>
 
+                  {/* Managers view users only; admins cannot change themselves or (unless SUPER_ADMIN) other admins. */}
+                  {item.id !== me?.id && canChangeRole(me?.role, item.role, 'USER') && (
                   <View style={styles.actionBtnsRow}>
                     <TouchableOpacity
                       style={styles.actionBtn}
@@ -297,6 +275,7 @@ export default function AdminUsersScreen() {
                       </AppText>
                     </TouchableOpacity>
                   </View>
+                  )}
                 </View>
               </View>
             );
@@ -325,7 +304,7 @@ export default function AdminUsersScreen() {
               Phân định vai trò cho {selectedUser?.fullname} ({selectedUser?.email})
             </AppText>
 
-            {ROLE_OPTIONS.map((opt) => {
+            {ROLE_OPTIONS.filter(opt => canChangeRole(me?.role, selectedUser?.role, opt.key)).map((opt) => {
               const isSelected = selectedUser?.role === opt.key;
               return (
                 <TouchableOpacity

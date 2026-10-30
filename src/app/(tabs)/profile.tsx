@@ -5,10 +5,10 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
-  Alert,
   Platform,
   Pressable,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
@@ -26,6 +26,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 import { styles } from '../../styles/profile.styles';
+import { isAdminRole, isRiderRole, isStaffRole } from '../../utils/staff';
 
 // Custom Pizza Reward Slice Badge Icon (exact match to user mockup)
 const PizzaRewardIcon = ({ size = 22, color = '#1E2024' }: { size?: number; color?: string }) => (
@@ -77,25 +78,6 @@ export default function ProfileScreen() {
       );
     }
   };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Xóa tài khoản',
-      'Bạn có chắc chắn muốn xóa tài khoản? Mọi thông tin và điểm thưởng sẽ không thể khôi phục.',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xóa vĩnh viễn',
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-            Alert.alert('Thông báo', 'Đã tiếp nhận yêu cầu xóa tài khoản thành công.');
-          },
-        },
-      ]
-    );
-  };
-
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -160,9 +142,7 @@ export default function ProfileScreen() {
             {/* Menu Group 1 */}
             <View style={styles.cardGroup}>
               {/* Bảng điều khiển Quản trị viên (Admin Portal) */}
-              {(user?.role === 'SUPER_ADMIN' ||
-                user?.role === 'ADMIN' ||
-                user?.role === 'STORE_MANAGER') && (
+              {isAdminRole(user?.role) && (
                 <>
                   <TouchableOpacity
                     style={styles.menuRow}
@@ -181,9 +161,7 @@ export default function ProfileScreen() {
               )}
 
               {/* Quản lý đơn bếp (dành riêng cho Admin / Employee) */}
-              {(user?.role === 'EMPLOYEE' ||
-                user?.role === 'SUPER_ADMIN' ||
-                user?.role === 'ADMIN') && (
+              {isStaffRole(user?.role) && (
                 <>
                   <TouchableOpacity
                     style={styles.menuRow}
@@ -194,7 +172,37 @@ export default function ProfileScreen() {
                       <Sparkles size={22} color="#CF4226" strokeWidth={1.8} />
                     </View>
                     <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
-                      Quản lý đơn hàng (Khu Vực Nhân Viên)
+                      Quản lý đơn hàng (Nhân viên)
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.divider} />
+                </>
+              )}
+
+              {/* Email chưa xác minh: chưa đặt hàng hoặc đổi quà được */}
+              {!!user && !user.isDemo && user.emailVerified === false && (
+                <>
+                  <TouchableOpacity style={styles.menuRow} activeOpacity={0.7} onPress={() => router.push('/auth/verify-email')}>
+                    <View style={styles.menuIconCol}>
+                      <Sparkles size={22} color="#CF4226" strokeWidth={1.8} />
+                    </View>
+                    <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
+                      Xác minh email để đặt hàng
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.divider} />
+                </>
+              )}
+
+              {/* Tài xế giao hàng (bên thứ ba, không thuộc nhân viên cửa hàng) */}
+              {isRiderRole(user?.role) && (
+                <>
+                  <TouchableOpacity style={styles.menuRow} activeOpacity={0.7} onPress={() => router.push('/rider')}>
+                    <View style={styles.menuIconCol}>
+                      <Sparkles size={22} color="#CF4226" strokeWidth={1.8} />
+                    </View>
+                    <Text style={[styles.menuLabel, { color: '#CF4226', fontWeight: '700' }]}>
+                      Nhận đơn giao (Tài xế)
                     </Text>
                   </TouchableOpacity>
                   <View style={styles.divider} />
@@ -255,6 +263,7 @@ export default function ProfileScreen() {
                 <Text style={styles.menuLabel}>Lịch sử đơn hàng</Text>
               </TouchableOpacity>
 
+              {user?.hasPassword !== false && !user?.isDemo && <>
               <View style={styles.divider} />
 
               {/* Đổi mật khẩu */}
@@ -268,6 +277,7 @@ export default function ProfileScreen() {
                 </View>
                 <Text style={styles.menuLabel}>Đổi mật khẩu</Text>
               </TouchableOpacity>
+              </>}
             </View>
 
             {/* Menu Group 2: Đăng xuất */}
@@ -283,15 +293,6 @@ export default function ProfileScreen() {
                 <Text style={styles.menuLabel}>Đăng xuất</Text>
               </TouchableOpacity>
             </View>
-
-            {/* Xóa tài khoản */}
-            <TouchableOpacity
-              style={styles.deleteAccountBtn}
-              activeOpacity={0.6}
-              onPress={handleDeleteAccount}
-            >
-              <Text style={styles.deleteAccountText}>Xóa tài khoản</Text>
-            </TouchableOpacity>
           </View>
         ) : (
           /* ======================================================== */

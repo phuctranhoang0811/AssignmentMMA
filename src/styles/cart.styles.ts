@@ -60,7 +60,8 @@ export const styles = StyleSheet.create({
   itemRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   itemRowBorder: {
     borderBottomWidth: 1,
@@ -100,7 +101,6 @@ export const styles = StyleSheet.create({
   itemDetails: {
     flex: 1,
     marginLeft: 14,
-    justifyContent: 'space-between',
   },
   itemTopLine: {
     flexDirection: 'row',
@@ -133,20 +133,28 @@ export const styles = StyleSheet.create({
   itemBottomLine: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginTop: 8,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
   },
   actionLinksRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+  },
+  itemAction: {
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   editActionText: {
-    fontSize: 13.5,
+    fontSize: 15,
     color: BRAND_RED,
     fontWeight: '600',
   },
   deleteActionText: {
-    fontSize: 13.5,
+    fontSize: 15,
     color: BRAND_RED,
     fontWeight: '600',
   },
@@ -194,12 +202,12 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   recTitle: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
     color: '#111827',
   },
   recDescription: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: '#6B7280',
     marginTop: 2,
     lineHeight: 16,
@@ -216,9 +224,9 @@ export const styles = StyleSheet.create({
     color: '#111827',
   },
   recAddBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: BRAND_RED,
     justifyContent: 'center',
     alignItems: 'center',
@@ -241,8 +249,12 @@ export const styles = StyleSheet.create({
   optionAction: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 1,
+    marginLeft: 16,
   },
   voucherActionText: {
+    flexShrink: 1,
+    textAlign: 'right',
     fontSize: 14,
     color: BRAND_RED,
     fontWeight: '400',

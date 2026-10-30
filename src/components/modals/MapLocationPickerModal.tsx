@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,14 @@ import {
   Modal,
   Platform,
   StatusBar,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, User } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { triggerHaptic } from '../../utils/haptics';
 import {
-  getCoordinatesForAddress,
   getAddressFromCoordinates,
   geocodeAddress,
   reverseGeocodeLocation,
@@ -26,6 +25,7 @@ import {
 let WebViewComponent: any = null;
 if (Platform.OS !== 'web') {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Load native WebView only on mobile; web uses the fallback below.
     WebViewComponent = require('react-native-webview').WebView;
   } catch {
     WebViewComponent = null;

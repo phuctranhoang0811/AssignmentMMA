@@ -11,6 +11,13 @@
       "expo-router",
       "expo-font",
       "expo-status-bar",
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "orders"
+        }
+      ],
       [
         "expo-location",
         {

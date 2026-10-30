@@ -1,4 +1,5 @@
 import { StyleSheet } from 'react-native';
+import { FLOATING_CART_CLEARANCE_HOME } from './tabsLayout.styles';
 import { colors } from '../theme/colors';
 
 export const BRAND_RED = colors.primary;
@@ -9,7 +10,7 @@ export const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   scrollContent: {
-    paddingBottom: 110,
+    paddingBottom: FLOATING_CART_CLEARANCE_HOME,
   },
 
   /* Header */

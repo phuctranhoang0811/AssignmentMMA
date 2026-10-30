@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,31 +6,46 @@ import {
   TouchableOpacity,
   TextInput,
   Modal,
-  Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   ChevronLeft,
-  ChevronRight,
   Info,
   X,
   Check,
-  CreditCard,
   Banknote,
   Smartphone,
+  MapPin,
+  Store,
+  Clock3,
+  UserRound,
+  Phone,
+  Mail,
+  NotebookPen,
+  TicketPercent,
+  ShoppingBag,
+  ArrowRight,
+  Plus,
+  Minus,
 } from 'lucide-react-native';
-import Svg, { Path, Polygon, Circle } from 'react-native-svg';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
-import { mockProducts } from '../../data/mockProducts';
 import { formatCurrency } from '../../utils/formatCurrency';
-import { getItemLineUnitPrice } from '../../utils/calculateTotals';
+import { calculateOrderTotals, getItemLineUnitPrice } from '../../utils/calculateTotals';
+import { geocodeAddressStrict } from '../../services/addressService';
+import { colors } from '../../theme/colors';
+import type { LatLng } from '../../utils/deliveryFee';
 import { triggerHaptic } from '../../utils/haptics';
-import { searchVietnamAddresses, AddressSuggestion } from '../../services/addressService';
+import { findCoupon, useCatalog, useCoupons } from '../../services/catalog';
+import { formatDeliveryTime, isDeliveryTimeAvailable } from '../../utils/deliveryTime';
 import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
 import { DeliveryTimeModal } from '../../components/modals/DeliveryTimeModal';
+import { CheckoutRow } from '../../components/checkout/CheckoutRow';
 import { CouchIllustration } from '../../components/ui/CouchIllustration';
 import {
   getSavedDeliveryAddress,
@@ -38,81 +53,65 @@ import {
   getSavedCustomerInfo,
   saveCustomerInfo,
 } from '../../services/addressStorage';
-import { db } from '../../services/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 import { styles, BRAND_RED } from '../../styles/checkout.styles';
 import { formatCustomizationSummary } from '../../types/pizzaCustomization';
+import { createPayosPayment } from '../../services/payosService';
+import { createCashOrder } from '../../services/orderApi';
+import { ahamoveEnabled, createAhamoveCod, deliveryCheckout, getDeliveryQuote, resumeAhamoveCod } from '../../services/deliveryService';
+import type { DeliveryQuote } from '../../types/delivery';
+import { EmptyTicketIcon } from '../../components/ui/EmptyTicketIcon';
+import { StoreClosedBanner } from '../../components/store/StoreClosedBanner';
+import { useStoreStatus } from '../../services/storeSettings';
+import { contactError, normalizePhone, type ContactField } from '../../utils/contact';
 
-const productsMap = mockProducts.reduce((acc, p) => {
-  acc[p.id] = p;
-  return acc;
-}, {} as Record<string, (typeof mockProducts)[0]>);
 
 // Payment Methods
 const PAYMENT_METHODS = [
-  { id: 'cash', name: 'Tiền mặt', icon: 'cash', subtext: '' },
-  { id: 'zalopay', name: 'ZaloPay', icon: 'zalopay', subtext: 'Trả sau giảm 35k - Nhập TRASAU35K' },
-  { id: 'momo', name: 'Momo', icon: 'momo', subtext: '' },
-  { id: 'card', name: 'ATM/VISA', icon: 'card', subtext: '' },
-  { id: 'vnpay', name: 'VNPAY', icon: 'vnpay', subtext: '' },
-  { id: 'applepay', name: 'Apple Pay', icon: 'applepay', subtext: '' },
+  { id: 'cash', name: 'Tiền mặt khi nhận hàng', subtext: 'Thanh toán bằng tiền mặt khi nhận món' },
+  { id: 'payos', name: 'payOS', subtext: 'Chuyển khoản bằng mã QR • Cần đăng nhập' },
 ];
 
-/* SVG: GPS Crosshair Target Icon */
-const CrosshairIcon = () => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-    <Circle cx="12" cy="12" r="7" stroke="#CF4226" strokeWidth={2} />
-    <Circle cx="12" cy="12" r="2.5" fill="#CF4226" />
-    <Path
-      d="M12 2 L12 5 M12 19 L12 22 M2 12 L5 12 M19 12 L22 12"
-      stroke="#CF4226"
-      strokeWidth={2}
-      strokeLinecap="round"
-    />
-  </Svg>
-);
 
-/* SVG: Empty Voucher Ticket with Star */
-const EmptyTicketIcon = () => (
-  <Svg width={116} height={74} viewBox="0 0 116 74" fill="none">
-    <Path
-      d="M10 5 C5 5 0 10 0 15 L0 27 C6 27 10 31 10 37 C10 43 6 47 0 47 L0 59 C0 64 5 69 10 69 L106 69 C111 69 116 64 116 59 L116 47 C110 47 106 43 106 37 C106 31 110 27 116 27 L116 15 C116 10 111 5 106 5 Z"
-      fill="#E6E8EE"
-    />
-    <Path
-      d="M28 10 L28 64"
-      stroke="#D5D9E2"
-      strokeWidth={2}
-      strokeDasharray="4 4"
-    />
-    <Polygon
-      points="72,21 76,32 87,33 79,40 82,51 72,45 62,51 65,40 57,33 68,32"
-      fill="#FFFFFF"
-    />
-  </Svg>
-);
 
 export default function CheckoutScreen() {
+  const { productsMap } = useCatalog();
+  const coupons = useCoupons();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { items, clearCart } = useCart();
+  const { items, isLoaded: cartLoaded, clearCart, promoCode, setPromoCode, fulfillmentType, setFulfillmentType, needCutlery } = useCart();
   const { user } = useAuth();
+  const store = useStoreStatus();
 
   // Address & Notes
   const [address, setAddress] = useState('');
   const [deliveryNote, setDeliveryNote] = useState('');
-  const [deliveryTime, setDeliveryTime] = useState('10:30');
+  const [deliveryTime, setDeliveryTime] = useState('asap');
   const [timeModalVisible, setTimeModalVisible] = useState(false);
 
   // Customer Information (Tự động điền nếu đã đăng nhập; để trống cho khách tự nhập)
   const [fullname, setFullname] = useState(user?.fullname || '');
   const [phone, setPhone] = useState(
-    user?.phone ? (user.phone.startsWith('0') ? user.phone.slice(1) : user.phone) : ''
+    user?.phone ? normalizePhone(user.phone).slice(1) : ''
   );
   const [email, setEmail] = useState(user?.email || '');
+  const [isEditingContact, setIsEditingContact] = useState(() => !user ||
+    !!contactError('fullname', user.fullname) || !!contactError('phone', user.phone) || !!contactError('email', user.email));
+  const [showEmail, setShowEmail] = useState(false);
+  const [showNote, setShowNote] = useState(false);
+  const [focusedField, setFocusedField] = useState<ContactField | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<ContactField, string>>>({});
+  const fullnameInput = useRef<React.ComponentRef<typeof TextInput>>(null);
+  const phoneInput = useRef<React.ComponentRef<typeof TextInput>>(null);
+  const emailInput = useRef<React.ComponentRef<typeof TextInput>>(null);
+  const showContactForm = !user || isEditingContact;
+  const validateField = (field: ContactField, value: string) => {
+    setFocusedField(null);
+    setFieldErrors(previous => ({ ...previous, [field]: contactError(field, value) }));
+  };
 
   useEffect(() => {
+    let cancelled = false;
     // 1. Khôi phục địa chỉ đã lưu
     getSavedDeliveryAddress().then((saved) => {
       if (saved) setAddress(saved);
@@ -120,7 +119,7 @@ export default function CheckoutScreen() {
 
     // 2. Khôi phục ghi chú & thông tin khách (chỉ lấy nếu là khách chưa đăng nhập và đã nhập trước đó)
     getSavedCustomerInfo().then((info) => {
-      if (info) {
+      if (info && !cancelled) {
         if (info.deliveryNote) setDeliveryNote((prev) => prev || info.deliveryNote || '');
         if (!user) {
           if (info.fullname) setFullname((prev) => prev || info.fullname || '');
@@ -129,13 +128,18 @@ export default function CheckoutScreen() {
         }
       }
     });
+    return () => { cancelled = true; };
   }, [user]);
 
   useEffect(() => {
+    setIsEditingContact(!user || !!contactError('fullname', user.fullname) ||
+      !!contactError('phone', user.phone) || !!contactError('email', user.email));
+    setFieldErrors({});
+    setShowEmail(false);
     if (user) {
       setFullname(user.fullname || '');
       setPhone(
-        user.phone ? (user.phone.startsWith('0') ? user.phone.slice(1) : user.phone) : ''
+        user.phone ? normalizePhone(user.phone).slice(1) : ''
       );
       setEmail(user.email || '');
     } else {
@@ -147,6 +151,7 @@ export default function CheckoutScreen() {
   }, [user]);
 
   const handleUpdateFullname = (val: string) => {
+    setFieldErrors(previous => previous.fullname ? { ...previous, fullname: contactError('fullname', val) } : previous);
     setFullname(val);
     if (!user) {
       saveCustomerInfo({ fullname: val });
@@ -154,6 +159,7 @@ export default function CheckoutScreen() {
   };
 
   const handleUpdatePhone = (val: string) => {
+    setFieldErrors(previous => previous.phone ? { ...previous, phone: contactError('phone', val) } : previous);
     setPhone(val);
     if (!user) {
       saveCustomerInfo({ phone: val });
@@ -161,10 +167,29 @@ export default function CheckoutScreen() {
   };
 
   const handleUpdateEmail = (val: string) => {
+    setFieldErrors(previous => previous.email ? { ...previous, email: contactError('email', val) } : previous);
     setEmail(val);
     if (!user) {
       saveCustomerInfo({ email: val });
     }
+  };
+
+  const validateContact = () => {
+    const errors = {
+      fullname: contactError('fullname', fullname),
+      phone: contactError('phone', phone),
+      email: contactError('email', email),
+    };
+    setFieldErrors(errors);
+    const invalidField = (['fullname', 'phone', 'email'] as const).find(field => errors[field]);
+    if (!invalidField) return true;
+    setIsEditingContact(true);
+    if (invalidField === 'email') setShowEmail(true);
+    requestAnimationFrame(() => {
+      const inputs = { fullname: fullnameInput, phone: phoneInput, email: emailInput };
+      inputs[invalidField].current?.focus();
+    });
+    return false;
   };
 
   const handleUpdateDeliveryNote = (val: string) => {
@@ -180,46 +205,10 @@ export default function CheckoutScreen() {
   // Voucher Modal & Selection
   const [voucherModalVisible, setVoucherModalVisible] = useState(false);
   const [inputVoucherCode, setInputVoucherCode] = useState('');
-  const [selectedVoucher, setSelectedVoucher] = useState<{
-    code: string;
-    discountAmount: number;
-    title: string;
-  } | null>(null);
+  const selectedVoucher = (promoCode && findCoupon(coupons, promoCode)) || null;
 
   // Address Modal ('Tìm cửa hàng gần bạn nhất' / Nhập tay vị trí)
   const [addressModalVisible, setAddressModalVisible] = useState(false);
-  const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'takeaway'>('delivery');
-  const [manualAddressInput, setManualAddressInput] = useState(address);
-  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
-  const [isSearchingAddress, setIsSearchingAddress] = useState(false);
-
-  // Debounced search for Vietnamese address autocomplete
-  useEffect(() => {
-    if (!addressModalVisible) {
-      setAddressSuggestions([]);
-      return;
-    }
-    const query = manualAddressInput.trim();
-    if (query.length < 2) {
-      setAddressSuggestions([]);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      try {
-        setIsSearchingAddress(true);
-        const results = await searchVietnamAddresses(query);
-        setAddressSuggestions(results);
-      } catch {
-        setAddressSuggestions([]);
-      } finally {
-        setIsSearchingAddress(false);
-      }
-    }, 200);
-
-    return () => clearTimeout(timer);
-  }, [manualAddressInput, addressModalVisible]);
-
   // Terms Agreement
   const [agreeTerms, setAgreeTerms] = useState(true);
 
@@ -239,18 +228,48 @@ export default function CheckoutScreen() {
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Totals Calculation
-  const subtotal = items.reduce((sum, item) => {
-    const product = productsMap[item.productId];
-    const unitPrice = getItemLineUnitPrice(item, product) || 0;
-    const qty = Number(item.quantity) || 1;
-    return sum + unitPrice * qty;
-  }, 0);
+  // Opened with an empty cart (e.g. a direct link): send the user to the menu. Placing an order also
+  // empties the cart, so never redirect while submitting or once the confirmation is showing.
+  // Only while this screen is in front: a paid payOS order empties the cart while its QR screen is on top,
+  // and replacing the route from here would swap that success screen for the menu.
+  useFocusEffect(useCallback(() => {
+    if (cartLoaded && items.length === 0 && !isSubmitting && !orderConfirmed) router.replace('/(tabs)/menu');
+  }, [cartLoaded, items.length, isSubmitting, orderConfirmed, router]));
+  const [shippingQuote, setShippingQuote] = useState<{ value: DeliveryQuote; signature: string } | null>(null);
+  const [isQuoting, setIsQuoting] = useState(false);
+  const [shippingError, setShippingError] = useState('');
+  const useAhamove = ahamoveEnabled && fulfillmentType === 'delivery';
+  const shippingInput = {
+    customer: { fullname, phone: normalizePhone(phone), email }, fulfillmentType: 'DELIVERY' as const,
+    needCutlery, address, deliveryNote, items, paymentMethod: selectedPaymentId === 'payos' ? 'PAYOS' as const : 'COD' as const,
+  };
+  const shippingSignature = JSON.stringify([user?.id, deliveryCheckout(shippingInput), shippingInput.paymentMethod, promoCode]);
+  const validQuote = shippingQuote?.signature === shippingSignature ? shippingQuote.value : null;
 
-  const itemCount = items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
-  const deliveryFee = 22000;
-  const voucherDiscount = selectedVoucher?.discountAmount || 0;
-  const total = Math.max(0, subtotal + deliveryFee - voucherDiscount);
+  // Shipping fee for orders the store delivers itself: distance from the store to the address the customer picked.
+  const shippingConfig = !useAhamove && fulfillmentType === 'delivery' ? store.settings?.delivery : undefined;
+  const [located, setLocated] = useState<{ address: string; point: LatLng | null } | null>(null);
+  useEffect(() => {
+    if (!shippingConfig || !address.trim()) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      geocodeAddressStrict(address)
+        .then(point => { if (!cancelled) setLocated({ address, point }); })
+        .catch(() => { if (!cancelled) setLocated({ address, point: null }); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [shippingConfig, address]);
+  const deliveryPoint = shippingConfig && located?.address === address ? located.point : null;
+  const locating = !!shippingConfig && !!address.trim() && located?.address !== address;
+
+  // Totals Calculation
+  const totals = calculateOrderTotals(items, productsMap,
+    fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP', selectedVoucher, undefined,
+    shippingConfig && deliveryPoint ? { config: shippingConfig, to: deliveryPoint } : undefined);
+  const { subtotal, discount: voucherDiscount } = totals;
+  const deliveryFee = useAhamove ? validQuote?.pricing.deliveryFee ?? 0 : totals.deliveryFee;
+  const total = useAhamove && validQuote ? validQuote.pricing.total : totals.total;
+  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const earnedPoints = Math.floor(total / 10000);
 
   const selectedPayment = PAYMENT_METHODS.find((p) => p.id === selectedPaymentId);
@@ -267,38 +286,74 @@ export default function CheckoutScreen() {
 
   const handleApplyVoucherCode = () => {
     const code = inputVoucherCode.trim().toUpperCase();
-    if (code === 'PIZZAFPT' || code === 'FPT40') {
-      setSelectedVoucher({ code, discountAmount: 40000, title: 'Giảm 40.000 đ' });
-      Alert.alert('Áp dụng thành công', 'Đã giảm 40.000 đ vào đơn hàng!');
-    } else if (code === 'FREESHIP') {
-      setSelectedVoucher({ code, discountAmount: 22000, title: 'Miễn phí giao hàng' });
-      Alert.alert('Áp dụng thành công', 'Đã miễn phí giao hàng!');
-    } else {
+    const voucher = findCoupon(coupons, code);
+    if (!voucher) {
       Alert.alert('Mã không hợp lệ', 'Vui lòng kiểm tra lại mã giảm giá.');
+      return;
     }
+    if (subtotal < voucher.minSubtotal) {
+      Alert.alert('Chưa đủ điều kiện', `Đơn hàng cần tối thiểu ${formatCurrency(voucher.minSubtotal)} để áp dụng mã.`);
+      return;
+    }
+    setPromoCode(code);
+    setVoucherModalVisible(false);
+    triggerHaptic('success');
   };
 
-  const handleOpenAddressModal = () => {
-    setManualAddressInput(address);
-    setAddressModalVisible(true);
-  };
+  const handleOpenAddressModal = () => setAddressModalVisible(true);
 
-  const handleSaveManualAddress = () => {
-    if (manualAddressInput.trim()) {
-      setAddress(manualAddressInput.trim());
-    }
-    setAddressModalVisible(false);
+  const handleGetShippingQuote = async () => {
+    if (!user || user.isDemo) { router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } }); return; }
+    if (!validateContact()) return;
+    if (!address.trim()) { setAddressModalVisible(true); return; }
+    if (promoCode) { setShippingError('Giao Ahamove thử nghiệm chưa hỗ trợ voucher. Vui lòng gỡ mã trước khi lấy phí.'); return; }
+    setIsQuoting(true);
+    setShippingError('');
+    try {
+      const previous = await resumeAhamoveCod();
+      if (previous) {
+        Alert.alert('Đơn trước đã được lưu', `Mã đơn ${previous.orderCode}. Bạn có thể xem trong Đơn hàng; giỏ hàng hiện tại vẫn được giữ.`);
+        router.push('/order/tracking');
+        return;
+      }
+      const value = await getDeliveryQuote(shippingInput);
+      setShippingQuote({ value, signature: shippingSignature });
+    } catch (error) { setShippingError(error instanceof Error ? error.message : 'Chưa thể lấy phí Ahamove.'); }
+    finally { setIsQuoting(false); }
   };
 
   const handlePlaceOrder = async () => {
     if (isSubmitting) return;
+    if (!store.open) {
+      Alert.alert('Cửa hàng chưa nhận đơn', store.message);
+      return;
+    }
+    if (selectedPaymentId === 'payos' && (!user || user.isDemo)) {
+      router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } });
+      return;
+    }
 
     if (!agreeTerms) {
       Alert.alert('Lưu ý', 'Vui lòng đồng ý với các điều khoản để tiếp tục đặt hàng.');
       return;
     }
-    if (!fullname.trim() || !phone.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng điền đầy đủ họ tên và số điện thoại.');
+    if (!validateContact()) return;
+    if (fulfillmentType === 'delivery' && !address.trim()) {
+      setAddressModalVisible(true);
+      return;
+    }
+    if (shippingConfig) {
+      if (locating) { Alert.alert('Đang tính phí giao hàng', 'Vui lòng đợi giây lát rồi đặt hàng.'); return; }
+      if (!deliveryPoint) { Alert.alert('Chưa xác định được vị trí', 'Vui lòng chọn lại địa chỉ giao hàng để tính phí ship.'); setAddressModalVisible(true); return; }
+      if (totals.outOfRange) {
+        Alert.alert('Ngoài vùng giao hàng', `Cửa hàng chỉ giao trong ${shippingConfig.maxKm} km. Vui lòng chọn địa chỉ gần hơn hoặc nhận tại cửa hàng.`);
+        return;
+      }
+    }
+    const localPhone = normalizePhone(phone);
+    if (!isDeliveryTimeAvailable(deliveryTime)) {
+      setTimeModalVisible(true);
+      Alert.alert('Khung giờ đã qua', 'Vui lòng chọn lại thời gian nhận món.');
       return;
     }
     if (items.length === 0) {
@@ -308,14 +363,70 @@ export default function CheckoutScreen() {
 
     setIsSubmitting(true);
 
-    // Generate random code or standard order code like #6X23D93400J5
-    const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    let rand = '';
-    for (let i = 0; i < 6; i++) {
-      rand += chars.charAt(Math.floor(Math.random() * chars.length));
+    if (useAhamove && (!validQuote || Date.parse(validQuote.expiresAt) <= Date.now() || promoCode || deliveryTime !== 'asap')) {
+      setIsSubmitting(false);
+      Alert.alert('Kiểm tra giao hàng', promoCode ? 'Vui lòng gỡ voucher để dùng Ahamove thử nghiệm.' :
+        deliveryTime !== 'asap' ? 'Ahamove thử nghiệm chỉ hỗ trợ giao ngay. Vui lòng chọn Sớm nhất.' : 'Vui lòng lấy lại phí Ahamove trước khi đặt hàng.');
+      return;
     }
-    const generatedOrderCode = '6X23D' + rand;
-    setOrderCode(generatedOrderCode);
+
+    if (useAhamove && (!user || user.isDemo)) {
+      setIsSubmitting(false);
+      router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } });
+      return;
+    }
+
+    if (useAhamove && selectedPaymentId === 'cash') {
+      try {
+        const result = await createAhamoveCod(validQuote!.id);
+        clearCart();
+        Alert.alert('Đã đặt hàng thử nghiệm', `Mã đơn ${result.orderCode}. Cửa hàng sẽ gọi tài xế khi món sẵn sàng.`);
+        router.replace('/order/tracking');
+      } catch (error) { Alert.alert('Chưa thể đặt hàng', error instanceof Error ? error.message : 'Vui lòng kiểm tra lại đơn.'); }
+      finally { setIsSubmitting(false); }
+      return;
+    }
+
+    if (selectedPaymentId === 'payos') {
+      try {
+        const payment = await createPayosPayment({
+          customer: { fullname, phone: localPhone, email },
+          fulfillmentType: fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP',
+          needCutlery,
+          address, items, promoCode: selectedVoucher?.code, paymentMethod: 'PAYOS', deliveryNote,
+          ...(shippingConfig && deliveryPoint ? { deliveryLocation: deliveryPoint } : {}),
+          ...(!useAhamove ? { deliveryTime: formatDeliveryTime(deliveryTime) } : {}),
+          ...(useAhamove ? { deliveryQuoteId: validQuote!.id } : {}),
+        });
+        router.push({ pathname: '/checkout/payos', params: { orderId: payment.id } });
+      } catch (err) {
+        Alert.alert('Chưa thể thanh toán payOS', err instanceof Error ? err.message : 'Vui lòng thử lại sau.');
+      } finally { setIsSubmitting(false); }
+      return;
+    }
+
+    // Cash orders are priced and stored by the backend; the app never writes prices to Firestore.
+    if (!user || user.isDemo) {
+      setIsSubmitting(false);
+      router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } });
+      return;
+    }
+    let saved: { subtotal: number; discount: number; deliveryFee?: number; total: number };
+    try {
+      const result = await createCashOrder({
+        customer: { fullname, phone: localPhone, email },
+        fulfillmentType: fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP',
+        needCutlery, address, deliveryNote, items, promoCode: selectedVoucher?.code, paymentMethod: 'COD',
+        ...(shippingConfig && deliveryPoint ? { deliveryLocation: deliveryPoint } : {}),
+      }, formatDeliveryTime(deliveryTime));
+      setOrderCode(result.orderCode);
+      saved = result;
+    } catch (err) {
+      Alert.alert('Chưa thể đặt hàng', err instanceof Error ? err.message : 'Đơn hàng chưa được lưu. Giỏ hàng của bạn vẫn được giữ nguyên, vui lòng thử lại.');
+      return;
+    } finally {
+      setIsSubmitting(false);
+    }
 
     // Current timestamp format DD/MM/YYYY HH:mm:ss
     const now = new Date();
@@ -334,80 +445,18 @@ export default function CheckoutScreen() {
       pad(now.getSeconds());
     setOrderDateString(dateFormatted);
 
-    // 1. Snapshot cart & pricing before clearing
+    // 1. Snapshot cart before clearing; amounts are what the backend stored (prices may have changed meanwhile).
     const orderSnapshot = {
       items: [...items],
       itemCount,
-      subtotal,
-      deliveryFee,
-      voucherDiscount,
+      subtotal: saved.subtotal,
+      deliveryFee: saved.deliveryFee ?? deliveryFee,
+      voucherDiscount: saved.discount,
       selectedVoucher,
-      total,
-      earnedPoints,
+      total: saved.total,
+      earnedPoints: Math.floor(saved.total / 10000),
     };
     setConfirmedOrderData(orderSnapshot);
-
-    // 2. Format items snapshot for Firestore
-    const firestoreItems = items.map((item) => {
-      const product = productsMap[item.productId];
-      const unitPrice = getItemLineUnitPrice(item, product) || 0;
-      const lineTotal = unitPrice * (Number(item.quantity) || 1);
-      const variant = product?.variants?.find((v) => v.id === item.variantId);
-      const customSummary = item.customization ? formatCustomizationSummary(item.customization) : [];
-      return {
-        productId: item.productId,
-        productName: product?.name || 'Sản phẩm',
-        quantity: Number(item.quantity) || 1,
-        unitPrice,
-        lineTotal,
-        variantName: variant?.name || 'Đế Truyền Thống',
-        customizationSummary: customSummary,
-        image: product?.image || '',
-      };
-    });
-
-    // 3. Save order to Firebase Cloud Firestore (collection 'orders')
-    try {
-      await addDoc(collection(db, 'orders'), {
-        orderCode: generatedOrderCode,
-        createdAt: serverTimestamp(),
-        createdAtFormatted: dateFormatted,
-        userId: user?.id || null,
-        customer: {
-          fullname: fullname.trim(),
-          phone: phone.trim(),
-          email: email.trim() || user?.email || '',
-        },
-        deliveryTime: deliveryTime,
-        fulfillmentType: fulfillmentType,
-        address: address.trim(),
-        deliveryNote: deliveryNote.trim(),
-        paymentMethod: selectedPaymentId,
-        paymentName: selectedPayment?.name || 'Tiền mặt',
-        paymentStatus: selectedPaymentId === 'cash' ? 'UNPAID' : 'PAID_DEMO',
-        status: 'PENDING_CONFIRMATION',
-        statusHistory: [
-          {
-            status: 'PENDING_CONFIRMATION',
-            at: new Date().toISOString(),
-            note: 'Khách hàng vừa đặt đơn',
-          },
-        ],
-        items: firestoreItems,
-        itemCount,
-        subtotal,
-        deliveryFee,
-        discount: voucherDiscount,
-        voucherCode: selectedVoucher?.code || null,
-        total,
-        earnedPoints,
-      });
-      console.log('✅ Đã lưu đơn hàng lên Cloud Firestore thành công: #' + generatedOrderCode);
-    } catch (err: any) {
-      console.error('Lỗi khi ghi đơn hàng lên Firestore:', err);
-    } finally {
-      setIsSubmitting(false);
-    }
 
     triggerHaptic('success');
     clearCart();
@@ -470,8 +519,8 @@ export default function CheckoutScreen() {
 
           {/* Card 1: Giao Đến */}
           <View style={styles.infoCard}>
-            <Text style={styles.infoCardTitle}>Giao Đến</Text>
-            <Text style={styles.infoDeliveryTime}>Thời gian nhận: {deliveryTime}</Text>
+            <Text style={styles.infoCardTitle}>{fulfillmentType === "delivery" ? "Giao đến" : "Nhận tại cửa hàng"}</Text>
+            <Text style={styles.infoDeliveryTime}>Thời gian nhận: {formatDeliveryTime(deliveryTime)}</Text>
             <Text style={styles.infoText}>{fullname}</Text>
             <Text style={styles.infoText}>{phone}</Text>
             <Text style={styles.infoText}>{address}</Text>
@@ -544,15 +593,6 @@ export default function CheckoutScreen() {
                 </View>
               )}
 
-            <View style={styles.pricingRow}>
-              <View style={styles.infoLabelWrap}>
-                <Text style={styles.pricingLabel}>Phí giao hàng</Text>
-                <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
-              </View>
-              <Text style={styles.pricingValue}>
-                {formatCurrency(confirmedOrderData?.deliveryFee ?? deliveryFee)}
-              </Text>
-            </View>
 
             <View style={styles.pricingDivider} />
 
@@ -564,7 +604,7 @@ export default function CheckoutScreen() {
                   <Text style={{ fontWeight: '700', color: '#111827' }}>
                     {confirmedOrderData?.earnedPoints ?? earnedPoints} điểm
                   </Text>{' '}
-                  Hut rewards
+                  FPT Rewards
                 </Text>
               </View>
               <Text style={styles.totalValue}>
@@ -608,267 +648,236 @@ export default function CheckoutScreen() {
         <Text style={styles.headerTitle}>Thanh toán</Text>
         <View style={styles.placeholder} />
       </View>
+      <StoreClosedBanner status={store} />
 
+      <KeyboardAvoidingView style={styles.keyboardContainer}
+        enabled={Platform.OS === 'ios'} behavior="padding" keyboardVerticalOffset={insets.top + 52}>
       <ScrollView
         style={styles.scrollContainer}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.checkoutContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* BLOCK 1: GIAO ĐẾN */}
-        <View style={styles.whiteSectionBlock}>
-          <TouchableOpacity
-            style={styles.fieldRowClickable}
+        <View style={styles.checkoutCard}>
+          <CheckoutRow
+            icon={fulfillmentType === 'delivery' ? <MapPin size={20} color="#5B6470" /> : <Store size={20} color="#5B6470" />}
+            title={fulfillmentType === 'delivery' ? 'Giao đến' : 'Nhận tại cửa hàng'}
+            subtitle={address || 'Chọn địa chỉ nhận món'}
             onPress={handleOpenAddressModal}
-            activeOpacity={0.7}
-          >
-            <View style={styles.fieldLeftWrap}>
-              <Text style={styles.sectionHeaderTitle}>Giao đến</Text>
-              <Text
-                style={[
-                  styles.addressSubtext,
-                  !address && { color: '#CF4226', fontStyle: 'italic' },
-                ]}
-                numberOfLines={2}
-              >
-                {address || 'Vui lòng chọn địa chỉ nhận hàng'}
-              </Text>
-            </View>
-            <ChevronRight size={20} color="#9CA3AF" />
-          </TouchableOpacity>
-
-          <View style={styles.noteInputContainer}>
-            <View style={styles.noteHeaderRow}>
-              <Text style={styles.noteLabel}>Ghi chú</Text>
-              <Text style={styles.noteCounter}>{deliveryNote.length}/200</Text>
-            </View>
-            <TextInput
-              style={styles.noteTextInput}
-              placeholder="Ghi chú cho giao hàng, ví dụ: tầng, phòng..."
-              placeholderTextColor="#9CA3AF"
-              maxLength={200}
-              value={deliveryNote}
-              onChangeText={handleUpdateDeliveryNote}
-            />
-          </View>
-        </View>
-
-        <View style={styles.sectionDividerGap} />
-
-        {/* BLOCK 2: THỜI GIAN NHẬN */}
-        <View style={styles.whiteSectionBlock}>
-          <TouchableOpacity
-            style={styles.fieldRowClickable}
-            onPress={() => setTimeModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.sectionHeaderTitle}>Thời gian nhận</Text>
-            <View style={styles.rowRightBadge}>
-              <Text style={styles.timeValueText}>{deliveryTime}</Text>
-              <ChevronRight size={20} color="#9CA3AF" style={{ marginLeft: 4 }} />
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.sectionDividerGap} />
-
-        {/* BLOCK 3: NGƯỜI ĐẶT HÀNG */}
-        <View style={styles.whiteSectionBlock}>
-          <Text style={styles.sectionHeaderTitle}>Người đặt hàng</Text>
-          <Text style={styles.sectionSubTitle}>
-            Thông tin được dùng để tích lũy điểm thành viên
-          </Text>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.inputLabel}>Họ và tên</Text>
-            <TextInput
-              style={styles.textInputFull}
-              value={fullname}
-              onChangeText={handleUpdateFullname}
-              placeholder="Nhập họ và tên"
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.inputLabel}>Số điện thoại</Text>
-            <View style={styles.phoneInputRow}>
-              <View style={styles.countryCodeBadge}>
-                <Text style={styles.countryCodeText}>+84</Text>
+          />
+          <View style={styles.cardDivider} />
+          <CheckoutRow icon={<Clock3 size={20} color="#5B6470" />}
+            title="Thời gian nhận" subtitle={useAhamove && deliveryTime === 'asap' ? 'Giao ngay khi món sẵn sàng' : formatDeliveryTime(deliveryTime)}
+            onPress={() => setTimeModalVisible(true)} />
+          <View style={styles.cardDivider} />
+          {showNote ? (
+            <View style={styles.optionalField}>
+              <View style={styles.compactHeading}>
+                <NotebookPen size={18} color="#6B7280" />
+                <Text style={styles.fieldLabel}>Ghi chú giao nhận</Text>
+                <TouchableOpacity style={styles.collapseAction} onPress={() => setShowNote(false)}
+                  accessibilityRole="button" accessibilityLabel="Thu gọn ghi chú" accessibilityState={{ expanded: true }}>
+                  <Minus size={18} color="#66707C" />
+                </TouchableOpacity>
               </View>
-              <TextInput
-                style={styles.phoneTextInput}
-                value={phone}
-                onChangeText={handleUpdatePhone}
-                keyboardType="phone-pad"
-                placeholder="Nhập số điện thoại"
-                placeholderTextColor="#9CA3AF"
-              />
+              <TextInput style={styles.noteTextInput} value={deliveryNote} onChangeText={handleUpdateDeliveryNote}
+                accessibilityLabel="Ghi chú giao nhận, không bắt buộc" placeholder="Tầng, số phòng…" placeholderTextColor="#9CA3AF"
+                maxLength={200} multiline />
             </View>
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.inputLabel}>Email</Text>
-            <TextInput
-              style={styles.textInputFull}
-              value={email}
-              onChangeText={handleUpdateEmail}
-              keyboardType="email-address"
-              placeholder="Nhập địa chỉ email"
-              placeholderTextColor="#9CA3AF"
-              autoCapitalize="none"
-            />
-          </View>
+          ) : (
+            <TouchableOpacity style={styles.optionalAction} onPress={() => setShowNote(true)} accessibilityRole="button">
+              <Plus size={17} color="#6B7280" />
+              <Text style={styles.optionalActionText} numberOfLines={1}>{deliveryNote || "Thêm ghi chú"}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        <View style={styles.sectionDividerGap} />
-
-        {/* BLOCK 4: PHƯƠNG THỨC THANH TOÁN */}
-        <View style={styles.whiteSectionBlock}>
-          <TouchableOpacity
-            style={styles.fieldRowClickable}
-            onPress={handleOpenPaymentModal}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.sectionHeaderTitle}>Phương thức thanh toán</Text>
-            <View style={styles.rowRightBadge}>
-              <Text style={styles.paymentMethodValue}>
-                {selectedPayment?.name || 'Tiền mặt'}
-              </Text>
-              <ChevronRight size={20} color="#9CA3AF" style={{ marginLeft: 4 }} />
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.sectionDividerGap} />
-
-        {/* BLOCK 5: VOUCHER */}
-        <View style={styles.whiteSectionBlock}>
-          <TouchableOpacity
-            style={styles.fieldRowClickable}
-            onPress={() => setVoucherModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.sectionHeaderTitle}>Voucher</Text>
-            <View style={styles.rowRightBadge}>
-              <Text
-                style={[
-                  styles.voucherActionHint,
-                  selectedVoucher && { color: BRAND_RED, fontWeight: '700' },
-                ]}
-              >
-                {selectedVoucher ? selectedVoucher.code : 'Nhập hoặc chọn voucher của bạn'}
-              </Text>
-              <ChevronRight size={20} color="#9CA3AF" style={{ marginLeft: 4 }} />
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.sectionDividerGap} />
-
-        {/* BLOCK 6: GIỎ HÀNG CỦA TÔI -> Navigate back to /cart */}
-        <View style={styles.whiteSectionBlock}>
-          <TouchableOpacity
-            style={styles.cartBlockRow}
-            onPress={() => router.push('/(tabs)/cart')}
-            activeOpacity={0.7}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.sectionHeaderTitle}>Giỏ hàng của tôi</Text>
-              <Text style={styles.cartCountSubtext}>
-                Có {itemCount} sản phẩm trong giỏ hàng của bạn
-              </Text>
-            </View>
-            <ChevronRight size={22} color="#111827" />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.sectionDividerGap} />
-
-        {/* BLOCK 7: TỔNG KẾT CHI PHÍ */}
-        <View style={styles.whiteSectionBlock}>
-          <View style={styles.pricingRow}>
-            <Text style={styles.pricingLabel}>Tạm tính</Text>
-            <Text style={styles.pricingValue}>{formatCurrency(subtotal)}</Text>
+        <View style={[styles.checkoutCard, styles.contactCard]}>
+          <View style={styles.cardHeading}>
+            <UserRound size={19} color="#5B6470" />
+            <Text style={styles.cardHeadingText}>Liên hệ</Text>
+            {!!user && (
+              <TouchableOpacity style={styles.contactEditButton} accessibilityRole="button"
+                accessibilityLabel={showContactForm ? 'Xong, xác nhận thông tin liên hệ' : 'Sửa thông tin liên hệ'}
+                accessibilityState={{ expanded: showContactForm }}
+                onPress={() => {
+                  if (showContactForm) {
+                    if (validateContact()) setIsEditingContact(false);
+                  } else {
+                    setIsEditingContact(true);
+                    setShowEmail(!!email);
+                  }
+                }}>
+                <Text style={styles.contactEditText}>{showContactForm ? 'Xong' : 'Sửa'}</Text>
+              </TouchableOpacity>
+            )}
           </View>
-
-          <View style={styles.pricingRow}>
-            <View style={styles.infoLabelWrap}>
-              <Text style={styles.pricingLabel}>Giảm giá thành viên</Text>
-              <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
+          {showContactForm ? (
+          <>
+          <View style={styles.contactField}>
+            <Text style={styles.fieldLabel}>Họ tên</Text>
+            <View style={[styles.contactInputRow, focusedField === 'fullname' && styles.inputFocused, !!fieldErrors.fullname && styles.inputInvalid]}>
+              <UserRound size={17} color="#9CA3AF" accessible={false} />
+              <TextInput ref={fullnameInput} style={styles.contactInput} onFocus={() => setFocusedField('fullname')}
+                onBlur={() => validateField('fullname', fullname)} value={fullname} onChangeText={handleUpdateFullname}
+                accessibilityLabel="Họ tên, bắt buộc" placeholder="Họ và tên" placeholderTextColor="#9CA3AF" autoComplete="name" returnKeyType="next" submitBehavior="submit"
+                onSubmitEditing={() => phoneInput.current?.focus()} />
             </View>
-            <Text style={styles.pricingValue}>0 đ</Text>
+            {!!fieldErrors.fullname && <Text style={styles.fieldError} accessibilityLiveRegion="polite">{fieldErrors.fullname}</Text>}
           </View>
-
-          {selectedVoucher && voucherDiscount > 0 && (
-            <View style={styles.pricingRow}>
-              <Text style={[styles.pricingLabel, { color: BRAND_RED }]}>
-                Giảm giá Voucher ({selectedVoucher.code})
-              </Text>
-              <Text style={[styles.pricingValue, { color: BRAND_RED }]}>
-                -{formatCurrency(selectedVoucher.discountAmount)}
-              </Text>
+          <View style={styles.contactField}>
+            <Text style={styles.fieldLabel}>Số điện thoại</Text>
+            <View style={[styles.contactInputRow, focusedField === 'phone' && styles.inputFocused, !!fieldErrors.phone && styles.inputInvalid]}>
+              <Phone size={17} color="#9CA3AF" accessible={false} />
+              <Text style={styles.phonePrefix}>+84</Text>
+              <TextInput ref={phoneInput} style={styles.contactInput} onFocus={() => setFocusedField('phone')}
+                onBlur={() => validateField('phone', phone)} value={phone} onChangeText={handleUpdatePhone}
+                accessibilityLabel="Số điện thoại, bắt buộc" keyboardType="phone-pad" autoComplete="tel-national"
+                placeholder="9xx xxx xxx" placeholderTextColor="#9CA3AF" returnKeyType={showEmail ? "next" : "done"}
+                onSubmitEditing={() => showEmail ? emailInput.current?.focus() : phoneInput.current?.blur()} />
+            </View>
+            {!!fieldErrors.phone && <Text style={styles.fieldError} accessibilityLiveRegion="polite">{fieldErrors.phone}</Text>}
+          </View>
+          {showEmail ? (
+            <View style={styles.contactField}>
+              <View style={styles.optionalFieldHeading}>
+                <Text style={styles.fieldLabel}>Email <Text style={styles.optionalLabel}>(không bắt buộc)</Text></Text>
+                <TouchableOpacity style={styles.collapseAction} onPress={() => setShowEmail(false)}
+                  accessibilityRole="button" accessibilityLabel="Thu gọn email" accessibilityState={{ expanded: true }}>
+                  <Minus size={18} color="#66707C" />
+                </TouchableOpacity>
+              </View>
+              <View style={[styles.contactInputRow, focusedField === 'email' && styles.inputFocused, !!fieldErrors.email && styles.inputInvalid]}>
+                <Mail size={17} color="#9CA3AF" accessible={false} />
+                <TextInput ref={emailInput} style={styles.contactInput} onFocus={() => setFocusedField('email')}
+                onBlur={() => validateField('email', email)} value={email} onChangeText={handleUpdateEmail}
+                  accessibilityLabel="Email, không bắt buộc" keyboardType="email-address" autoCapitalize="none" autoComplete="email"
+                  placeholder="ten@email.com" placeholderTextColor="#9CA3AF" returnKeyType="done" />
+              </View>
+            {!!fieldErrors.email && <Text style={styles.fieldError} accessibilityLiveRegion="polite">{fieldErrors.email}</Text>}
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.optionalAction} onPress={() => setShowEmail(true)} accessibilityRole="button">
+              <Plus size={17} color="#6B7280" />
+              <Text style={styles.optionalActionText} numberOfLines={1}>{email || "Thêm email"}</Text>
+            </TouchableOpacity>
+          )}
+          </>
+          ) : (
+            <View style={styles.contactSummary}>
+              <Text style={styles.contactName}>{fullname}</Text>
+              <Text style={styles.contactDetail}>{normalizePhone(phone)}</Text>
+              {!!email && <Text style={styles.contactDetail}>{email}</Text>}
             </View>
           )}
+        </View>
 
-          <View style={styles.pricingRow}>
-            <View style={styles.infoLabelWrap}>
-              <Text style={styles.pricingLabel}>Phí giao hàng</Text>
-              <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
+        <View style={styles.checkoutCard}>
+          <CheckoutRow
+            icon={selectedPaymentId === 'payos' ? <Smartphone size={20} color="#5B6470" /> : <Banknote size={20} color="#5B6470" />}
+            title={selectedPaymentId === 'payos' ? 'payOS' : 'Tiền mặt'}
+            subtitle={selectedPaymentId === 'payos'
+              ? (!user || user.isDemo ? 'Đăng nhập tài khoản thật để tạo mã QR' : 'Chuyển khoản bằng mã QR')
+              : 'Khi nhận món'}
+            onPress={handleOpenPaymentModal} />
+          <View style={styles.cardDivider} />
+          <CheckoutRow icon={<TicketPercent size={20} color="#5B6470" />} title="Mã giảm giá"
+            badge={selectedVoucher?.code} badgeTone="accent" onPress={() => setVoucherModalVisible(true)} />
+        </View>
+
+        <View style={styles.checkoutCard}>
+          <CheckoutRow icon={<ShoppingBag size={20} color="#5B6470" />} title="Đơn hàng"
+            badge={`${itemCount} món`} onPress={() => router.navigate('/(tabs)/cart')} />
+          <View style={styles.cardDivider} />
+          <View style={styles.receiptDetails}>
+            <View style={styles.pricingRow}>
+              <Text style={styles.pricingLabel}>Muỗng nĩa nhựa</Text>
+              <Text style={styles.pricingValue}>{needCutlery ? 'Có' : 'Không'}</Text>
             </View>
-            <Text style={styles.pricingValue}>{formatCurrency(deliveryFee)}</Text>
-          </View>
-
-          <View style={styles.pricingDivider} />
-
-          <View style={styles.totalRow}>
-            <View>
-              <Text style={styles.totalLabel}>Tổng cộng</Text>
-              <Text style={styles.rewardPointsNote}>
-                Nhận <Text style={{ fontWeight: '700', color: '#111827' }}>{earnedPoints} điểm</Text> Hut rewards
+            <View style={styles.pricingRow}>
+              <Text style={styles.pricingLabel}>Tạm tính</Text>
+              <Text style={styles.pricingValue}>{formatCurrency(subtotal)}</Text>
+            </View>
+            {useAhamove && (
+              <View style={styles.pricingRow}>
+                <Text style={styles.pricingLabel}>Phí giao Ahamove</Text>
+                <Text style={styles.pricingValue}>{validQuote ? formatCurrency(deliveryFee) : 'Chưa có báo phí'}</Text>
+              </View>
+            )}
+            {!!shippingConfig && (
+              <View style={styles.pricingRow}>
+                <Text style={styles.pricingLabel}>
+                  Phí giao hàng{deliveryPoint && totals.deliveryDistanceKm !== undefined ? ` (${totals.deliveryDistanceKm} km)` : ''}
+                </Text>
+                <Text style={[styles.pricingValue, totals.outOfRange ? { color: colors.error } : null]}>
+                  {locating ? 'Đang tính…' : !deliveryPoint ? 'Chọn địa chỉ để tính' : totals.outOfRange ? 'Ngoài vùng giao'
+                    : deliveryFee === 0 ? 'Miễn phí' : formatCurrency(deliveryFee)}
+                </Text>
+              </View>
+            )}
+            {voucherDiscount > 0 && (
+              <View style={styles.pricingRow}>
+                <Text style={styles.savingsText}>Giảm giá</Text>
+                <Text style={styles.savingsText}>−{formatCurrency(voucherDiscount)}</Text>
+              </View>
+            )}
+            {selectedVoucher && subtotal < selectedVoucher.minSubtotal && (
+              <Text style={styles.voucherWarning}>
+                Mã {selectedVoucher.code} cần đơn từ {formatCurrency(selectedVoucher.minSubtotal)}.
               </Text>
-            </View>
-            <Text style={styles.totalValue}>{formatCurrency(total)}</Text>
+            )}
           </View>
         </View>
 
-        <View style={styles.sectionDividerGap} />
+        {useAhamove && (
+          <View style={styles.checkoutCard}>
+            <Text style={styles.cardHeadingText}>Ahamove • Thử nghiệm</Text>
+            <Text style={styles.contactDetail}>Giao ngay khi món sẵn sàng • Cần đăng nhập • Chưa hỗ trợ voucher</Text>
+            {validQuote && <>
+              <Text style={styles.contactDetail}>Lấy món: {validQuote.pickupName}</Text>
+              <Text style={styles.contactDetail}>{validQuote.pickupAddress}</Text>
+              <Text style={styles.contactDetail}>Báo phí dùng đến {new Date(validQuote.expiresAt).toLocaleTimeString('vi-VN')}.</Text>
+            </>}
+            {!!shippingError && <Text style={styles.fieldError} accessibilityLiveRegion="polite">{shippingError}</Text>}
+            <TouchableOpacity style={styles.optionalAction} onPress={handleGetShippingQuote} disabled={isQuoting || isSubmitting}
+              accessibilityRole="button" accessibilityState={{ busy: isQuoting, disabled: isQuoting || isSubmitting }}>
+              {isQuoting && <ActivityIndicator color={BRAND_RED} />}
+              <Text style={styles.contactEditText}>{isQuoting ? 'Đang lấy phí…' : validQuote ? 'Lấy lại phí / Kiểm tra đơn vừa gửi' : 'Lấy phí / Kiểm tra đơn vừa gửi'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-        {/* BLOCK 8: TERMS & CONDITIONS */}
-        <View style={styles.termsSection}>
-          <TouchableOpacity
-            style={styles.termsCheckboxRow}
-            onPress={() => setAgreeTerms(!agreeTerms)}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.termsSquare, agreeTerms && styles.termsSquareChecked]}>
-              {agreeTerms && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
-            </View>
-            <Text style={styles.termsText}>
-              Tôi đồng ý với{' '}
-              <Text style={styles.termsLink}>các điều khoản và điều kiện</Text> và tham gia{' '}
-              <Text style={styles.termsLink}>chương trình thành viên FPT Rewards</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={{ height: 20 }} />
+        <TouchableOpacity style={styles.consentRow} onPress={() => setAgreeTerms(!agreeTerms)}
+          accessibilityRole="checkbox" accessibilityState={{ checked: agreeTerms }} activeOpacity={0.7}>
+          <View style={[styles.termsSquare, agreeTerms && styles.termsSquareChecked]}>
+            {agreeTerms && <Check size={13} color="#FFFFFF" strokeWidth={2.5} />}
+          </View>
+          <Text style={styles.consentText}>
+            Tôi đồng ý với <Text style={styles.termsLink}>Điều khoản</Text> và tham gia FPT Rewards.
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
 
-      {/* BOTTOM STICKY BUTTON: 'Đặt hàng' */}
-      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <TouchableOpacity
-          style={[styles.orderBtn, isSubmitting && { opacity: 0.7 }]}
-          onPress={handlePlaceOrder}
-          disabled={isSubmitting}
-          activeOpacity={0.88}
-        >
-          {isSubmitting ? (
+      <View style={[styles.checkoutFooter, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        <View style={styles.footerAmount}>
+          <Text style={styles.footerLabel}>{useAhamove && !validQuote ? 'Tiền món • Chưa gồm phí giao' : 'Tổng thanh toán'}</Text>
+          <Text style={styles.footerPrice}>{formatCurrency(total)}</Text>
+        </View>
+        <TouchableOpacity style={[styles.placeOrderButton, isSubmitting && { opacity: 0.65 }]}
+          onPress={handlePlaceOrder} disabled={isSubmitting} activeOpacity={0.85}
+          accessibilityRole="button" accessibilityLabel={selectedPaymentId === 'payos' ? 'Đặt đơn và thanh toán payOS' : 'Đặt hàng'}
+          accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}>
+          {isSubmitting ? <>
             <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <Text style={styles.orderBtnText}>Đặt hàng</Text>
-          )}
+            <Text style={styles.orderBtnText}>{selectedPaymentId === 'payos' ? 'Đang tạo QR…' : 'Đang đặt hàng…'}</Text>
+          </> : <>
+            <Text style={styles.orderBtnText}>{selectedPaymentId === 'payos' ? 'Thanh toán' : 'Đặt hàng'}</Text>
+            <ArrowRight size={18} color="#FFFFFF" accessible={false} />
+          </>}
         </TouchableOpacity>
       </View>
+
+      </KeyboardAvoidingView>
 
       {/* ======================================================== */}
       {/* MODAL: TÌM CỬA HÀNG GẦN BẠN NHẤT / NHẬP TAY ĐỊA CHỈ       */}
@@ -947,8 +956,6 @@ export default function CheckoutScreen() {
                     <View style={styles.pmIconWrap}>
                       {pm.id === 'cash' ? (
                         <Banknote size={20} color="#059669" />
-                      ) : pm.id === 'card' ? (
-                        <CreditCard size={20} color="#2563EB" />
                       ) : (
                         <Smartphone size={20} color={BRAND_RED} />
                       )}
@@ -1026,14 +1033,22 @@ export default function CheckoutScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.emptyVoucherArea}>
+            {selectedVoucher ? (
+              <View style={styles.whiteSectionBlock}>
+                <Text style={styles.sectionHeaderTitle}>Đã áp dụng: {selectedVoucher.code}</Text>
+                <Text style={styles.sectionSubTitle}>{selectedVoucher.description}</Text>
+                <TouchableOpacity accessibilityRole="button" onPress={() => setPromoCode('')} style={{ paddingVertical: 14 }}>
+                  <Text style={{ color: BRAND_RED }}>Gỡ mã giảm giá</Text>
+                </TouchableOpacity>
+              </View>
+            ) : <View style={styles.emptyVoucherArea}>
               <EmptyTicketIcon />
               <Text style={styles.emptyVoucherTitle}>Hiện không có mã giảm giá</Text>
               <Text style={styles.emptyVoucherSub}>
                 Bạn có thể thử nhập mã: <Text style={{ fontWeight: '700' }}>FPT40</Text> hoặc{' '}
                 <Text style={{ fontWeight: '700' }}>FREESHIP</Text>
               </Text>
-            </View>
+            </View>}
 
             <TouchableOpacity
               style={styles.voucherDoneBtn}

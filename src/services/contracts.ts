@@ -17,7 +17,13 @@ export type CreateOrderInput = {
     email?: string;
   };
   fulfillmentType: FulfillmentType;
+  needCutlery?: boolean;
   address?: string;
+  deliveryNote?: string;
+  deliveryTime?: string;
+  deliveryQuoteId?: string;
+  /** Where the address is on the map; the store's shipping fee is the distance to here. */
+  deliveryLocation?: { lat: number; lng: number };
   items: CartItem[];
   promoCode?: string;
   paymentMethod: PaymentMethod;

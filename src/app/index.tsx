@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../state/AuthContext';
 import { styles } from '../styles/splash.styles';
+import { loginDestination } from '../utils/staff';
 
 export default function SplashScreen() {
   const router = useRouter();
@@ -22,22 +23,7 @@ export default function SplashScreen() {
       useNativeDriver: true,
     }).start(() => {
       if (!isLoading && user) {
-        const isAdmin =
-          user.role === 'SUPER_ADMIN' ||
-          user.role === 'STORE_MANAGER' ||
-          user.role === 'ADMIN';
-        const isStaff =
-          user.role === 'EMPLOYEE' ||
-          user.role === 'ROLE_KITCHEN' ||
-          user.role === 'ROLE_RIDER';
-
-        if (isAdmin) {
-          router.replace('/admin/dashboard');
-        } else if (isStaff) {
-          router.replace('/staff/orders');
-        } else {
-          router.replace('/(tabs)/home');
-        }
+        router.replace(loginDestination(user.role));
       } else {
         router.replace('/welcome');
       }

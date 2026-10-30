@@ -8,9 +8,9 @@ import {
   Image,
   Modal,
   ScrollView,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
+import { Alert } from '../../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
@@ -40,6 +40,7 @@ import { styles } from '../../../styles/adminProducts.styles';
 import { Product } from '../../../types/product';
 import { mockProducts } from '../../../data/mockProducts';
 import { formatCurrency } from '../../../utils/formatCurrency';
+import { reportAdminAction } from '../../../services/orderApi';
 
 const CATEGORIES = [
   { id: 'all', name: 'Tất cả' },
@@ -119,8 +120,12 @@ export default function AdminProductsScreen() {
         isAvailable: newStatus,
         updatedAt: serverTimestamp(),
       });
+      void reportAdminAction('PRODUCT_STOCK_CHANGED', `products/${item.id}`, { name: item.name, isAvailable: newStatus });
     } catch (err: any) {
-      console.warn('Cập nhật tồn kho Firestore thất bại:', err.message);
+      setProducts((prev) =>
+        prev.map((p) => (p.id === item.id ? { ...p, isAvailable: item.isAvailable } : p))
+      );
+      Alert.alert('Chưa cập nhật được tình trạng món', err?.message || 'Vui lòng thử lại.');
     }
   };
 
@@ -172,24 +177,27 @@ export default function AdminProductsScreen() {
           description: formDesc.trim(),
           updatedAt: serverTimestamp(),
         });
+        void reportAdminAction('PRODUCT_UPDATED', `products/${editingProduct.id}`, { name: formName.trim(), basePrice: priceNum });
         Alert.alert('Thành công', 'Đã cập nhật thông tin món ăn');
       } else {
         // Thêm sản phẩm mới vào Firestore
-        await addDoc(collection(db, 'products'), {
+        const created = await addDoc(collection(db, 'products'), {
           name: formName.trim(),
           basePrice: priceNum,
           categoryId: formCategory,
           image: formImage.trim() || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500',
           description: formDesc.trim(),
           isAvailable: true,
+          // A variant price is the full selling price (see getItemLineUnitPrice), not a surcharge.
           variants: [
-            { id: 'v1', name: 'Size Vừa (9")', price: 0 },
-            { id: 'v2', name: 'Size Lớn (12")', price: 60000 },
+            { id: 'v1', name: 'Size Vừa (9")', price: priceNum },
+            { id: 'v2', name: 'Size Lớn (12")', price: priceNum + 60000 },
           ],
           addons: [],
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+        void reportAdminAction('PRODUCT_CREATED', `products/${created.id}`, { name: formName.trim(), basePrice: priceNum });
         Alert.alert('Thành công', 'Đã thêm món mới vào thực đơn');
       }
 
@@ -215,9 +223,10 @@ export default function AdminProductsScreen() {
             try {
               await deleteDoc(doc(db, 'products', item.id));
               setProducts((prev) => prev.filter((p) => p.id !== item.id));
+              void reportAdminAction('PRODUCT_DELETED', `products/${item.id}`, { name: item.name });
               Alert.alert('Thành công', 'Đã xóa món ăn khỏi thực đơn');
             } catch (e: any) {
-              Alert.alert('Lỗi', 'Không thể xóa món ăn');
+              Alert.alert('Lỗi', e?.message || 'Không thể xóa món ăn');
             }
           },
         },
@@ -266,6 +275,8 @@ export default function AdminProductsScreen() {
           style={styles.addBtn}
           activeOpacity={0.8}
           onPress={handleOpenAddModal}
+          accessibilityRole="button"
+          accessibilityLabel="Thêm món mới"
         >
           <Plus size={18} color={colors.white} />
           <AppText variant="captionSemiBold" color={colors.white}>
@@ -393,6 +404,8 @@ export default function AdminProductsScreen() {
                       style={[styles.editBtn, { backgroundColor: colors.errorSoft }]}
                       activeOpacity={0.7}
                       onPress={() => handleDeleteProduct(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Xóa món ${item.name}`}
                     >
                       <Trash2 size={14} color={colors.error} />
                     </TouchableOpacity>
@@ -400,6 +413,7 @@ export default function AdminProductsScreen() {
                     {/* Công tắc Toggle In-Stock */}
                     <Switch
                       value={isStock}
+                      accessibilityLabel={`Đang bán ${item.name}`}
                       onValueChange={(val) => handleToggleStock(item, val)}
                       trackColor={{
                         false: colors.border,

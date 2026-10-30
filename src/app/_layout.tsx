@@ -16,12 +16,14 @@ import { CartProvider } from '../state/CartContext';
 import { OrderProvider } from '../state/OrderContext';
 import { FavoritesProvider } from '../state/FavoritesContext';
 import { ToastProvider } from '../state/ToastContext';
+import { OrderStatusNotifier } from '../components/order/OrderStatusNotifier';
 import { colors } from '../theme/colors';
 import { styles } from '../styles/rootLayout.styles';
+import { layoutMode } from '../utils/layout';
 
 export default function RootLayout() {
   const { width } = useWindowDimensions();
-  const isDesktopWeb = Platform.OS === 'web' && width > 600;
+  const mode = layoutMode(width);
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
@@ -62,19 +64,21 @@ export default function RootLayout() {
       <Stack.Screen name="search" options={{ headerShown: false }} />
       <Stack.Screen name="checkout/index" options={{ headerShown: false }} />
       <Stack.Screen name="checkout/payment" options={{ headerShown: false }} />
+      <Stack.Screen name="checkout/payos" options={{ headerShown: false }} />
       <Stack.Screen name="checkout/review" options={{ headerShown: false }} />
       <Stack.Screen name="order/success" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="order/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="welcome" options={{ headerShown: false }} />
       <Stack.Screen name="auth/login" options={{ headerShown: false }} />
       <Stack.Screen name="auth/register" options={{ headerShown: false }} />
+      <Stack.Screen name="auth/verify-email" options={{ headerShown: false }} />
       <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
       <Stack.Screen name="profile/addresses" options={{ headerShown: false }} />
       <Stack.Screen name="profile/settings" options={{ headerShown: false }} />
       <Stack.Screen name="favorites" options={{ headerShown: false }} />
       <Stack.Screen name="offers" options={{ headerShown: false }} />
-      <Stack.Screen name="demo/staff-orders" options={{ headerShown: false }} />
       <Stack.Screen name="staff" options={{ headerShown: false }} />
+      <Stack.Screen name="rider" options={{ headerShown: false }} />
       <Stack.Screen name="admin" options={{ headerShown: false }} />
     </Stack>
   );
@@ -87,7 +91,8 @@ export default function RootLayout() {
             <FavoritesProvider>
               <ToastProvider>
                 <StatusBar style="dark" />
-                {isDesktopWeb ? (
+                <OrderStatusNotifier />
+                {mode === 'webFrame' ? (
                   <View style={styles.desktopCanvas}>
                     <View style={styles.phoneFrame}>
                       <View style={styles.notchContainer}>
@@ -97,7 +102,9 @@ export default function RootLayout() {
                     </View>
                   </View>
                 ) : (
-                  <View style={styles.mobileContainer}>{stackContent}</View>
+                  <View style={[styles.mobileContainer, mode === 'nativeColumn' && styles.tabletCanvas]}>
+                    <View style={[styles.mobileContent, mode === 'nativeColumn' && styles.tabletColumn]}>{stackContent}</View>
+                  </View>
                 )}
               </ToastProvider>
             </FavoritesProvider>

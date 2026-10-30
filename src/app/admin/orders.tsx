@@ -3,46 +3,34 @@ import {
   View,
   FlatList,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   ScrollView,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
-  Clock,
-  ChefHat,
-  Package,
-  Bike,
-  CheckCircle,
-  XCircle,
-  RefreshCw,
   Phone,
   User as UserIcon,
   Ban,
   RotateCcw,
 } from 'lucide-react-native';
-import {
-  collection,
-  onSnapshot,
-  doc,
-  updateDoc,
-  serverTimestamp,
-  query,
-  orderBy,
-} from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../../services/firebase';
+import { markOrderRefunded, rejectStaffOrder } from '../../services/orderApi';
+import { Alert } from '../../utils/alert';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { AppText } from '../../components/ui/AppText';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { colors } from '../../theme/colors';
 import { styles } from '../../styles/adminOrders.styles';
 import { Order, OrderStatus } from '../../types/order';
-import { initialMockOrders } from '../../data/mockOrders';
 import { formatCurrency } from '../../utils/formatCurrency';
 
 const STATUS_FILTERS: { key: string; label: string }[] = [
   { key: 'ALL', label: 'Tất cả' },
+  { key: 'REFUND_PENDING', label: 'Chờ hoàn tiền' },
   { key: 'PENDING_CONFIRMATION', label: 'Chờ duyệt' },
   { key: 'CONFIRMED', label: 'Xác nhận' },
   { key: 'PREPARING', label: 'Đang nấu' },
@@ -51,6 +39,9 @@ const STATUS_FILTERS: { key: string; label: string }[] = [
   { key: 'COMPLETED', label: 'Hoàn tất' },
   { key: 'CANCELLED', label: 'Đã hủy' },
 ];
+
+const PAID: string[] = ['PAID', 'PAID_DEMO'];
+const REFUNDED: string[] = ['REFUNDED', 'REFUNDED_DEMO'];
 
 export default function AdminOrdersScreen() {
   const router = useRouter();
@@ -90,22 +81,25 @@ export default function AdminOrdersScreen() {
                 tax: Number(data.tax || 0),
                 total: Number(data.totalAmount || data.total || 0),
                 statusHistory: data.statusHistory || [],
+                cancelReason: data.cancelReason || '',
+                refundDueAt: data.refundDueAt?.toMillis?.() ?? (data.refundDueAt?.seconds ? data.refundDueAt.seconds * 1000 : undefined),
               } as Order);
             });
             setOrders(list);
           } else {
-            setOrders(initialMockOrders);
+            setOrders([]);
           }
           setLoading(false);
         },
         (err: any) => {
-          console.warn('Lỗi onSnapshot orders:', err.message);
-          setOrders(initialMockOrders);
+          // Showing demo orders here would look like real data; say what failed instead.
+          setOrders([]);
           setLoading(false);
+          Alert.alert('Không tải được đơn hàng', err.message);
         }
       );
-    } catch (e) {
-      setOrders(initialMockOrders);
+    } catch {
+      setOrders([]);
       setLoading(false);
     }
     return () => unsub();
@@ -122,82 +116,50 @@ export default function AdminOrdersScreen() {
           text: 'Hủy ngay',
           style: 'destructive',
           onPress: async () => {
+            // Through the backend: keeps status history and flags paid orders for refund.
             try {
-              await updateDoc(doc(db, 'orders', order.id), {
-                status: 'CANCELLED',
-                cancelReason: 'Admin can thiệp hủy đơn',
-                updatedAt: serverTimestamp(),
-              });
-            } catch {
-              // Cập nhật local
+              await rejectStaffOrder(order.id, 'Admin can thiệp hủy đơn');
+              Alert.alert('Đã hủy', `Đơn hàng #${order.id.slice(-6).toUpperCase()} đã được hủy.`);
+            } catch (e) {
+              Alert.alert('Chưa hủy được đơn', e instanceof Error ? e.message : 'Vui lòng thử lại.');
             }
-            setOrders(prev =>
-              prev.map(o =>
-                o.id === order.id ? { ...o, status: 'CANCELLED' as OrderStatus } : o
-              )
-            );
-            Alert.alert('Đã hủy', `Đơn hàng #${order.id.slice(-6).toUpperCase()} đã được hủy.`);
           },
         },
       ]
     );
   };
 
-  // Kích hoạt hoàn tiền — REFUND_PENDING → REFUNDED_DEMO
-  const handleRefund = (order: Order) => {
-    Alert.alert(
-      'Xử Lý Hoàn Tiền',
-      `Hoàn tiền ${formatCurrency(order.total)} cho đơn #${order.id.slice(-6).toUpperCase()} của khách ${order.customer.fullname}?`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xác nhận hoàn tiền',
-          onPress: async () => {
-            try {
-              await updateDoc(doc(db, 'orders', order.id), {
-                paymentStatus: 'REFUNDED_DEMO',
-                refundedAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              });
-            } catch {
-              // Cập nhật local
-            }
-            setOrders(prev =>
-              prev.map(o =>
-                o.id === order.id ? { ...o, paymentStatus: 'REFUNDED_DEMO' } : o
-              )
-            );
-            Alert.alert('Hoàn tiền thành công', `Đã kích hoạt hoàn tiền ${formatCurrency(order.total)} cho khách hàng.`);
-          },
-        },
-      ]
-    );
+  // Admin đã hoàn tiền thủ công cho khách — REFUND_PENDING → REFUNDED
+  const [refundTarget, setRefundTarget] = useState<Order | null>(null);
+  const [refundNote, setRefundNote] = useState('');
+  const [refunding, setRefunding] = useState(false);
+  const handleRefund = (order: Order) => { setRefundNote(''); setRefundTarget(order); };
+  const confirmRefund = async () => {
+    if (!refundTarget || refunding) return;
+    setRefunding(true);
+    try {
+      await markOrderRefunded(refundTarget.id, refundNote);
+      Alert.alert('Đã ghi nhận hoàn tiền', `Đơn đã được đánh dấu hoàn ${formatCurrency(refundTarget.total)} cho khách. Khách sẽ nhận thông báo.`);
+      setRefundTarget(null);
+    } catch (e) {
+      Alert.alert('Chưa ghi nhận được', e instanceof Error ? e.message : 'Vui lòng thử lại.');
+    } finally { setRefunding(false); }
   };
 
+  // Refund queue: paid orders that were cancelled, longest-waiting first so nobody's money sits unattended.
+  const refundQueue = orders.filter(o => o.paymentStatus === 'REFUND_PENDING')
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
   const filteredOrders = filterStatus === 'ALL'
     ? orders
-    : orders.filter(o => o.status === filterStatus);
+    : filterStatus === 'REFUND_PENDING'
+      ? refundQueue
+      : orders.filter(o => o.status === filterStatus);
 
-  const getStatusIcon = (status: OrderStatus) => {
-    switch (status) {
-      case 'PENDING_CONFIRMATION': return <Clock size={16} color={colors.warning} />;
-      case 'CONFIRMED': return <CheckCircle size={16} color={colors.primary} />;
-      case 'PREPARING': return <ChefHat size={16} color={colors.warning} />;
-      case 'READY': return <Package size={16} color={colors.success} />;
-      case 'OUT_FOR_DELIVERY': return <Bike size={16} color={colors.primary} />;
-      case 'COMPLETED': return <CheckCircle size={16} color={colors.success} />;
-      case 'CANCELLED': return <XCircle size={16} color={colors.error} />;
-      default: return null;
-    }
-  };
-
+  // Same limits as the backend's reject(): not once the order is out for delivery or done.
   const canCancel = (status: OrderStatus) =>
-    !['COMPLETED', 'CANCELLED'].includes(status);
+    !['COMPLETED', 'CANCELLED', 'OUT_FOR_DELIVERY'].includes(status);
 
-  const canRefund = (order: Order) =>
-    order.status === 'CANCELLED' &&
-    order.paymentMethod === 'MOCK_WALLET' &&
-    order.paymentStatus !== 'REFUNDED_DEMO';
+  const canRefund = (order: Order) => order.paymentStatus === 'REFUND_PENDING';
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -227,7 +189,7 @@ export default function AdminOrdersScreen() {
                 variant="captionSemiBold"
                 color={filterStatus === f.key ? colors.white : colors.textPrimary}
               >
-                {f.label}
+                {f.label}{f.key === 'REFUND_PENDING' && refundQueue.length > 0 ? ` (${refundQueue.length})` : ''}
               </AppText>
             </TouchableOpacity>
           ))}
@@ -247,7 +209,7 @@ export default function AdminOrdersScreen() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <AppText variant="bodyMedium" color={colors.textSecondary}>
-                Không có đơn nào
+                {filterStatus === 'REFUND_PENDING' ? 'Không có đơn nào đang chờ hoàn tiền' : 'Không có đơn nào'}
               </AppText>
             </View>
           }
@@ -270,9 +232,9 @@ export default function AdminOrdersScreen() {
                         styles.paymentBadge,
                         {
                           backgroundColor:
-                            item.paymentStatus === 'PAID_DEMO'
+                            PAID.includes(item.paymentStatus)
                               ? colors.successSoft
-                              : item.paymentStatus === 'REFUNDED_DEMO'
+                              : REFUNDED.includes(item.paymentStatus)
                               ? colors.primarySoft
                               : colors.warningSoft,
                         },
@@ -281,17 +243,19 @@ export default function AdminOrdersScreen() {
                       <AppText
                         variant="small"
                         color={
-                          item.paymentStatus === 'PAID_DEMO'
+                          PAID.includes(item.paymentStatus)
                             ? colors.success
-                            : item.paymentStatus === 'REFUNDED_DEMO'
+                            : REFUNDED.includes(item.paymentStatus)
                             ? colors.primary
                             : colors.warning
                         }
                       >
-                        {item.paymentStatus === 'PAID_DEMO'
+                        {PAID.includes(item.paymentStatus)
                           ? 'Đã thanh toán'
-                          : item.paymentStatus === 'REFUNDED_DEMO'
+                          : REFUNDED.includes(item.paymentStatus)
                           ? 'Đã hoàn tiền'
+                          : item.paymentStatus === 'REFUND_PENDING'
+                          ? 'Chờ hoàn tiền'
                           : 'Chưa thanh toán'}
                       </AppText>
                     </View>
@@ -348,6 +312,19 @@ export default function AdminOrdersScreen() {
                 </AppText>
               </View>
 
+              {item.paymentStatus === 'REFUND_PENDING' && (
+                <View style={{ gap: 2 }}>
+                  {!!(item as any).cancelReason && (
+                    <AppText variant="caption" color={colors.textSecondary}>Lý do hủy: {(item as any).cancelReason}</AppText>
+                  )}
+                  {!!(item as any).refundDueAt && (
+                    <AppText variant="captionMedium" color={Date.now() > (item as any).refundDueAt ? colors.error : colors.warning}>
+                      {Date.now() > (item as any).refundDueAt ? 'QUÁ HẠN hoàn tiền' : 'Hạn hoàn tiền'}: {new Date((item as any).refundDueAt).toLocaleString('vi-VN')}
+                    </AppText>
+                  )}
+                </View>
+              )}
+
               {/* Admin Actions: Can thiệp Hủy / Hoàn tiền */}
               {(canCancel(item.status) || canRefund(item)) && (
                 <View style={styles.actionRow}>
@@ -372,7 +349,7 @@ export default function AdminOrdersScreen() {
                     >
                       <RotateCcw size={15} color={colors.warning} />
                       <AppText variant="captionSemiBold" color={colors.warning}>
-                        Hoàn tiền Demo
+                        Đã hoàn tiền cho khách
                       </AppText>
                     </TouchableOpacity>
                   )}
@@ -382,6 +359,29 @@ export default function AdminOrdersScreen() {
           )}
         />
       )}
+
+      <Modal visible={!!refundTarget} transparent animationType="fade" onRequestClose={() => setRefundTarget(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 20, gap: 12 }}>
+            <AppText variant="h3">Xác nhận đã hoàn tiền</AppText>
+            {!!refundTarget && (
+              <AppText variant="body" color={colors.textSecondary}>
+                Hoàn {formatCurrency(refundTarget.total)} cho đơn #{refundTarget.id.slice(-6).toUpperCase()} của {refundTarget.customer.fullname}.
+              </AppText>
+            )}
+            <TextInput value={refundNote} onChangeText={setRefundNote} placeholder="Ghi chú: mã giao dịch, ngân hàng (không bắt buộc)"
+              accessibilityLabel="Ghi chú hoàn tiền" maxLength={300}
+              style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12, color: colors.textPrimary }} />
+            <TouchableOpacity onPress={() => { void confirmRefund(); }} disabled={refunding} accessibilityRole="button" accessibilityLabel="Xác nhận hoàn tiền"
+              style={{ backgroundColor: colors.primary, borderRadius: 12, padding: 14, alignItems: 'center', opacity: refunding ? 0.6 : 1 }}>
+              <AppText variant="bodyMedium" color={colors.white}>Xác nhận hoàn tiền</AppText>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setRefundTarget(null)} accessibilityRole="button" accessibilityLabel="Hủy" style={{ padding: 10, alignItems: 'center' }}>
+              <AppText variant="body" color={colors.textSecondary}>Hủy</AppText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

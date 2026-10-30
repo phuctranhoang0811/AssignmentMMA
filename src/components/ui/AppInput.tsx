@@ -50,6 +50,7 @@ export const AppInput: React.FC<AppInputProps> = ({
         {leftIcon && <View style={styles.leftIcon}>{leftIcon}</View>}
         <TextInput
           placeholderTextColor={colors.textDisabled}
+          accessibilityLabel={label ?? props.placeholder}
           style={[styles.input, style]}
           onFocus={(e) => {
             setIsFocused(true);

@@ -1,5 +1,15 @@
 export type PizzaSizeId = 'small' | 'medium' | 'large';
 
+/**
+ * The size/crust/topping builder applies only to real pizzas, whose sizes are small/medium/large.
+ * Combos are filed under the pizza category too, but their variants (e.g. 'pep') are not pizza sizes.
+ * Shared by the app and the backend so both agree on what may carry a customization.
+ */
+export function isCustomizablePizza(product?: { categoryId?: string; variants?: { id: string }[] }) {
+  const sizes = ['small', 'medium', 'large'];
+  return product?.categoryId === 'pizza' && !!product.variants?.length && product.variants.every(v => sizes.includes(v.id));
+}
+
 export interface PizzaCrust {
   id: string;
   name: string;

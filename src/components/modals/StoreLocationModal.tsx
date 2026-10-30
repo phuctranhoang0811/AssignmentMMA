@@ -7,10 +7,10 @@ import {
   TouchableOpacity,
   TextInput,
   Modal,
-  Alert,
   Platform,
   StatusBar,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, MapPin, XCircle } from 'lucide-react-native';
@@ -49,7 +49,6 @@ export function StoreLocationModal({
   const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'takeaway'>(initialFulfillment);
   const [manualAddressInput, setManualAddressInput] = useState(currentAddress);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
 
   useEffect(() => {
@@ -74,13 +73,10 @@ export function StoreLocationModal({
 
     const timer = setTimeout(async () => {
       try {
-        setIsSearching(true);
         const results = await searchVietnamAddresses(query);
         setAddressSuggestions(results);
       } catch {
         setAddressSuggestions([]);
-      } finally {
-        setIsSearching(false);
       }
     }, 200);
 
@@ -116,8 +112,11 @@ export function StoreLocationModal({
     }
   };
 
+  const needsAddress = fulfillmentType === 'delivery' && !(manualAddressInput.trim() || currentAddress);
   const handleConfirm = () => {
-    const finalAddress = manualAddressInput.trim() || currentAddress;
+    if (needsAddress) return;
+    // Pickup keeps the saved delivery address untouched.
+    const finalAddress = fulfillmentType === 'delivery' ? manualAddressInput.trim() || currentAddress : currentAddress;
     triggerHaptic('success');
     onConfirmAddress(finalAddress, fulfillmentType);
     onClose();
@@ -142,6 +141,8 @@ export function StoreLocationModal({
           <TouchableOpacity
             style={styles.addressModalBackBtn}
             onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Đóng"
             activeOpacity={0.7}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
@@ -156,6 +157,21 @@ export function StoreLocationModal({
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          <View style={styles.modeSwitch} accessibilityRole="tablist">
+            {([['delivery', 'Giao tận nơi'], ['takeaway', 'Đến lấy tại cửa hàng']] as const).map(([mode, label]) => (
+              <TouchableOpacity key={mode} onPress={() => setFulfillmentType(mode)} accessibilityRole="tab"
+                accessibilityState={{ selected: fulfillmentType === mode }}
+                style={[styles.modeButton, fulfillmentType === mode && styles.modeButtonActive]}>
+                <Text style={[styles.modeText, fulfillmentType === mode && styles.modeTextActive]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {fulfillmentType === 'takeaway' ? (
+            <Text style={styles.pickupNote}>
+              Bạn sẽ nhận món tại quầy, không mất phí giao hàng. Cửa hàng sẽ báo khi món đã sẵn sàng trong mục Đơn hàng.
+            </Text>
+          ) : (<>
           {/* Section: Vị trí của tôi */}
           <Text style={styles.myLocationSectionTitle}>Vị trí của tôi</Text>
 
@@ -166,6 +182,8 @@ export function StoreLocationModal({
               activeOpacity={0.8}
               onPress={handleGetCurrentLocation}
               disabled={isLocating}
+              accessibilityRole="button"
+              accessibilityLabel="Lấy vị trí hiện tại"
             >
               <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
                 <Circle cx="12" cy="12" r="7" stroke="#FFFFFF" strokeWidth={2} />
@@ -231,13 +249,19 @@ export function StoreLocationModal({
               ))}
             </View>
           )}
+          {!manualAddressInput && addressSuggestions.length === 0 && (
+            <Text style={styles.pickupNote}>Gõ tên đường, tòa nhà hoặc bấm biểu tượng định vị để lấy vị trí hiện tại.</Text>
+          )}
+          </>)}
         </ScrollView>
 
         {/* Confirm Button */}
         <View style={styles.modalBottomBar}>
           <TouchableOpacity
-            style={styles.confirmAddressBtn}
+            style={[styles.confirmAddressBtn, needsAddress && { opacity: 0.5 }]}
             onPress={handleConfirm}
+            disabled={needsAddress}
+            accessibilityState={{ disabled: needsAddress }}
             activeOpacity={0.88}
           >
             <Text style={styles.confirmAddressBtnText}>Bắt đầu đặt hàng</Text>
@@ -249,6 +273,12 @@ export function StoreLocationModal({
 }
 
 const styles = StyleSheet.create({
+  modeSwitch: { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 999, padding: 4, marginBottom: 16 },
+  modeButton: { flex: 1, paddingVertical: 10, borderRadius: 999, alignItems: 'center' },
+  modeButtonActive: { backgroundColor: '#FFFFFF' },
+  modeText: { color: '#6B7280', fontWeight: '500' },
+  modeTextActive: { color: BRAND_RED, fontWeight: '700' },
+  pickupNote: { color: '#6B7280', lineHeight: 20, marginTop: 12 },
   modalFullContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
