@@ -146,7 +146,8 @@ Có rate limit cho đăng nhập SĐT, OTP và tra cứu đơn.
 
 | File | Nội dung | Commit? |
 | --- | --- | --- |
-| `.env` (gốc) | `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_FIREBASE_*`, Google client ID | Không (`.env.example` là mẫu) |
+| `.env.development` | `EXPO_PUBLIC_API_URL` trỏ tới backend Render (không bí mật) | Có |
+| `.env` (gốc) | `EXPO_PUBLIC_FIREBASE_*`, Google client ID (Firebase đã có giá trị mặc định trong code) | Không (`.env.example` là mẫu) |
 | `backend/.env` | `PAYOS_*`, `SMTP_*`, `FIREBASE_WEB_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`, `STAFF_UIDS`, `AHAMOVE_*` | Không (`backend/.env.example` là mẫu) |
 | Service account Firebase | Đặt **ngoài** repo, trỏ bằng `GOOGLE_APPLICATION_CREDENTIALS` | Không |
 
@@ -154,7 +155,8 @@ Có rate limit cho đăng nhập SĐT, OTP và tra cứu đơn.
 
 | Lệnh | Việc |
 | --- | --- |
-| `npm run share` | Backend + link công khai + Expo tunnel để cả nhóm quét QR test |
+| `npm start` | Chạy app (Expo Go), gọi backend Render qua `.env.development` |
+| `npm run share` | Backend local + link công khai + Expo tunnel để cả nhóm quét QR test |
 | `npm run dev:all` | Backend + Expo Go trên máy local |
 | `npm run android:dev` | Emulator Android + backend + Expo Go |
 | `npm run seed:firebase` hoặc `npm --prefix backend run seed:catalog` | Đồng bộ menu mẫu lên Firestore |
@@ -167,4 +169,4 @@ Có rate limit cho đăng nhập SĐT, OTP và tra cứu đơn.
 - Expo Go không có push notification và Google Sign-In native; cần development build.
 - payOS là tiền thật (không có sandbox), nên test nên dùng COD.
 - Backend giữ trạng thái OTP và phiên Google bridge trong bộ nhớ: chạy nhiều instance hoặc khởi động lại sẽ mất.
-- `README.md` còn mô tả giai đoạn "frontend-first, mock data", đã lỗi thời so với hệ thống hiện tại.
+- Backend chạy trên Render gói free (`https://pizza-fpt-backend.onrender.com`): ngủ sau ~15 phút không dùng, request đầu chậm 30–60 giây.
