@@ -150,7 +150,7 @@ class FirebaseOrderService implements OrderService {
       items: snapshots,
       status: 'PENDING_CONFIRMATION',
       paymentMethod: input.paymentMethod,
-      paymentStatus: input.paymentMethod === 'MOCK_WALLET' ? 'PAID_DEMO' : 'UNPAID',
+      paymentStatus: (input.paymentMethod as any) === 'MOCK_WALLET' ? 'PAID_DEMO' : 'UNPAID',
       subtotal: totals.subtotal,
       discount: totals.discount,
       deliveryFee: totals.deliveryFee,

@@ -11,7 +11,7 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { Search, Plus, X } from 'lucide-react-native';
 import { formatCurrency } from '../../utils/formatCurrency';

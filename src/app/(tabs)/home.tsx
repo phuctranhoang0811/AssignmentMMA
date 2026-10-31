@@ -441,11 +441,11 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.menuPromoScroll}
         >
-          {/* Card 1: KIDS MENU */}
+          {/* Card 1: TIỆC CHEESE */}
           <TouchableOpacity
             style={styles.menuPromoCard}
             activeOpacity={0.85}
-            onPress={() => router.push('/(tabs)/menu')}
+            onPress={() => router.push({ pathname: '/(tabs)/menu', params: { category: 'cheese_party' } })}
           >
             <Image
               source={{
@@ -456,7 +456,7 @@ export default function HomeScreen() {
             />
             <View style={styles.menuPromoLabelBox}>
               <Text style={styles.menuPromoLabelText} numberOfLines={1}>
-                KIDS MENU
+                TIỆC CHEESE
               </Text>
             </View>
           </TouchableOpacity>
@@ -465,7 +465,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.menuPromoCard}
             activeOpacity={0.85}
-            onPress={() => router.push('/offers')}
+            onPress={() => router.push({ pathname: '/(tabs)/menu', params: { category: 'member_deals' } })}
           >
             <View style={styles.memberDealGraphic}>
               <Text style={styles.memberDealTopText}>
@@ -477,33 +477,33 @@ export default function HomeScreen() {
             </View>
             <View style={styles.menuPromoLabelBox}>
               <Text style={styles.menuPromoLabelText} numberOfLines={1}>
-                GIÁ ƯU ĐÃI THÀN...
+                THÀNH VIÊN
               </Text>
             </View>
           </TouchableOpacity>
 
-          {/* Card 3: MY BOX */}
+          {/* Card 3: DEAL NÓNG 70% */}
           <TouchableOpacity
             style={styles.menuPromoCard}
             activeOpacity={0.85}
-            onPress={() => router.push('/(tabs)/menu')}
+            onPress={() => router.push({ pathname: '/(tabs)/menu', params: { category: 'hot_deals' } })}
           >
             <View style={styles.myBoxGraphic}>
-              <Text style={styles.myBoxTitle}>MY BOX</Text>
-              <Text style={styles.myBoxSub}>COMBO 1 NGƯỜI</Text>
+              <Text style={styles.myBoxTitle}>DEAL HOT</Text>
+              <Text style={styles.myBoxSub}>GIẢM ĐẾN 70%</Text>
             </View>
             <View style={styles.menuPromoLabelBox}>
               <Text style={styles.menuPromoLabelText} numberOfLines={1}>
-                MY BOX
+                DEAL HOT 70%
               </Text>
             </View>
           </TouchableOpacity>
 
-          {/* Card 4: COMBO NHÓM */}
+          {/* Card 4: PIZZA */}
           <TouchableOpacity
             style={styles.menuPromoCard}
             activeOpacity={0.85}
-            onPress={() => router.push('/(tabs)/menu')}
+            onPress={() => router.push({ pathname: '/(tabs)/menu', params: { category: 'pizza' } })}
           >
             <Image
               source={{
@@ -514,7 +514,7 @@ export default function HomeScreen() {
             />
             <View style={styles.menuPromoLabelBox}>
               <Text style={styles.menuPromoLabelText} numberOfLines={1}>
-                COMBO NHÓM
+                PIZZA
               </Text>
             </View>
           </TouchableOpacity>

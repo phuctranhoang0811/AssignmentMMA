@@ -44,6 +44,9 @@ import { reportAdminAction } from '../../../services/orderApi';
 
 const CATEGORIES = [
   { id: 'all', name: 'Tất cả' },
+  { id: 'cheese_party', name: 'Tiệc Cheese' },
+  { id: 'member_deals', name: 'Giá Ưu Đãi Thành Viên' },
+  { id: 'hot_deals', name: 'Deal Nóng 70%' },
   { id: 'pizza', name: 'Pizza' },
   { id: 'starters', name: 'Khai vị' },
   { id: 'drinks', name: 'Thức uống' },
@@ -64,7 +67,7 @@ export default function AdminProductsScreen() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formName, setFormName] = useState('');
   const [formPrice, setFormPrice] = useState('');
-  const [formCategory, setFormCategory] = useState<any>('pizza');
+  const [formCategory, setFormCategory] = useState<any>('cheese_party');
   const [formImage, setFormImage] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -134,7 +137,7 @@ export default function AdminProductsScreen() {
     setEditingProduct(null);
     setFormName('');
     setFormPrice('');
-    setFormCategory('pizza');
+    setFormCategory('cheese_party');
     setFormImage('https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500');
     setFormDesc('');
     setModalVisible(true);
