@@ -26,6 +26,8 @@ import {
 } from '../../types/pizzaCustomization';
 
 import { useCart } from '../../state/CartContext';
+import { useAuth } from '../../state/AuthContext';
+import { hasPromptedMemberDiscount } from '../../utils/sessionFlags';
 import { useFavorites } from '../../state/FavoritesContext';
 import { useToast } from '../../state/ToastContext';
 import { replaceCartItem } from '../../utils/cartOperations';
@@ -63,6 +65,7 @@ export default function ProductDetailScreen() {
 
   const insets = useSafeAreaInsets();
   const { items, addItem, updateItem } = useCart();
+  const { isAuthenticated } = useAuth();
   const editingItem = items.find(item => item.lineId === lineId);
   const { isFavorite, toggleFavorite } = useFavorites();
   const { showToast } = useToast();
@@ -215,6 +218,18 @@ export default function ProductDetailScreen() {
     if (lineId) {
       if (router.canGoBack()) router.back();
       else router.replace('/(tabs)/cart');
+    } else {
+      const isMemberDiscount =
+        product.categoryId === 'cheese_party' ||
+        product.categoryId === 'member_deals' ||
+        product.categoryId === 'hot_deals';
+
+      const shouldPrompt = !isAuthenticated && isMemberDiscount && !hasPromptedMemberDiscount();
+
+      router.replace({
+        pathname: '/(tabs)/menu',
+        params: shouldPrompt ? { promptMemberDiscount: '1' } : undefined,
+      });
     }
   };
 

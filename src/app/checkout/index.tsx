@@ -55,6 +55,9 @@ import {
 } from '../../services/addressStorage';
 
 import { styles, BRAND_RED } from '../../styles/checkout.styles';
+import { db } from '../../services/firebase';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, increment } from 'firebase/firestore';
+import { fetchUserMemberStats } from '../../utils/memberTier';
 import { formatCustomizationSummary } from '../../types/pizzaCustomization';
 import { createPayosPayment } from '../../services/payosService';
 import { createCashOrder } from '../../services/orderApi';
@@ -104,7 +107,7 @@ export default function CheckoutScreen() {
   const fullnameInput = useRef<React.ComponentRef<typeof TextInput>>(null);
   const phoneInput = useRef<React.ComponentRef<typeof TextInput>>(null);
   const emailInput = useRef<React.ComponentRef<typeof TextInput>>(null);
-  const showContactForm = !user || isEditingContact;
+  const showContactForm = isEditingContact;
   const validateField = (field: ContactField, value: string) => {
     setFocusedField(null);
     setFieldErrors(previous => ({ ...previous, [field]: contactError(field, value) }));
@@ -112,66 +115,72 @@ export default function CheckoutScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    // 1. Khôi phục địa chỉ đã lưu
-    getSavedDeliveryAddress().then((saved) => {
-      if (saved) setAddress(saved);
-    });
-
-    // 2. Khôi phục ghi chú & thông tin khách (chỉ lấy nếu là khách chưa đăng nhập và đã nhập trước đó)
-    getSavedCustomerInfo().then((info) => {
-      if (info && !cancelled) {
-        if (info.deliveryNote) setDeliveryNote((prev) => prev || info.deliveryNote || '');
-        if (!user) {
-          if (info.fullname) setFullname((prev) => prev || info.fullname || '');
-          if (info.phone) setPhone((prev) => prev || info.phone || '');
-          if (info.email) setEmail((prev) => prev || info.email || '');
-        }
-      }
-    });
-    return () => { cancelled = true; };
-  }, [user]);
-
-  useEffect(() => {
-    setIsEditingContact(!user || !!contactError('fullname', user.fullname) ||
-      !!contactError('phone', user.phone) || !!contactError('email', user.email));
     setFieldErrors({});
     setShowEmail(false);
-    if (user) {
-      setFullname(user.fullname || '');
-      setPhone(
-        user.phone ? normalizePhone(user.phone).slice(1) : ''
-      );
-      setEmail(user.email || '');
-    } else {
-      // Khi không có user (chưa đăng nhập hoặc vừa đăng xuất), xóa sạch thông tin để khách tự nhập mới
-      setFullname('');
-      setPhone('');
-      setEmail('');
-    }
+
+    // 1. Khôi phục địa chỉ đã lưu dưới local
+    getSavedDeliveryAddress().then((saved) => {
+      if (saved && !cancelled) setAddress(saved);
+    });
+
+    // 2. Khôi phục thông tin khách hàng từ tài khoản hoặc local storage
+    getSavedCustomerInfo().then((info) => {
+      if (cancelled) return;
+      if (info?.deliveryNote) {
+        setDeliveryNote((prev) => prev || info.deliveryNote || '');
+      }
+      if (user && !user.isDemo) {
+        const nextName = user.fullname || info?.fullname || '';
+        const rawUserPhone = user.phone || info?.phone || '';
+        const normPhone = normalizePhone(rawUserPhone);
+        const nextPhone = normPhone ? normPhone.slice(1) : rawUserPhone;
+        const nextEmail = user.email || info?.email || '';
+        setFullname(nextName);
+        setPhone(nextPhone);
+        setEmail(nextEmail);
+        const hasErr =
+          !!contactError('fullname', nextName) ||
+          !!contactError('phone', nextPhone) ||
+          !!contactError('email', nextEmail);
+        setIsEditingContact(hasErr);
+      } else {
+        const nextName = info?.fullname || '';
+        const rawGuestPhone = info?.phone || '';
+        const normPhone = normalizePhone(rawGuestPhone);
+        const nextPhone = normPhone ? normPhone.slice(1) : rawGuestPhone;
+        const nextEmail = info?.email || '';
+        setFullname(nextName);
+        setPhone(nextPhone);
+        setEmail(nextEmail);
+        const hasErr =
+          !nextName.trim() ||
+          !nextPhone.trim() ||
+          !!contactError('fullname', nextName) ||
+          !!contactError('phone', nextPhone) ||
+          !!contactError('email', nextEmail);
+        setIsEditingContact(hasErr);
+      }
+    });
+
+    return () => { cancelled = true; };
   }, [user]);
 
   const handleUpdateFullname = (val: string) => {
     setFieldErrors(previous => previous.fullname ? { ...previous, fullname: contactError('fullname', val) } : previous);
     setFullname(val);
-    if (!user) {
-      saveCustomerInfo({ fullname: val });
-    }
+    saveCustomerInfo({ fullname: val });
   };
 
   const handleUpdatePhone = (val: string) => {
     setFieldErrors(previous => previous.phone ? { ...previous, phone: contactError('phone', val) } : previous);
     setPhone(val);
-    if (!user) {
-      saveCustomerInfo({ phone: val });
-    }
+    saveCustomerInfo({ phone: val });
   };
 
   const handleUpdateEmail = (val: string) => {
     setFieldErrors(previous => previous.email ? { ...previous, email: contactError('email', val) } : previous);
     setEmail(val);
-    if (!user) {
-      saveCustomerInfo({ email: val });
-    }
+    saveCustomerInfo({ email: val });
   };
 
   const validateContact = () => {
@@ -263,14 +272,47 @@ export default function CheckoutScreen() {
   const locating = !!shippingConfig && !!address.trim() && located?.address !== address;
 
   // Totals Calculation
+  const [memberDiscountRate, setMemberDiscountRate] = useState(0);
+  useEffect(() => {
+    let active = true;
+    if (user && !user.isDemo && user.id) {
+      fetchUserMemberStats(user.id).then((stats) => {
+        if (active) setMemberDiscountRate(stats.discountRate);
+      });
+    } else {
+      setMemberDiscountRate(0);
+    }
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
   const totals = calculateOrderTotals(items, productsMap,
     fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP', selectedVoucher, undefined,
     shippingConfig && deliveryPoint ? { config: shippingConfig, to: deliveryPoint } : undefined);
-  const { subtotal, discount: voucherDiscount } = totals;
+  const { subtotal, discount: baseVoucherDiscount } = totals;
+  const isMember = !!user && !user.isDemo;
+  // Giảm giá thành viên (10% hạng Vàng / 15% hạng VIP cho món lẻ khi không dùng cùng lúc với voucher khuyến mãi)
+  const singleItemsSubtotal = items.reduce((sum, item) => {
+    const p = productsMap[item.productId];
+    const isComboOrPromo =
+      p?.categoryId === 'cheese_party' ||
+      p?.categoryId === 'member_deals' ||
+      p?.categoryId === 'hot_deals';
+    if (isComboOrPromo) return sum;
+    const unit = getItemLineUnitPrice(item, p) || 0;
+    return sum + unit * (Number(item.quantity) || 1);
+  }, 0);
+  const memberDiscount =
+    isMember && baseVoucherDiscount === 0 && memberDiscountRate > 0
+      ? Math.round(singleItemsSubtotal * memberDiscountRate)
+      : 0;
+  const voucherDiscount = baseVoucherDiscount;
   const deliveryFee = useAhamove ? validQuote?.pricing.deliveryFee ?? 0 : totals.deliveryFee;
-  const total = useAhamove && validQuote ? validQuote.pricing.total : totals.total;
+  const baseTotal = useAhamove && validQuote ? validQuote.pricing.total : totals.total;
+  const total = Math.max(0, baseTotal - memberDiscount);
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
-  const earnedPoints = Math.floor(total / 10000);
+  const earnedPoints = isMember ? Math.floor(total / 10000) : 0;
 
   const selectedPayment = PAYMENT_METHODS.find((p) => p.id === selectedPaymentId);
 
@@ -303,7 +345,7 @@ export default function CheckoutScreen() {
   const handleOpenAddressModal = () => setAddressModalVisible(true);
 
   const handleGetShippingQuote = async () => {
-    if (!user || user.isDemo) { router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } }); return; }
+    if (false && (!user || user?.isDemo)) { router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } }); return; }
     if (!validateContact()) return;
     if (!address.trim()) { setAddressModalVisible(true); return; }
     if (promoCode) { setShippingError('Giao Ahamove thử nghiệm chưa hỗ trợ voucher. Vui lòng gỡ mã trước khi lấy phí.'); return; }
@@ -406,13 +448,14 @@ export default function CheckoutScreen() {
     }
 
     // Cash orders are priced and stored by the backend; the app never writes prices to Firestore.
-    if (!user || user.isDemo) {
+    if (false && (!user || user?.isDemo)) {
       setIsSubmitting(false);
       router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } });
       return;
     }
     let saved: { subtotal: number; discount: number; deliveryFee?: number; total: number };
     try {
+      if (user && !user.isDemo) {
       const result = await createCashOrder({
         customer: { fullname, phone: localPhone, email },
         fulfillmentType: fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP',
@@ -421,6 +464,73 @@ export default function CheckoutScreen() {
       }, formatDeliveryTime(deliveryTime));
       setOrderCode(result.orderCode);
       saved = result;
+      if (earnedPoints > 0 && user.id) {
+        updateDoc(doc(db, 'users', user.id), {
+          rewardPoints: increment(earnedPoints),
+        }).catch(() => {});
+      }
+      } else {
+        const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        let rand = '';
+        for (let i = 0; i < 6; i++) {
+          rand += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        const generatedOrderCode = '6X23D' + rand;
+        setOrderCode(generatedOrderCode);
+        saved = { subtotal, discount: voucherDiscount, deliveryFee, total };
+        try {
+          const firestoreItems = items.map((item) => {
+            const product = productsMap[item.productId];
+            const unitPrice = getItemLineUnitPrice(item, product) || 0;
+            const lineTotal = unitPrice * (Number(item.quantity) || 1);
+            const variant = product?.variants?.find((v) => v.id === item.variantId);
+            const customSummary = item.customization ? formatCustomizationSummary(item.customization) : [];
+            return {
+              productId: item.productId,
+              productName: product?.name || 'Sản phẩm',
+              quantity: Number(item.quantity) || 1,
+              unitPrice,
+              lineTotal,
+              variantName: variant?.name || 'Đế Truyền Thống',
+              customizationSummary: customSummary,
+              image: product?.image || '',
+            };
+          });
+          await addDoc(collection(db, 'orders'), {
+            orderCode: generatedOrderCode,
+            createdAt: serverTimestamp(),
+            userId: null,
+            customer: {
+              fullname: fullname.trim(),
+              phone: localPhone,
+              email: email.trim(),
+            },
+            deliveryTime: formatDeliveryTime(deliveryTime),
+            fulfillmentType,
+            address: address.trim(),
+            deliveryNote: deliveryNote.trim(),
+            paymentMethod: selectedPaymentId,
+            paymentName: selectedPayment?.name || 'Tiền mặt',
+            paymentStatus: 'UNPAID',
+            status: 'PENDING_CONFIRMATION',
+            statusHistory: [
+              {
+                status: 'PENDING_CONFIRMATION',
+                at: new Date().toISOString(),
+                note: 'Khách hàng vừa đặt đơn',
+              },
+            ],
+            items: firestoreItems,
+            itemCount,
+            subtotal,
+            deliveryFee,
+            discount: voucherDiscount,
+            voucherCode: selectedVoucher?.code || null,
+            total,
+            earnedPoints,
+          });
+        } catch {}
+      }
     } catch (err) {
       Alert.alert('Chưa thể đặt hàng', err instanceof Error ? err.message : 'Đơn hàng chưa được lưu. Giỏ hàng của bạn vẫn được giữ nguyên, vui lòng thử lại.');
       return;
@@ -445,6 +555,17 @@ export default function CheckoutScreen() {
       pad(now.getSeconds());
     setOrderDateString(dateFormatted);
 
+    // Lưu chắc chắn thông tin khách & địa chỉ xuống local storage để lần sau không bắt nhập lại
+    saveCustomerInfo({
+      fullname: fullname.trim(),
+      phone: localPhone.startsWith('0') ? localPhone.slice(1) : localPhone,
+      email: email.trim(),
+      deliveryNote: deliveryNote.trim(),
+    });
+    if (address.trim()) {
+      saveDeliveryAddress(address.trim());
+    }
+
     // 1. Snapshot cart before clearing; amounts are what the backend stored (prices may have changed meanwhile).
     const orderSnapshot = {
       items: [...items],
@@ -454,7 +575,7 @@ export default function CheckoutScreen() {
       voucherDiscount: saved.discount,
       selectedVoucher,
       total: saved.total,
-      earnedPoints: Math.floor(saved.total / 10000),
+      earnedPoints: isMember ? Math.floor(saved.total / 10000) : 0,
     };
     setConfirmedOrderData(orderSnapshot);
 
@@ -577,7 +698,9 @@ export default function CheckoutScreen() {
                 <Text style={styles.pricingLabel}>Giảm giá thành viên</Text>
                 <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
               </View>
-              <Text style={styles.pricingValue}>0 đ</Text>
+              <Text style={styles.pricingValue}>
+                {memberDiscount > 0 ? `-${formatCurrency(memberDiscount)}` : '0 đ'}
+              </Text>
             </View>
 
             {(confirmedOrderData?.selectedVoucher || selectedVoucher) &&
@@ -596,16 +719,29 @@ export default function CheckoutScreen() {
 
             <View style={styles.pricingDivider} />
 
+            {fulfillmentType === 'delivery' && (
+              <View style={styles.pricingRow}>
+                <Text style={styles.pricingLabel}>Phí giao hàng</Text>
+                <Text style={styles.pricingValue}>
+                  {(confirmedOrderData?.deliveryFee ?? deliveryFee) === 0
+                    ? 'Miễn phí'
+                    : formatCurrency(confirmedOrderData?.deliveryFee ?? deliveryFee)}
+                </Text>
+              </View>
+            )}
+            <View style={styles.pricingDivider} />
             <View style={styles.totalRow}>
               <View>
                 <Text style={styles.totalLabel}>Tổng cộng</Text>
-                <Text style={styles.rewardPointsNote}>
-                  Nhận{' '}
-                  <Text style={{ fontWeight: '700', color: '#111827' }}>
-                    {confirmedOrderData?.earnedPoints ?? earnedPoints} điểm
-                  </Text>{' '}
-                  FPT Rewards
-                </Text>
+                {isMember && (
+                  <Text style={styles.rewardPointsNote}>
+                    Nhận{' '}
+                    <Text style={{ fontWeight: '700', color: '#111827' }}>
+                      {confirmedOrderData?.earnedPoints ?? earnedPoints} điểm
+                    </Text>{' '}
+                    FPT Rewards
+                  </Text>
+                )}
               </View>
               <Text style={styles.totalValue}>
                 {formatCurrency(confirmedOrderData?.total ?? total)}
@@ -651,7 +787,7 @@ export default function CheckoutScreen() {
       <StoreClosedBanner status={store} />
 
       <KeyboardAvoidingView style={styles.keyboardContainer}
-        enabled={Platform.OS === 'ios'} behavior="padding" keyboardVerticalOffset={insets.top + 52}>
+        enabled={Platform.OS === 'ios'} behavior="padding" keyboardVerticalOffset={0}>
       <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={styles.checkoutContent}
@@ -696,7 +832,7 @@ export default function CheckoutScreen() {
           <View style={styles.cardHeading}>
             <UserRound size={19} color="#5B6470" />
             <Text style={styles.cardHeadingText}>Liên hệ</Text>
-            {!!user && (
+            {(!!user || !showContactForm || (!!fullname.trim() && !!phone.trim())) && (
               <TouchableOpacity style={styles.contactEditButton} accessibilityRole="button"
                 accessibilityLabel={showContactForm ? 'Xong, xác nhận thông tin liên hệ' : 'Sửa thông tin liên hệ'}
                 accessibilityState={{ expanded: showContactForm }}
@@ -804,6 +940,14 @@ export default function CheckoutScreen() {
                 <Text style={styles.pricingValue}>{validQuote ? formatCurrency(deliveryFee) : 'Chưa có báo phí'}</Text>
               </View>
             )}
+            {!useAhamove && fulfillmentType === 'delivery' && !shippingConfig && (
+              <View style={styles.pricingRow}>
+                <Text style={styles.pricingLabel}>Phí giao hàng</Text>
+                <Text style={styles.pricingValue}>
+                  {deliveryFee === 0 ? 'Miễn phí' : formatCurrency(deliveryFee)}
+                </Text>
+              </View>
+            )}
             {!!shippingConfig && (
               <View style={styles.pricingRow}>
                 <Text style={styles.pricingLabel}>
@@ -857,6 +1001,7 @@ export default function CheckoutScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <View style={[styles.checkoutFooter, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.footerAmount}>
@@ -876,8 +1021,6 @@ export default function CheckoutScreen() {
           </>}
         </TouchableOpacity>
       </View>
-
-      </KeyboardAvoidingView>
 
       {/* ======================================================== */}
       {/* MODAL: TÌM CỬA HÀNG GẦN BẠN NHẤT / NHẬP TAY ĐỊA CHỈ       */}

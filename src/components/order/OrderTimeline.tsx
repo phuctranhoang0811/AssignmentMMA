@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
-import { Check, Clock, X, ChefHat, Package, Truck, CheckCircle } from 'lucide-react-native';
+import { Check, X, ChefHat, Truck, CheckCircle } from 'lucide-react-native';
 import { OrderStatus, FulfillmentType } from '../../types/order';
 import { colors } from '../../theme/colors';
 import { spacing, radius } from '../../theme/spacing';
@@ -13,7 +13,7 @@ interface OrderTimelineProps {
 }
 
 type StepDefinition = {
-  status: OrderStatus;
+  statuses: OrderStatus[];
   title: string;
   icon: any;
 };
@@ -58,27 +58,14 @@ const PulsingRing: React.FC = () => {
 
 export const OrderTimeline: React.FC<OrderTimelineProps> = ({
   status,
-  fulfillmentType,
   history = [],
 }) => {
-  const isPickup = fulfillmentType === 'PICKUP';
-
-  const steps: StepDefinition[] = isPickup
-    ? [
-        { status: 'PENDING_CONFIRMATION', title: 'Chờ xác nhận', icon: Clock },
-        { status: 'CONFIRMED', title: 'Đã xác nhận', icon: Check },
-        { status: 'PREPARING', title: 'Đang chuẩn bị', icon: ChefHat },
-        { status: 'READY', title: 'Sẵn sàng lấy', icon: Package },
-        { status: 'COMPLETED', title: 'Đã nhận món', icon: CheckCircle },
-      ]
-    : [
-        { status: 'PENDING_CONFIRMATION', title: 'Chờ xác nhận', icon: Clock },
-        { status: 'CONFIRMED', title: 'Đã xác nhận', icon: Check },
-        { status: 'PREPARING', title: 'Đang nấu', icon: ChefHat },
-        { status: 'READY', title: 'Sẵn sàng giao', icon: Package },
-        { status: 'OUT_FOR_DELIVERY', title: 'Đang giao hàng', icon: Truck },
-        { status: 'COMPLETED', title: 'Đã giao thành công', icon: CheckCircle },
-      ];
+  const steps: StepDefinition[] = [
+    { statuses: ['PENDING_CONFIRMATION', 'CONFIRMED'], title: 'Đã xác nhận', icon: Check },
+    { statuses: ['PREPARING', 'READY'], title: 'Đang chuẩn bị', icon: ChefHat },
+    { statuses: ['OUT_FOR_DELIVERY'], title: 'Đang giao hàng', icon: Truck },
+    { statuses: ['COMPLETED'], title: 'Hoàn thành', icon: CheckCircle },
+  ];
 
   if (status === 'CANCELLED') {
     return (
@@ -98,7 +85,8 @@ export const OrderTimeline: React.FC<OrderTimelineProps> = ({
     );
   }
 
-  const currentStepIndex = steps.findIndex((s) => s.status === status);
+  const foundIndex = steps.findIndex((s) => s.statuses.includes(status));
+  const currentStepIndex = foundIndex >= 0 ? foundIndex : 0;
 
   return (
     <View style={styles.container}>
@@ -107,10 +95,10 @@ export const OrderTimeline: React.FC<OrderTimelineProps> = ({
         const isCurrent = index === currentStepIndex;
         const IconComponent = step.icon;
 
-        const historyItem = history.find((h) => h.status === step.status);
+        const historyItem = [...history].reverse().find((h) => step.statuses.includes(h.status));
 
         return (
-          <View key={step.status} style={styles.stepRow}>
+          <View key={step.title} style={styles.stepRow}>
             <View style={styles.leftColumn}>
               {/* Animated pulse ring for current active node */}
               {isCurrent && <PulsingRing />}
@@ -167,14 +155,14 @@ export const OrderTimeline: React.FC<OrderTimelineProps> = ({
                   )}
                 </View>
 
-                {historyItem && (
-                  <AppText variant="caption" color={colors.textSecondary}>
-                    {new Date(historyItem.at).toLocaleTimeString('vi-VN', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </AppText>
-                )}
+                <AppText variant="caption" color={colors.textSecondary}>
+                  {historyItem
+                    ? new Date(historyItem.at).toLocaleTimeString('vi-VN', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '--:--'}
+                </AppText>
               </View>
 
               {historyItem?.note ? (

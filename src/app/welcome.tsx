@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../state/AuthContext';
 import { styles } from '../styles/welcome.styles';
@@ -14,14 +14,15 @@ import { loginDestination } from '../utils/staff';
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const { user, isLoading } = useAuth();
 
   useEffect(() => {
-    if (!isLoading && user) {
+    if (pathname === '/welcome' && !isLoading && user) {
       router.replace(loginDestination(user.role));
     }
-  }, [user, isLoading, router]);
+  }, [pathname, user, isLoading, router]);
 
   const handleLogin = () => {
     router.push('/auth/login');

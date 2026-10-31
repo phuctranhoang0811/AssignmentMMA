@@ -227,7 +227,7 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={styles.menuRow}
                 activeOpacity={0.7}
-                onPress={() => router.push('/order/tracking')}
+                onPress={() => router.push(isAuthenticated ? '/order/tracking' : '/order/lookup')}
               >
                 <View style={styles.menuIconCol}>
                   <MapPin size={22} color="#1E2024" strokeWidth={1.8} />
@@ -334,7 +334,7 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={styles.menuRow}
                 activeOpacity={0.7}
-                onPress={() => router.push('/order/lookup')}
+                onPress={() => router.push(isAuthenticated ? '/order/tracking' : '/order/lookup')}
               >
                 <View style={styles.menuIconCol}>
                   <MapPin size={22} color="#1E2024" strokeWidth={1.8} />

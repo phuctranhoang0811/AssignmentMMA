@@ -66,7 +66,9 @@ export function calculateOrderTotals(
   // Fee by distance from the store (see deliveryFee.ts); Ahamove orders bring their own fee and pass no price list here.
   const shipping = delivery && _fulfillmentType === 'DELIVERY'
     ? deliveryFeeQuote(delivery.config, delivery.to, taxableAmount, !!coupon?.freeShipping && subtotal >= coupon.minSubtotal) : undefined;
-  const deliveryFee = shipping?.fee ?? 0;
+  const isFreeShipCoupon = Boolean(coupon?.freeShipping && subtotal >= coupon.minSubtotal);
+  const fallbackDeliveryFee = _fulfillmentType === 'DELIVERY' && subtotal > 0 && !isFreeShipCoupon ? 22000 : 0;
+  const deliveryFee = shipping ? shipping.fee : fallbackDeliveryFee;
 
   const tax = Math.round(taxableAmount * taxRate);
   const total = Math.max(0, taxableAmount + deliveryFee + tax);
