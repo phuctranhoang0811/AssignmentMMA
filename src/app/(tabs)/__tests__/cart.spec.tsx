@@ -78,6 +78,13 @@ test('a signed-in customer with a chosen address goes straight to checkout; with
   expect(mockRouter.push).not.toHaveBeenCalled();
 });
 
+test('items already in the cart are not shown in recommendations', async () => {
+  mockCart = cart({ items: [{ lineId: 'l2', productId: 'PA002', quantity: 1, addonIds: [] }] });
+  await render(<CartScreen />);
+  expect(screen.queryByLabelText('Thêm Khoai chiên vào giỏ hàng')).toBeNull();
+  expect(screen.getByText('Bạn đã chọn tất cả món gợi ý!')).toBeTruthy();
+});
+
 test('removing a line asks first, then removes it and says so', async () => {
   await render(<CartScreen />);
   await fireEvent.press(screen.getByLabelText('Xóa Pizza bò khỏi giỏ hàng'));
@@ -101,4 +108,18 @@ test('while the store has paused ordering the cart explains why and does not ope
   await fireEvent.press(screen.getByText(/Thanh toán • /));
   expect(mockToast).toHaveBeenCalledWith({ message: 'Bếp quá tải, quay lại sau 30 phút.', type: 'info' });
   expect(mockRouter.push).not.toHaveBeenCalled();
+});
+
+test('items already in the cart are not shown in recommendations', async () => {
+  mockCart = cart({ items: [{ lineId: 'l2', productId: 'PA002', quantity: 1, addonIds: [] }] });
+  await render(<CartScreen />);
+  expect(screen.queryByLabelText('Thêm Khoai chiên vào giỏ hàng')).toBeNull();
+  expect(screen.getByText('Bạn đã chọn tất cả món gợi ý!')).toBeTruthy();
+});
+
+test('items already in the cart are not shown in recommendations', async () => {
+  mockCart = cart({ items: [{ lineId: 'l2', productId: 'PA002', quantity: 1, addonIds: [] }] });
+  await render(<CartScreen />);
+  expect(screen.queryByLabelText('Thêm Khoai chiên vào giỏ hàng')).toBeNull();
+  expect(screen.getByText('Bạn đã chọn tất cả món gợi ý!')).toBeTruthy();
 });

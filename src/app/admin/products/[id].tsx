@@ -32,6 +32,7 @@ export default function AdminProductDetailScreen() {
   const [price, setPrice] = useState('');
   const [desc, setDesc] = useState('');
   const [isAvailable, setIsAvailable] = useState(true);
+  const [isPopular, setIsPopular] = useState(false);
 
   // The product's own variants are what customers pay per size (full price, not a surcharge).
   const [variants, setVariants] = useState<ProductVariant[]>([]);
@@ -49,6 +50,7 @@ export default function AdminProductDetailScreen() {
           setPrice(String(data.basePrice || ''));
           setDesc(data.description || '');
           setIsAvailable(data.isAvailable !== false);
+          setIsPopular(Boolean(data.isPopular));
           setVariants(data.variants ?? []);
           setHasCrusts(isCustomizablePizza(data as Product));
         } else {
@@ -58,6 +60,8 @@ export default function AdminProductDetailScreen() {
             setPrice(String(found.basePrice));
             setDesc(found.description);
             setIsAvailable(found.isAvailable !== false);
+          setIsPopular(Boolean(found.isPopular));
+            setIsPopular(Boolean(found.isPopular));
           }
         }
       } catch {
@@ -67,6 +71,7 @@ export default function AdminProductDetailScreen() {
           setPrice(String(found.basePrice));
           setDesc(found.description);
           setIsAvailable(found.isAvailable !== false);
+          setIsPopular(Boolean(found.isPopular));
         }
       } finally {
         setLoading(false);
@@ -93,10 +98,11 @@ export default function AdminProductDetailScreen() {
           basePrice: Number(price),
           description: desc.trim(),
           isAvailable,
+          isPopular,
           ...(variants.length ? { variants } : {}),
           updatedAt: serverTimestamp(),
         });
-        void reportAdminAction('PRODUCT_UPDATED', `products/${id}`, { name: name.trim(), basePrice: Number(price), isAvailable });
+        void reportAdminAction('PRODUCT_UPDATED', `products/${id}`, { name: name.trim(), basePrice: Number(price), isAvailable, isPopular });
         Alert.alert('Thành công', 'Đã lưu thông tin món ăn và giá theo size');
         router.back();
       }
@@ -168,6 +174,24 @@ export default function AdminProductDetailScreen() {
               thumbColor={colors.surface}
             />
           </View>
+        </View>
+
+        {/* Đề xuất Bạn sẽ thích */}
+        <View style={[styles.formGroup, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.surfaceAlt, padding: 12, borderRadius: 8 }]}>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <AppText variant="captionSemiBold" style={{ color: colors.textPrimary }}>
+              {'Đưa vào mục "Bạn sẽ thích"'}
+            </AppText>
+            <AppText variant="small" style={{ color: colors.textSecondary }}>
+              Hiển thị món này ở mục gợi ý nổi bật trên trang chủ và giỏ hàng của khách.
+            </AppText>
+          </View>
+          <Switch
+            value={isPopular}
+            onValueChange={setIsPopular}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.surface}
+          />
         </View>
 
         {/* Mô tả món */}

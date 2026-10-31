@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -215,7 +215,11 @@ export default function HomeScreen() {
     loadData();
   };
 
-  const favoritePizzas = products.slice(0, 4);
+  const popularPizzas = useMemo(
+    () => products.filter((p) => p.isPopular && p.isAvailable),
+    [products]
+  );
+  const favoritePizzas = popularPizzas.length > 0 ? popularPizzas.slice(0, 6) : products.slice(0, 4);
 
   const lunchCombos = products.filter(
     (p) => p.tags?.includes('Combo Trưa') || p.id.startsWith('CB')
