@@ -18,6 +18,7 @@ import {
   ChevronRight,
   ClipboardList,
   BarChart2,
+  LayoutGrid,
 } from 'lucide-react-native';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -258,6 +259,30 @@ export default function AdminDashboardScreen() {
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
                   Thêm món, cập nhật giá bán, bật/tắt In-Stock & cấu hình Size/Đế.
+                </AppText>
+              </View>
+            </View>
+            <ChevronRight size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {/* Module: Món Theo Nhóm Promo (Tiệc Cheese / Thành Viên / Deal Hot) */}
+          <TouchableOpacity
+            style={styles.moduleCard}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Thêm món vào nhóm khuyến mãi"
+            onPress={() => router.push('/admin/menu-groups')}
+          >
+            <View style={styles.moduleLeft}>
+              <View style={[styles.moduleIconBox, { backgroundColor: colors.primarySoft }]}>
+                <LayoutGrid size={24} color={colors.primary} />
+              </View>
+              <View style={styles.moduleTextBox}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Thêm Món Vào Nhóm Promo
+                </AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Gán món có sẵn vào Tiệc Cheese, Thành Viên hoặc Deal Hot hiển thị trên trang chủ.
                 </AppText>
               </View>
             </View>

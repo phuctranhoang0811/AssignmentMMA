@@ -221,7 +221,16 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
 };
 
 export default function MenuScreen() {
-  const [selectedCategory, setSelectedCategory] = useState<CategoryId>('cheese_party');
+  const { category: categoryParam } = useLocalSearchParams<{ category?: string | string[] }>();
+
+  // Category được chọn từ home (VD: cheese_party). null = xem toàn bộ menu.
+  const filterCategory = useMemo<CategoryId | null>(() => {
+    const raw = Array.isArray(categoryParam) ? categoryParam[0] : categoryParam;
+    if (!raw) return null;
+    return mockCategories.some((c) => c.id === raw) ? (raw as CategoryId) : null;
+  }, [categoryParam]);
+
+  const [selectedCategory, setSelectedCategory] = useState<CategoryId>(filterCategory ?? 'cheese_party');
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -249,6 +258,22 @@ export default function MenuScreen() {
   useEffect(() => {
     loadMenu();
   }, [loadMenu]);
+
+  // Khi bấm card category từ home: chỉ hiện nhóm đó, cuộn tab tương ứng lên đầu
+  useEffect(() => {
+    if (!filterCategory) return;
+    setSelectedCategory(filterCategory);
+    setIsSearchActive(false);
+    setSearchQuery('');
+    mainScrollRef.current?.scrollTo({ y: 0, animated: false });
+    const targetTabX = tabOffsets.current[filterCategory] ?? 0;
+    setTimeout(() => {
+      tabsScrollRef.current?.scrollTo({
+        x: Math.max(0, targetTabX - 60),
+        animated: true,
+      });
+    }, 50);
+  }, [filterCategory]);
 
   // Group products by category
   const productsByCategory = useMemo(() => {
@@ -298,16 +323,25 @@ export default function MenuScreen() {
     setSearchQuery('');
     setSelectedCategory(catId);
 
+    const targetTabX = tabOffsets.current[catId] ?? 0;
+    tabsScrollRef.current?.scrollTo({
+      x: Math.max(0, targetTabX - 60),
+      animated: true,
+    });
+
+    // Chế độ chỉ xem 1 nhóm (bấm từ home): bấm tab sẽ đổi sang nhóm đó
+    if (filterCategory) {
+      mainScrollRef.current?.scrollTo({ y: 0, animated: false });
+      if (catId !== filterCategory) {
+        router.setParams({ category: String(catId) });
+      }
+      return;
+    }
+
     isManualScrolling.current = true;
     const targetY = sectionOffsets.current[catId] ?? 0;
     mainScrollRef.current?.scrollTo({
       y: Math.max(0, targetY - 4),
-      animated: true,
-    });
-
-    const targetTabX = tabOffsets.current[catId] ?? 0;
-    tabsScrollRef.current?.scrollTo({
-      x: Math.max(0, targetTabX - 60),
       animated: true,
     });
 
@@ -318,7 +352,7 @@ export default function MenuScreen() {
 
   // Handle user scrolling to update active tab
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (isManualScrolling.current || isSearchActive) return;
+    if (isManualScrolling.current || isSearchActive || filterCategory) return;
     const scrollY = event.nativeEvent.contentOffset.y;
 
     let activeCat = mockCategories[0].id;
@@ -485,7 +519,7 @@ export default function MenuScreen() {
           )}
         </ScrollView>
       ) : (
-        /* ALL 6 SECTIONS CONNECTED CONTINUOUSLY (NỐI TIẾP NHAU) */
+        /* Danh sách: chỉ hiện 1 nhóm khi bấm từ home, ngược lại nối tiếp 6 nhóm */
         <ScrollView
           ref={mainScrollRef}
           showsVerticalScrollIndicator={false}
@@ -493,7 +527,10 @@ export default function MenuScreen() {
           onScroll={handleScroll}
           contentContainerStyle={styles.listContent}
         >
-          {mockCategories.map((cat) => {
+          {(filterCategory
+            ? mockCategories.filter((cat) => cat.id === filterCategory)
+            : mockCategories
+          ).map((cat) => {
             const items = productsByCategory[cat.id] || [];
             const banner = CATEGORY_BANNERS[cat.id] || CATEGORY_BANNERS.cheese_party;
             const categoryTitle = cat.name.toUpperCase();

@@ -431,7 +431,11 @@ export default function HomeScreen() {
         {/* ======================================================== */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Menu</Text>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/menu')}>
+          <TouchableOpacity
+            onPress={() =>
+              router.push({ pathname: '/(tabs)/menu', params: { category: 'all' } })
+            }
+          >
             <Text style={styles.viewMoreText}>Xem thêm</Text>
           </TouchableOpacity>
         </View>

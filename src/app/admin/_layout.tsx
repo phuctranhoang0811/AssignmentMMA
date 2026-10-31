@@ -30,6 +30,7 @@ export default function AdminLayout() {
       <Stack.Screen name="dashboard" options={{ headerShown: false }} />
       <Stack.Screen name="products/index" options={{ headerShown: false }} />
       <Stack.Screen name="products/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="menu-groups" options={{ headerShown: false }} />
       <Stack.Screen name="promotions" options={{ headerShown: false }} />
       <Stack.Screen name="users" options={{ headerShown: false }} />
       <Stack.Screen name="orders" options={{ headerShown: false }} />
