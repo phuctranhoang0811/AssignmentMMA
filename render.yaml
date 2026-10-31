@@ -31,3 +31,8 @@ services:
         sync: false
       - key: STAFF_UIDS
         sync: false
+      # Gmail + App Password: without them sign-up OTP answers 503.
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
