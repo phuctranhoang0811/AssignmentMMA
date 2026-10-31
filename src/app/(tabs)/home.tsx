@@ -139,7 +139,7 @@ const TermsDocsSvg = () => (
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { addItem, fulfillmentType: fulfillmentMode, setFulfillmentType: setFulfillmentMode } = useCart();
+  const { fulfillmentType: fulfillmentMode, setFulfillmentType: setFulfillmentMode } = useCart();
   const { showToast } = useToast();
   // Width of the screen's own column (phone, desktop-web frame or tablet column), minus side padding.
   const bannerWidth = useContentWidth() - 32;
@@ -222,13 +222,12 @@ export default function HomeScreen() {
   );
 
   const handleAddCombo = (combo: Product) => {
-    addItem({
-      productId: combo.id,
-      quantity: 1,
-      addonIds: [],
-    });
+    triggerHaptic('light');
     setShowLunchSheet(false);
-    router.push('/(tabs)/cart');
+    router.push({
+      pathname: '/product/[id]',
+      params: { id: combo.id },
+    });
   };
 
   return (
@@ -261,7 +260,7 @@ export default function HomeScreen() {
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <Bell size={24} color="#1E2024" strokeWidth={1.8} />
-          <View style={styles.bellBadge}>
+          <View style={[styles.bellBadge, (!user || user.isDemo) && { display: 'none' }]}>
             <Text style={styles.bellBadgeText}>1</Text>
           </View>
         </TouchableOpacity>
@@ -384,7 +383,18 @@ export default function HomeScreen() {
           contentContainerStyle={styles.horizontalPizzaScroll}
         >
           {favoritePizzas.map((item) => (
-            <View key={item.id} style={styles.pizzaCard}>
+            <TouchableOpacity
+              key={item.id}
+              style={styles.pizzaCard}
+              activeOpacity={0.88}
+              onPress={() => {
+                triggerHaptic('light');
+                router.push({
+                  pathname: '/product/[id]',
+                  params: { id: item.id },
+                });
+              }}
+            >
               <Image
                 source={{ uri: item.image }}
                 style={styles.pizzaCardImg}
@@ -402,19 +412,13 @@ export default function HomeScreen() {
                   <TouchableOpacity
                     style={styles.addBtn}
                     accessibilityRole="button"
-                    accessibilityLabel={`Thêm ${item.name} vào giỏ`}
+                    accessibilityLabel={`Xem chi tiết ${item.name}`}
                     activeOpacity={0.8}
                     onPress={() => {
-                      addItem({
-                        productId: item.id,
-                        quantity: 1,
-                        addonIds: [],
-                      });
-                      triggerHaptic('success');
-                      showToast({
-                        message: `Đã thêm ${item.name} vào giỏ hàng`,
-                        actionText: 'Xem giỏ',
-                        onAction: () => router.push('/(tabs)/cart'),
+                      triggerHaptic('medium');
+                      router.push({
+                        pathname: '/product/[id]',
+                        params: { id: item.id },
                       });
                     }}
                   >
@@ -422,7 +426,7 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
           ))}
         </ScrollView>
 
@@ -529,7 +533,7 @@ export default function HomeScreen() {
             style={styles.actionCard}
             activeOpacity={0.72}
             onPress={() => {
-              if (user) {
+              if (user && !user.isDemo) {
                 router.push('/order/tracking');
               } else {
                 router.push('/order/lookup');

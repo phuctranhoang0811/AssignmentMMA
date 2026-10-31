@@ -54,6 +54,8 @@ export default function LoginScreen() {
     if (returnTo === 'staff' || returnTo === 'profile') {
       router.replace('/(tabs)/profile');
     } else if (returnTo === 'rewards') {
+      router.replace('/(tabs)/home');
+    } else if (false) {
       router.replace('/(tabs)/profile');
     } else if (returnTo === 'menu') {
       router.replace('/(tabs)/menu');
@@ -68,7 +70,8 @@ export default function LoginScreen() {
     if (returnTo === 'staff' || returnTo === 'profile' || returnTo === 'rewards' || returnTo === 'menu' || returnTo === 'cart' || returnTo === 'cart-checkout') {
       const onBackPress = () => {
         googleController.current?.abort();
-        if (returnTo === 'staff' || returnTo === 'profile' || returnTo === 'rewards') router.replace('/(tabs)/profile');
+        if (returnTo === 'staff' || returnTo === 'profile') router.replace('/(tabs)/profile');
+        else if (returnTo === 'rewards') router.replace('/(tabs)/home');
         else if (returnTo === 'menu') router.replace('/(tabs)/menu');
         else if (returnTo === 'cart' || returnTo === 'cart-checkout') router.replace('/(tabs)/cart');
         return true;

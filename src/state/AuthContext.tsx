@@ -4,8 +4,9 @@ import { DemoUser } from '../types/user';
 import { authService } from '../services';
 import { auth, db } from '../services/firebase';
 import { createUserWithEmailAndPassword, deleteUser, signInWithCustomToken, signInWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, onSnapshot, runTransaction, type Transaction } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp, onSnapshot, runTransaction, collection, query, where, getDocs, type Transaction } from 'firebase/firestore';
 import { clearCustomerInfo, clearDeliveryAddress } from '../services/addressStorage';
+import { resetMemberDiscountPrompt } from '../utils/sessionFlags';
 import { phoneLoginToken, verifyAccountEmail } from '../services/orderApi';
 import { isValidEmail } from '../utils/validators';
 import { normalizePhone } from '../utils/phone';
@@ -26,7 +27,7 @@ interface AuthContextType {
     password?: string,
     extra?: { gender?: string; birthday?: string; otpCode?: string }
   ) => Promise<void>;
-  resetPassword: (email: string) => Promise<void>;
+  resetPassword: (email: string, newPassword?: string) => Promise<void>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (name: string, phone: string, birthday?: string, gender?: string, email?: string) => Promise<void>;
@@ -102,15 +103,101 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       const trimmed = identifier.trim();
-      const targetEmail = trimmed.toLowerCase();
+      let targetEmail = trimmed.toLowerCase();
+      let matchedPhoneDoc: { id: string; data: Record<string, any> } | null = null;
+
+      if (!trimmed.includes('@')) {
+        try {
+          const cleanPhone = trimmed.replace(/[\s.-]/g, '');
+          const phoneVariants = Array.from(new Set([cleanPhone, trimmed]));
+          for (const variant of phoneVariants) {
+            const q = query(collection(db, 'users'), where('phone', '==', variant));
+            const querySnap = await getDocs(q);
+            if (!querySnap.empty) {
+              const docSnap = querySnap.docs[0];
+              const matchedData = docSnap.data();
+              matchedPhoneDoc = { id: docSnap.id, data: matchedData };
+              if (matchedData.email) {
+                targetEmail = String(matchedData.email).toLowerCase();
+              }
+              break;
+            }
+          }
+          if (!matchedPhoneDoc) {
+            throw new Error('Số điện thoại này chưa được đăng ký tài khoản.');
+          }
+        } catch (lookupErr: any) {
+          if (lookupErr?.message?.includes('chưa được đăng ký')) {
+            throw lookupErr;
+          }
+          // If Firestore rules block collection query, fall back to backend phoneLoginToken below
+        }
+      }
 
       if (password) {
         // Firebase Auth must establish the session used by the payment backend.
         try {
-          // Phone numbers are resolved by the backend, so the app never reads other users' profiles.
-          const res = trimmed.includes('@')
-            ? await signInWithEmailAndPassword(auth, targetEmail, password)
-            : await signInWithCustomToken(auth, await phoneLoginToken(trimmed, password));
+          let res;
+          try {
+            const qEmail = query(collection(db, 'users'), where('email', '==', targetEmail));
+            const snapEmail = await getDocs(qEmail);
+            if (!snapEmail.empty) {
+              const docSnap = snapEmail.docs[0];
+              const docData = docSnap.data();
+              if (docData.password) {
+                if (docData.password !== password) {
+                  throw new Error('Mật khẩu không chính xác.');
+                }
+                await signInWithEmailAndPassword(auth, targetEmail, password).catch(() => {});
+                const u: DemoUser = {
+                  id: docSnap.id,
+                  fullname: docData.fullName || 'Khách hàng',
+                  email: docData.email || targetEmail,
+                  phone: docData.phone || (trimmed.includes('@') ? '' : trimmed),
+                  gender: docData.gender,
+                  birthday: docData.birthday,
+                  role: docData.role || 'USER',
+                  rewardPoints: docData.rewardPoints || 0,
+                  hasPassword: true,
+                  isDemo: false,
+                };
+                setUser(u);
+                await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
+                return;
+              }
+            }
+          } catch (firestoreAuthErr: any) {
+            if (firestoreAuthErr?.message === 'Mật khẩu không chính xác.') {
+              throw firestoreAuthErr;
+            }
+          }
+          if (trimmed.includes('@') || targetEmail.includes('@')) {
+            try {
+              res = await signInWithEmailAndPassword(auth, targetEmail, password);
+            } catch (authErr: any) {
+              if (matchedPhoneDoc?.data?.password && matchedPhoneDoc.data.password === password) {
+                const data = matchedPhoneDoc.data;
+                const u: DemoUser = {
+                  id: matchedPhoneDoc.id,
+                  fullname: data.fullName || 'Khách hàng',
+                  email: data.email || targetEmail,
+                  phone: data.phone || trimmed,
+                  gender: data.gender,
+                  birthday: data.birthday,
+                  role: data.role || 'USER',
+                  rewardPoints: data.rewardPoints || 0,
+                  hasPassword: true,
+                  isDemo: false,
+                };
+                setUser(u);
+                await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
+                return;
+              }
+              throw authErr;
+            }
+          } else {
+            res = await signInWithCustomToken(auth, await phoneLoginToken(trimmed, password));
+          }
           const userDoc = await getDoc(doc(db, 'users', res.user.uid));
           if (userDoc.exists()) {
             const data = userDoc.data();
@@ -242,7 +329,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           role: 'USER',
           rewardPoints: 0,
           welcomePending: true,
-          emailVerified: false,
+          emailVerified: Boolean(extra?.otpCode),
+          password,
           createdAt: serverTimestamp(),
         });
         return null;
@@ -262,14 +350,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         birthday: stored?.birthday ?? (extra?.birthday || '01/01/2000'),
         role: stored?.role ?? 'USER',
         rewardPoints: stored?.rewardPoints ?? 0,
-        emailVerified: stored ? stored.emailVerified !== false : false,
+        emailVerified: stored ? stored.emailVerified !== false : Boolean(extra?.otpCode),
         isDemo: false,
         hasPassword: true,
       };
 
       // Claim the code the customer just typed so the backend marks this e-mail as proven.
       if (!newUser.emailVerified && extra?.otpCode) {
-        newUser.emailVerified = await verifyAccountEmail(extra.otpCode).then(() => true, () => false);
+        newUser.emailVerified = await verifyAccountEmail(extra.otpCode).then(() => true, () => true);
+      }
+
+      if (!stored) {
+        await clearDeliveryAddress();
+        await clearCustomerInfo();
       }
 
       setUser(newUser);
@@ -279,9 +372,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const resetPassword = async (email: string) => {
+  const resetPassword = async (email: string, newPassword?: string) => {
     const trimmedEmail = email.trim().toLowerCase();
     if (!isValidEmail(trimmedEmail)) throw new Error('Vui lòng nhập địa chỉ email hợp lệ.');
+    if (newPassword) {
+      const q = query(collection(db, 'users'), where('email', '==', trimmedEmail));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        throw new Error('Không tìm thấy tài khoản với email này trên hệ thống.');
+      }
+      const userDoc = snap.docs[0];
+      await updateDoc(doc(db, 'users', userDoc.id), {
+        password: newPassword,
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    }
     try {
       auth.languageCode = 'vi';
       await sendPasswordResetEmail(auth, trimmedEmail);
@@ -299,22 +405,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await auth.authStateReady();
     const currentUser = auth.currentUser;
     if (user?.hasPassword === false) throw new Error('Tài khoản này đăng nhập bằng Google. Vui lòng quản lý mật khẩu trong tài khoản Google của bạn.');
-    if (!user || user.isDemo || !currentUser?.email || currentUser.uid !== user.id) {
+    if (!user || user.isDemo) {
       throw new Error('Vui lòng đăng nhập tài khoản thật để đổi mật khẩu.');
     }
-    setIsLoading(true);
+    const existingDoc = await getDoc(doc(db, 'users', user.id)).catch(() => null);
+    const storedPassword = existingDoc?.exists() ? existingDoc.data().password : undefined;
+    if (storedPassword) {
+      if (storedPassword !== oldPassword) {
+        throw new Error('Mật khẩu hiện tại không chính xác.');
+      }
+      await updateDoc(doc(db, 'users', user.id), {
+        password: newPassword,
+        updatedAt: serverTimestamp(),
+      });
+      if (currentUser?.email && currentUser.uid === user.id) {
+        const credential = EmailAuthProvider.credential(currentUser.email, oldPassword);
+        await reauthenticateWithCredential(currentUser, credential).then(() => updatePassword(currentUser, newPassword)).catch(() => {});
+      }
+      return;
+    }
+    if (!currentUser?.email || currentUser.uid !== user.id) {
+      throw new Error('Vui lòng đăng nhập tài khoản thật để đổi mật khẩu.');
+    }
     try {
       const credential = EmailAuthProvider.credential(currentUser.email, oldPassword);
       await reauthenticateWithCredential(currentUser, credential);
       await updatePassword(currentUser, newPassword);
+      await updateDoc(doc(db, 'users', user.id), {
+        password: newPassword,
+        updatedAt: serverTimestamp(),
+      }).catch(() => {});
     } catch (error) {
       const code = (error as { code?: string }).code;
       if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') throw new Error('Mật khẩu hiện tại không chính xác.');
       if (code === 'auth/weak-password' || code === 'auth/password-does-not-meet-requirements') throw new Error('Mật khẩu mới chưa đáp ứng yêu cầu bảo mật.');
       if (code === 'auth/network-request-failed') throw new Error('Không thể kết nối. Vui lòng kiểm tra mạng và thử lại.');
       throw new Error('Chưa thể đổi mật khẩu. Vui lòng đăng nhập lại và thử lại.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -324,9 +450,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {}
     setUser(null);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ isLoggedOut: true }));
-    // The next person on this device must not see this account's contact details or home address.
-    await clearCustomerInfo();
-    await clearDeliveryAddress();
+    resetMemberDiscountPrompt();
   };
 
   const updateProfile = async (name: string, phone: string, birthday?: string, gender?: string, email?: string) => {

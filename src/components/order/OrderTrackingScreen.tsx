@@ -30,26 +30,84 @@ import { OrderCancellationCard } from './OrderCancellationCard';
 import { AppButton } from '../ui/AppButton';
 import { cancelOrder } from '../../services/orderApi';
 
+function formatExpectedTime(order: any): string {
+  const raw = String(order?.deliveryTime ?? '').trim();
+  if (/^\d{1,2}:\d{2}/.test(raw)) {
+    return raw.slice(0, 5);
+  }
+  const createdSec = order?.createdAt?.seconds ?? order?.createdAt?._seconds;
+  const baseMs = createdSec ? createdSec * 1000 : Date.parse(order?.createdAt) || 0;
+  if (baseMs > 0) {
+    const expected = new Date(baseMs + 30 * 60 * 1000);
+    const hh = String(expected.getHours()).padStart(2, '0');
+    const mm = String(expected.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+  return '10:30';
+}
+
+function formatPaymentLabel(order: any): string {
+  if (order?.paymentName) return order.paymentName;
+  const method = String(order?.paymentMethod ?? '').toUpperCase();
+  if (!method || method === 'CASH' || method === 'COD') return 'Tiền mặt';
+  if (method === 'PAYOS' || method === 'BANK_TRANSFER' || method === 'QR') return 'Chuyển khoản QR';
+  return order.paymentMethod;
+}
+
+function getOrderTimestampMs(order: any): number {
+  const createdAt = order?.createdAt;
+  if (!createdAt) return 0;
+  if (typeof createdAt?.toMillis === 'function') return createdAt.toMillis();
+  const sec = createdAt?.seconds ?? createdAt?._seconds;
+  if (typeof sec === 'number') return sec * 1000;
+  if (typeof createdAt === 'number') return createdAt;
+  const parsed = Date.parse(String(createdAt));
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function isOrderFromToday(order: any, nowMs: number): boolean {
+  const ts = getOrderTimestampMs(order);
+  if (!ts) return false;
+  const orderDate = new Date(ts);
+  const today = new Date(nowMs);
+  return (
+    orderDate.getFullYear() === today.getFullYear() &&
+    orderDate.getMonth() === today.getMonth() &&
+    orderDate.getDate() === today.getDate()
+  );
+}
+
+function isOrderFinished(order: any): boolean {
+  const status = String(order?.status ?? '').toUpperCase();
+  return ['COMPLETED', 'DELIVERED', 'CANCELLED'].includes(status);
+}
+
 export default function OrderTrackingScreen({ historyOnly = false }: { historyOnly?: boolean }) {
   const router = useRouter();
-  // Opened from a paid order's success screen: show that order straight away.
   const { orderId } = useLocalSearchParams<{ orderId?: string }>();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [result, setResult] = useState<{ owner?: string; orders: any[]; error: string; loading: boolean }>({ orders: [], error: '', loading: true });
   const [attempt, setAttempt] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState<'active' | 'history'>(historyOnly ? 'history' : 'active');
   const [cancelling, setCancelling] = useState(false);
-  // Demo/guest users have no Firebase session; Firestore rules would reject their query.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
   const owner = user && !user.isDemo ? user.id : undefined;
   const orders = result.owner === owner ? result.orders : [];
   const error = result.owner === owner ? result.error : '';
   const isLoading = !!owner && (result.owner !== owner || result.loading);
-  const selectedOrder = orders.find(order => order.id === selectedId);
-  const visibleOrders = orders.filter(order => tab === 'history'
-    ? ['COMPLETED', 'CANCELLED'].includes(order.status)
-    : !['COMPLETED', 'CANCELLED'].includes(order.status));
+  const visibleOrders = historyOnly
+    ? orders.filter(order => isOrderFinished(order) || !isOrderFromToday(order, nowMs))
+    : orders.filter(order => isOrderFromToday(order, nowMs) && !isOrderFinished(order));
+  const selectedOrder = visibleOrders.find(order => order.id === selectedId);
 
   useEffect(() => {
     setSelectedId(orderId ?? null);
@@ -74,7 +132,6 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
     { text: 'Không', style: 'cancel' },
     { text: 'Hủy đơn', style: 'destructive', onPress: async () => {
       setCancelling(true);
-      // The list updates itself through onSnapshot.
       try { await cancelOrder(id); triggerHaptic('success'); }
       catch (failure) { Alert.alert('Chưa thể hủy đơn', failure instanceof Error ? failure.message : 'Vui lòng thử lại.'); }
       finally { setCancelling(false); }
@@ -88,13 +145,13 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
       case 'CONFIRMED':
         return 'Đã xác nhận';
       case 'PREPARING':
-        return 'Đang chuẩn bị món';
+        return 'Đang chuẩn bị';
       case 'READY':
-        return 'Món đã sẵn sàng';
+        return 'Đang chuẩn bị';
       case 'OUT_FOR_DELIVERY':
         return 'Đang giao hàng';
       case 'COMPLETED':
-        return 'Đã hoàn thành';
+        return 'Hoàn thành';
       case 'CANCELLED':
         return 'Đã hủy';
       default:
@@ -103,7 +160,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
   };
 
   // ==========================================================
-  // VIEW 1: TRANG CHI TIẾT ĐƠN HÀNG (GIỐNG HỆT ẢNH 2 & 3 CỦA BẠN)
+  // VIEW 1: TRANG CHI TIẾT ĐƠN HÀNG
   // ==========================================================
   if (selectedOrder) {
     return (
@@ -160,7 +217,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             </View>
           )}
 
-          {/* Action Button: Về trang chủ (Khớp ảnh 2) */}
+          {/* Action Button: Về trang chủ */}
           <View style={styles.actionButtonsContainer}>
             <TouchableOpacity
               style={styles.primaryActionButton}
@@ -216,11 +273,11 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
           <View style={styles.infoCard}>
             <Text style={styles.infoCardTitle}>Phương thức thanh toán</Text>
             <Text style={styles.infoText}>
-              {selectedOrder.paymentName || selectedOrder.paymentMethod || 'Tiền mặt'}
+              {formatPaymentLabel(selectedOrder)}
             </Text>
           </View>
 
-          {/* Card 3: Chi tiết các món & Giá tiền (Khớp ảnh 3) */}
+          {/* Card 3: Chi tiết các món & Giá tiền */}
           <View style={styles.infoCard}>
             <Text style={styles.infoCardTitle}>
               Có {selectedOrder.itemCount || selectedOrder.items?.length || 1} sản phẩm trong giỏ hàng của bạn
@@ -271,6 +328,14 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
               </View>
             )}
 
+            <View style={styles.pricingDivider} />
+
+            <View style={styles.pricingRow}>
+              <Text style={styles.pricingLabel}>Phí giao hàng</Text>
+              <Text style={styles.pricingValue}>
+                {formatCurrency(selectedOrder.deliveryFee ?? 22000)}
+              </Text>
+            </View>
 
             <View style={styles.pricingDivider} />
 
@@ -311,7 +376,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
   }
 
   // ==========================================================
-  // VIEW 2: MÀN HÌNH THEO DÕI ĐƠN HÀNG (KHỚP 100% ẢNH 1 CỦA BẠN)
+  // VIEW 2: MÀN HÌNH THEO DÕI ĐƠN HÀNG (KHỚP 100% ẢNH MẪU)
   // ==========================================================
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -328,7 +393,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
           <ChevronLeft size={24} color="#111827" />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Đơn hàng của tôi</Text>
+        <Text style={styles.headerTitle}>Theo dõi đơn hàng</Text>
 
         <TouchableOpacity
           style={styles.headerBtn}
@@ -342,23 +407,12 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
         </TouchableOpacity>
       </View>
 
-      <View style={{ flexDirection: 'row', marginHorizontal: 16, marginVertical: 12, backgroundColor: '#F3F4F6', borderRadius: 999, padding: 4 }}
-        accessibilityRole="tablist">
-        {([['active', 'Đang xử lý'], ['history', 'Lịch sử']] as const).map(([key, label]) => (
-          <TouchableOpacity key={key} onPress={() => setTab(key)} accessibilityRole="tab" accessibilityState={{ selected: tab === key }}
-            style={{ flex: 1, paddingVertical: 8, borderRadius: 999, alignItems: 'center', backgroundColor: tab === key ? '#FFFFFF' : 'transparent' }}>
-            <Text style={{ fontWeight: tab === key ? '700' : '500', color: tab === key ? BRAND_RED : '#6B7280' }}>{label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
       {/* Body */}
       {isLoading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={BRAND_RED} />
           <Text style={styles.loadingText}>Đang tải đơn hàng...</Text>
         </View>
-      
       ) : error ? (
         <View style={styles.centerContainer}>
           <Text style={styles.emptyText}>{error}</Text>
@@ -368,13 +422,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
         </View>
       ) : visibleOrders.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Text style={styles.emptyText}>{!owner ? 'Đăng nhập để xem đơn hàng của bạn' : tab === 'history' ? 'Chưa có đơn hàng hoàn thành hoặc đã hủy' : 'Không có đơn hàng đang xử lý'}</Text>
-          <AppButton title={!owner ? 'Đăng nhập' : 'Đặt món ngay'} style={{ marginTop: 16, alignSelf: 'center', paddingHorizontal: 32 }}
-            onPress={() => router.push(!owner ? '/auth/login' : '/(tabs)/menu')} />
-          {!owner && (
-            <AppButton title="Tra cứu đơn bằng SĐT và mã đơn" variant="ghost" style={{ marginTop: 8, alignSelf: 'center' }}
-              onPress={() => router.push('/order/lookup')} />
-          )}
+          <Text style={styles.emptyText}>Bạn không có đơn hàng nào</Text>
         </View>
       ) : (
         <FlatList
@@ -382,7 +430,6 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
           keyExtractor={(item) => item.id}
           contentContainerStyle={[
             styles.listContainer,
-            // Clear the floating cart shown on the Orders tab.
             { paddingBottom: Math.max(insets.bottom + 24, FLOATING_CART_CLEARANCE) },
           ]}
           showsVerticalScrollIndicator={false}
@@ -395,9 +442,6 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             />
           }
           renderItem={({ item }) => (
-            // ========================================================
-            // BẢN NHỎ NHỎ THEO DÕI ĐƠN HÀNG (CHUẨN 100% THEO ẢNH 1)
-            // ========================================================
             <TouchableOpacity
               style={styles.orderCardBox}
               activeOpacity={0.88}
@@ -410,14 +454,14 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
               <View style={styles.cardLeftCol}>
                 <Text style={styles.cardLeftLabel}>Dự kiến</Text>
                 <Text style={styles.cardLeftLabel}>giao hàng</Text>
-                <Text style={styles.cardLeftTime}>{item.deliveryTime || 'Chưa xác định'}</Text>
+                <Text style={styles.cardLeftTime}>{formatExpectedTime(item)}</Text>
               </View>
 
               {/* Cột phải: Thông tin đơn hàng */}
               <View style={styles.cardRightCol}>
                 {/* Dòng 1: Mã đơn & Tổng tiền */}
                 <View style={styles.cardRightTopRow}>
-                  <Text style={styles.cardOrderCode}>#{item.orderCode || item.id.slice(0, 8)}</Text>
+                  <Text style={styles.cardOrderCode}>#{item.orderCode || String(item.id).slice(0, 8)}</Text>
                   <Text style={styles.cardOrderTotal}>{formatCurrency(item.total || 0)}</Text>
                 </View>
 
@@ -435,7 +479,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
                 {/* Dòng 4: Phương thức thanh toán & Nút Chi tiết đỏ */}
                 <Text style={styles.cardPaymentText} numberOfLines={1}>
                   <Text style={styles.cardBoldPrefix}>Phương thức thanh toán: </Text>
-                  {item.paymentName || item.paymentMethod || 'Tiền mặt'}{' '}
+                  {formatPaymentLabel(item)}{' '}
                   <Text style={styles.cardDetailLink}>Chi tiết</Text>
                 </Text>
               </View>
@@ -446,4 +490,3 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
     </SafeAreaView>
   );
 }
-

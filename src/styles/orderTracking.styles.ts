@@ -50,7 +50,7 @@ export const styles = StyleSheet.create({
   },
 
   /* ======================================================== */
-  /* BẢN NHỎ NHỎ (EXACT SAME AS PHOTO 1)                      */
+  /* THẺ ĐƠN HÀNG TRONG DANH SÁCH THEO DÕI ĐƠN HÀNG           */
   /* ======================================================== */
   orderCardBox: {
     backgroundColor: '#FFFFFF',
@@ -135,7 +135,102 @@ export const styles = StyleSheet.create({
   },
 
   /* ======================================================== */
-  /* TRANG CHI TIẾT (EXACT SAME AS PHOTOS 2 & 3)             */
+  /* MÀN HÌNH "CHI TIẾT" (4 BƯỚC TRẠNG THÁI TỐI GIẢN)         */
+  /* ======================================================== */
+  statusScreenContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'space-between',
+  },
+  statusTopContent: {
+    paddingHorizontal: 20,
+    paddingTop: 22,
+  },
+  statusOrderTitle: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  statusOrderDate: {
+    fontSize: 15,
+    color: '#1F2937',
+    marginTop: 6,
+  },
+  statusTimelineWrap: {
+    marginTop: 28,
+    paddingLeft: 4,
+  },
+  statusStepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  statusDotCol: {
+    width: 20,
+    alignItems: 'center',
+  },
+  statusDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    marginTop: 6,
+  },
+  statusDotActive: {
+    backgroundColor: '#15803D',
+  },
+  statusDotInactive: {
+    backgroundColor: '#E5E7EB',
+  },
+  statusLine: {
+    width: 1.5,
+    height: 32,
+    backgroundColor: '#E5E7EB',
+  },
+  statusStepContent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingLeft: 10,
+    paddingBottom: 22,
+  },
+  statusStepLabel: {
+    fontSize: 16,
+    fontWeight: '400',
+    color: '#6B7280',
+  },
+  statusStepLabelActive: {
+    color: '#111827',
+  },
+  statusStepTime: {
+    fontSize: 16,
+    fontWeight: '400',
+    color: '#6B7280',
+    letterSpacing: 0.5,
+  },
+  statusStepTimeActive: {
+    color: '#111827',
+    letterSpacing: 0,
+  },
+  statusBottomBar: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  statusBottomBtn: {
+    backgroundColor: BRAND_RED,
+    borderRadius: 10,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusBottomBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  /* ======================================================== */
+  /* TRANG CHI TIẾT ĐƠN HÀNG ĐẦY ĐỦ                           */
   /* ======================================================== */
   detailScroll: {
     flex: 1,

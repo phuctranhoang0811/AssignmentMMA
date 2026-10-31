@@ -54,7 +54,7 @@ export default function CartScreen() {
   const coupons = useCoupons();
   const RECOMMENDATIONS = RECOMMENDATION_IDS.map(id => productsMap[id]).filter(product => product?.isAvailable);
   const router = useRouter();
-  const { items, removeItem, addItem, updateQuantity, promoCode, setPromoCode, fulfillmentType, setFulfillmentType,
+  const { items, removeItem, updateQuantity, promoCode, setPromoCode, fulfillmentType, setFulfillmentType,
     isLoaded, needCutlery, setNeedCutlery } = useCart();
   const { showToast } = useToast();
   const store = useStoreStatus();
@@ -107,7 +107,7 @@ export default function CartScreen() {
       showToast({ message: store.message, type: 'info' });
       return;
     }
-    if (mustSignIn) {
+    if (false && mustSignIn) {
       router.push({ pathname: '/auth/login', params: { returnTo: 'cart-checkout' } });
       return;
     }
@@ -146,17 +146,8 @@ export default function CartScreen() {
   };
 
   const handleAddRecommendation = (rec: Product) => {
-    if (rec.variants?.length) {
-      router.push({ pathname: '/product/[id]', params: { id: rec.id } });
-      return;
-    }
-    addItem({
-      productId: rec.id,
-      addonIds: [],
-      quantity: 1,
-    });
-    triggerHaptic('success');
-    showToast({ message: `Đã thêm ${rec.name} vào giỏ hàng`, type: 'success' });
+    triggerHaptic('light');
+    router.push({ pathname: '/product/[id]', params: { id: rec.id } });
   };
 
   // Open Cutlery Modal
@@ -368,7 +359,12 @@ export default function CartScreen() {
             contentContainerStyle={styles.recommendationsList}
           >
             {RECOMMENDATIONS.map((rec) => (
-              <View key={rec.id} style={styles.recCard}>
+              <TouchableOpacity
+                key={rec.id}
+                style={styles.recCard}
+                activeOpacity={0.88}
+                onPress={() => handleAddRecommendation(rec)}
+              >
                 <Image
                   source={{ uri: rec.image }}
                   style={styles.recImage}
@@ -385,7 +381,7 @@ export default function CartScreen() {
                     <Text style={styles.recPrice}>{rec.variants?.length ? 'Từ ' : ''}{formatCurrency(rec.basePrice)}</Text>
                     <TouchableOpacity
                       accessibilityRole="button"
-                      accessibilityLabel={rec.variants?.length ? `Chọn kích cỡ ${rec.name}` : `Thêm ${rec.name} vào giỏ hàng`}
+                      accessibilityLabel={`Xem chi tiết ${rec.name}`}
                       style={styles.recAddBtn}
                       onPress={() => handleAddRecommendation(rec)}
                       activeOpacity={0.8}
@@ -394,7 +390,7 @@ export default function CartScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
@@ -468,14 +464,24 @@ export default function CartScreen() {
           )}
 
 
+          {fulfillmentType === 'delivery' && (
+            <View style={styles.pricingRow}>
+              <Text style={styles.pricingLabel}>Phí giao hàng</Text>
+              <Text style={styles.pricingValue}>
+                {totals.deliveryFee === 0 ? 'Miễn phí' : formatCurrency(totals.deliveryFee)}
+              </Text>
+            </View>
+          )}
           <View style={styles.pricingDivider} />
 
           <View style={styles.totalRow}>
             <View>
               <Text style={styles.totalLabel}>Tổng cộng</Text>
-              <Text style={styles.rewardPointsNote}>
-                Điểm dự kiến: <Text style={{ fontWeight: '700', color: '#111827' }}>{earnedPoints} điểm</Text> FPT Rewards
-              </Text>
+              {!mustSignIn && (
+                <Text style={styles.rewardPointsNote}>
+                  Điểm dự kiến: <Text style={{ fontWeight: '700', color: '#111827' }}>{earnedPoints} điểm</Text> FPT Rewards
+                </Text>
+              )}
             </View>
             <Text style={styles.totalValue}>{formatCurrency(total)}</Text>
           </View>
@@ -498,7 +504,7 @@ export default function CartScreen() {
           activeOpacity={0.88}
         >
           {isProceeding ? <ActivityIndicator color="#FFFFFF" /> :
-            <Text style={styles.checkoutBtnText}>{mustSignIn ? 'Đăng nhập để thanh toán' : 'Thanh toán'} • {formatCurrency(total)}</Text>}
+            <Text style={styles.checkoutBtnText}>Thanh toán • {formatCurrency(total)}</Text>}
         </TouchableOpacity>
       </View>
 
