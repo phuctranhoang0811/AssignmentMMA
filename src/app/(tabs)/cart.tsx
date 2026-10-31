@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import {
   ShoppingBag,
   X,
   Check,
+  PartyPopper,
 } from 'lucide-react-native';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
@@ -50,15 +51,41 @@ const RECOMMENDATION_IDS = ['PA002', 'PZ002', 'PA001'];
 
 
 export default function CartScreen() {
-  const { productsMap } = useCatalog();
+  const { products, productsMap = {} } = useCatalog();
   const coupons = useCoupons();
-  const RECOMMENDATIONS = RECOMMENDATION_IDS.map(id => productsMap[id]).filter(product => product?.isAvailable);
   const router = useRouter();
   const { items, removeItem, addItem, updateQuantity, promoCode, setPromoCode, fulfillmentType, setFulfillmentType,
     isLoaded, needCutlery, setNeedCutlery } = useCart();
   const { showToast } = useToast();
   const store = useStoreStatus();
   const insets = useSafeAreaInsets();
+
+  const inCartProductIds = useMemo(
+    () => new Set(items.map((it) => it.productId)),
+    [items]
+  );
+
+  const adminPopularProducts = useMemo(
+    () => (products || Object.values(productsMap)).filter((p) => p?.isPopular && p?.isAvailable),
+    [products, productsMap]
+  );
+
+  const RECOMMENDATIONS = useMemo(() => {
+    if (adminPopularProducts.length > 0) {
+      return adminPopularProducts.filter((p) => !inCartProductIds.has(p.id));
+    }
+    return RECOMMENDATION_IDS.map((id) => productsMap[id]).filter(
+      (product) => product?.isAvailable && !inCartProductIds.has(product?.id)
+    );
+  }, [adminPopularProducts, inCartProductIds, productsMap]);
+
+  const hasAddedAllRecommendations = useMemo(() => {
+    const totalList =
+      adminPopularProducts.length > 0
+        ? adminPopularProducts
+        : RECOMMENDATION_IDS.map((id) => productsMap[id]).filter((product) => product?.isAvailable);
+    return totalList.length > 0 && RECOMMENDATIONS.length === 0;
+  }, [adminPopularProducts, productsMap, RECOMMENDATIONS]);
 
   // Cutlery state & modal (Image 2)
   const [cutleryModalVisible, setCutleryModalVisible] = useState(false);
@@ -113,14 +140,14 @@ export default function CartScreen() {
     }
     setIsProceeding(true);
     try {
-    const hasChosen = await checkHasChosenAddress();
-    if (!hasChosen) {
-      // Khách chưa chọn địa chỉ ở trang chủ -> Hiện modal nhập địa chỉ
-      setShowAddressModal(true);
-    } else {
-      // Khách đã chọn địa chỉ rồi -> Chuyển thẳng sang thanh toán
-      router.push('/checkout');
-    }
+      const hasChosen = await checkHasChosenAddress();
+      if (!hasChosen) {
+        // Khách chưa chọn địa chỉ ở trang chủ -> Hiện modal nhập địa chỉ
+        setShowAddressModal(true);
+      } else {
+        // Khách đã chọn địa chỉ rồi -> Chuyển thẳng sang thanh toán
+        router.push('/checkout');
+      }
     } catch {
       showToast({ message: 'Chưa thể mở thanh toán. Vui lòng thử lại.', type: 'error' });
     } finally { setIsProceeding(false); }
@@ -320,9 +347,9 @@ export default function CartScreen() {
                     <QuantityStepper value={item.quantity} onChange={value => updateQuantity(item.lineId, value)} />
                     <Text style={styles.itemPriceText}>{formatCurrency(lineTotal)}</Text>
                   </View>
-                    <View style={styles.actionLinksRow}>
-                      {canEditCartProduct(product) && (
-                        <TouchableOpacity
+                  <View style={styles.actionLinksRow}>
+                    {canEditCartProduct(product) && (
+                      <TouchableOpacity
                         accessibilityLabel={`Sửa ${product?.name || "món"}`}
                         accessibilityRole="button"
                         style={styles.itemAction}
@@ -331,20 +358,20 @@ export default function CartScreen() {
                       >
                         <Text style={styles.editActionText}>Sửa</Text>
                       </TouchableOpacity>
-                        )}
-                      <TouchableOpacity
-                        accessibilityRole="button"
-                        accessibilityLabel={`Xóa ${product?.name || 'món'} khỏi giỏ hàng`}
-                        onPress={() => {
-                          triggerHaptic('light');
-                          setItemToDelete(item.lineId);
-                        }}
-                        activeOpacity={0.7}
-                        style={styles.itemAction}
-                      >
-                        <Text style={styles.deleteActionText}>Xóa</Text>
-                      </TouchableOpacity>
-                    </View>
+                    )}
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Xóa ${product?.name || 'món'} khỏi giỏ hàng`}
+                      onPress={() => {
+                        triggerHaptic('light');
+                        setItemToDelete(item.lineId);
+                      }}
+                      activeOpacity={0.7}
+                      style={styles.itemAction}
+                    >
+                      <Text style={styles.deleteActionText}>Xóa</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             );
@@ -362,41 +389,71 @@ export default function CartScreen() {
             <Text style={styles.sectionTitle}>Bạn sẽ thích</Text>
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.recommendationsList}
-          >
-            {RECOMMENDATIONS.map((rec) => (
-              <View key={rec.id} style={styles.recCard}>
-                <Image
-                  source={{ uri: rec.image }}
-                  style={styles.recImage}
-                  resizeMode="cover"
-                />
-                <View style={styles.recContent}>
-                  <Text style={styles.recTitle} numberOfLines={1}>
-                    {rec.name}
-                  </Text>
-                  <Text style={styles.recDescription} numberOfLines={2}>
-                    {rec.description}
-                  </Text>
-                  <View style={styles.recBottomRow}>
-                    <Text style={styles.recPrice}>{rec.variants?.length ? 'Từ ' : ''}{formatCurrency(rec.basePrice)}</Text>
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={rec.variants?.length ? `Chọn kích cỡ ${rec.name}` : `Thêm ${rec.name} vào giỏ hàng`}
-                      style={styles.recAddBtn}
-                      onPress={() => handleAddRecommendation(rec)}
-                      activeOpacity={0.8}
-                    >
-                      <Plus size={18} color="#FFFFFF" strokeWidth={2.4} />
-                    </TouchableOpacity>
+          {RECOMMENDATIONS.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.recommendationsList}
+            >
+              {RECOMMENDATIONS.map((rec) => (
+                <View key={rec.id} style={styles.recCard}>
+                  <Image
+                    source={{ uri: rec.image }}
+                    style={styles.recImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.recContent}>
+                    <Text style={styles.recTitle} numberOfLines={1}>
+                      {rec.name}
+                    </Text>
+                    <Text style={styles.recDescription} numberOfLines={2}>
+                      {rec.description}
+                    </Text>
+                    <View style={styles.recBottomRow}>
+                      <Text style={styles.recPrice}>{rec.variants?.length ? 'Từ ' : ''}{formatCurrency(rec.basePrice)}</Text>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={rec.variants?.length ? `Chọn kích cỡ ${rec.name}` : `Thêm ${rec.name} vào giỏ hàng`}
+                        style={styles.recAddBtn}
+                        onPress={() => handleAddRecommendation(rec)}
+                        activeOpacity={0.8}
+                      >
+                        <Plus size={18} color="#FFFFFF" strokeWidth={2.4} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
+              ))}
+            </ScrollView>
+          ) : hasAddedAllRecommendations ? (
+            <View style={styles.allAddedCard}>
+              <View style={styles.allAddedIconWrap}>
+                <PartyPopper size={22} color={BRAND_RED} />
               </View>
-            ))}
-          </ScrollView>
+              <View style={styles.allAddedTextWrap}>
+                <Text style={styles.allAddedTitle}>
+                  {'Bạn đã chọn tất cả món gợi ý!'}
+                </Text>
+                <Text style={styles.allAddedSubtitle}>
+                  {'Toàn bộ món đề xuất đã nằm trong giỏ. Cùng kiểm tra và đặt hàng nhé '}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.allAddedCard}>
+              <View style={styles.allAddedIconWrap}>
+                <PartyPopper size={22} color={BRAND_RED} />
+              </View>
+              <View style={styles.allAddedTextWrap}>
+                <Text style={styles.allAddedTitle}>
+                  {'Đang cập nhật thêm món gợi ý'}
+                </Text>
+                <Text style={styles.allAddedSubtitle}>
+                  {'Hãy khám phá thêm các món ăn hấp dẫn khác trong thực đơn nhé.'}
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* SECTION DIVIDER */}

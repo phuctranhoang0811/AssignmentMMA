@@ -18,7 +18,7 @@ import {
   ChevronRight,
   ClipboardList,
   BarChart2,
-  LayoutGrid,
+  Sparkles,
 } from 'lucide-react-native';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -265,29 +265,30 @@ export default function AdminDashboardScreen() {
             <ChevronRight size={22} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* Module: Món Theo Nhóm Promo (Tiệc Cheese / Thành Viên / Deal Hot) */}
+          {/* Module: Gợi ý Bạn sẽ thích */}
           <TouchableOpacity
             style={styles.moduleCard}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel="Thêm món vào nhóm khuyến mãi"
-            onPress={() => router.push('/admin/menu-groups')}
+            accessibilityLabel="Gợi ý Bạn sẽ thích"
+            onPress={() => router.push('/admin/recommendations')}
           >
             <View style={styles.moduleLeft}>
               <View style={[styles.moduleIconBox, { backgroundColor: colors.primarySoft }]}>
-                <LayoutGrid size={24} color={colors.primary} />
+                <Sparkles size={24} color={colors.primary} />
               </View>
               <View style={styles.moduleTextBox}>
                 <AppText variant="cardTitle" color={colors.textPrimary}>
-                  Thêm Món Vào Nhóm Promo
+                  {'Gợi Ý "Bạn Sẽ Thích"'}
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
-                  Gán món có sẵn vào Tiệc Cheese, Thành Viên hoặc Deal Hot hiển thị trên trang chủ.
+                  Xem món mua nhiều nhất & chọn món đề xuất trên app khách hàng.
                 </AppText>
               </View>
             </View>
             <ChevronRight size={22} color={colors.textSecondary} />
           </TouchableOpacity>
+
 
           {/* Module 2: Giám sát Đơn hàng & Can thiệp */}
           <TouchableOpacity
@@ -473,3 +474,4 @@ export default function AdminDashboardScreen() {
     </SafeAreaView>
   );
 }
+
