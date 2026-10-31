@@ -28,6 +28,31 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textPrimary,
   },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  addAccountBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    height: 44,
+    fontSize: 14,
+    color: colors.textPrimary,
+    backgroundColor: colors.surface,
+    marginBottom: spacing.sm,
+  },
   listContent: {
     padding: spacing.base,
     paddingBottom: spacing['4xl'],
@@ -94,6 +119,51 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceAlt,
+  },
+
+  // Section theo nhóm quyền (tab lọc)
+  sectionTabsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+  },
+  sectionTab: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+  },
+  sectionTabActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  sectionDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  sectionCountPill: {
+    marginLeft: 'auto',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceAlt,
+  },
+  emptySectionText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    paddingVertical: spacing.sm,
   },
 
   // Modal

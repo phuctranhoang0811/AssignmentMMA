@@ -21,6 +21,8 @@ import {
   Package,
   Trash2,
   ChevronRight,
+  Upload,
+  ImageOff,
 } from 'lucide-react-native';
 import {
   collection,
@@ -41,6 +43,7 @@ import { Product } from '../../../types/product';
 import { mockProducts } from '../../../data/mockProducts';
 import { formatCurrency } from '../../../utils/formatCurrency';
 import { reportAdminAction } from '../../../services/orderApi';
+import { pickAndUploadImage } from '../../../services/imageUpload';
 
 const CATEGORIES = [
   { id: 'all', name: 'Tất cả' },
@@ -71,6 +74,20 @@ export default function AdminProductsScreen() {
   const [formImage, setFormImage] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+  // Chọn ảnh từ máy -> upload Firebase Storage -> nhận URL công khai
+  const handlePickImage = async () => {
+    setIsUploadingImage(true);
+    try {
+      const url = await pickAndUploadImage('products');
+      if (url) setFormImage(url);
+    } catch (e: any) {
+      Alert.alert('Upload ảnh thất bại', e?.message || 'Vui lòng thử lại.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   useEffect(() => {
     // Lắng nghe dữ liệu realtime từ collection 'products' trên Firestore
@@ -138,7 +155,7 @@ export default function AdminProductsScreen() {
     setFormName('');
     setFormPrice('');
     setFormCategory('cheese_party');
-    setFormImage('https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500');
+    setFormImage(''); // để trống — admin tự upload ảnh
     setFormDesc('');
     setModalVisible(true);
   };
@@ -166,6 +183,10 @@ export default function AdminProductsScreen() {
       Alert.alert('Lỗi', 'Giá bán phải là số hợp lệ');
       return;
     }
+    if (!formImage.trim()) {
+      Alert.alert('Thiếu hình ảnh', 'Vui lòng chọn và upload ảnh cho món ăn.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -176,7 +197,7 @@ export default function AdminProductsScreen() {
           name: formName.trim(),
           basePrice: priceNum,
           categoryId: formCategory,
-          image: formImage.trim() || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500',
+          image: formImage.trim(),
           description: formDesc.trim(),
           updatedAt: serverTimestamp(),
         });
@@ -188,7 +209,7 @@ export default function AdminProductsScreen() {
           name: formName.trim(),
           basePrice: priceNum,
           categoryId: formCategory,
-          image: formImage.trim() || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500',
+          image: formImage.trim(),
           description: formDesc.trim(),
           isAvailable: true,
           // A variant price is the full selling price (see getItemLineUnitPrice), not a surcharge.
@@ -507,14 +528,60 @@ export default function AdminProductsScreen() {
 
               <View style={styles.formGroup}>
                 <AppText variant="captionSemiBold" style={styles.inputLabel}>
-                  Đường dẫn hình ảnh (URL)
+                  Hình ảnh món ăn
                 </AppText>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="https://images.unsplash.com/..."
-                  value={formImage}
-                  onChangeText={setFormImage}
-                />
+
+                {/* Preview + nút upload */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View
+                    style={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surfaceAlt,
+                      overflow: 'hidden',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {formImage ? (
+                      <Image source={{ uri: formImage }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    ) : (
+                      <ImageOff size={22} color={colors.textDisabled} />
+                    )}
+                  </View>
+
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      height: 44,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: colors.primary,
+                      backgroundColor: colors.primarySoft,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexDirection: 'row',
+                      gap: 6,
+                    }}
+                    activeOpacity={0.8}
+                    onPress={handlePickImage}
+                    disabled={isUploadingImage}
+                  >
+                    {isUploadingImage ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <>
+                        <Upload size={16} color={colors.primary} />
+                        <AppText variant="captionSemiBold" color={colors.primary}>
+                          {formImage ? 'Đổi ảnh khác' : 'Chọn ảnh từ máy'}
+                        </AppText>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.formGroup}>
