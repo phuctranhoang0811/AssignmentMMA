@@ -3,6 +3,35 @@ import * as ImagePicker from 'expo-image-picker';
 import { Platform } from 'react-native';
 import { storage } from './firebase';
 
+// ===== Cloudinary (bên thứ 3 lưu ảnh) =====
+// Điền vào .env rồi khởi động lại `npx expo start -c`:
+//   EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME=xxx
+//   EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET=xxx  (phải là UNSIGNED preset trong Console → Upload)
+// Nếu chưa điền thì tự động quay về cách cũ (web: base64, native: Firebase Storage).
+const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || '';
+const CLOUDINARY_UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || '';
+const cloudinaryReady = CLOUDINARY_CLOUD_NAME.length > 0 && CLOUDINARY_UPLOAD_PRESET.length > 0;
+
+// Upload blob lên Cloudinary bằng unsigned endpoint, trả về secure_url (CDN, load rất nhanh)
+async function uploadToCloudinary(file: Blob | { uri: string; name: string; type: string }): Promise<string> {
+  const form = new FormData();
+  form.append('file', file as any, typeof file === 'object' && 'uri' in file ? file.name : `dish-${Date.now()}.jpg`);
+  form.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+  form.append('folder', 'pizzastore/products');
+
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Cloudinary lỗi (${res.status}). Kiểm tra cloud name / upload preset.${detail ? ` ${detail.slice(0, 150)}` : ''}`);
+  }
+  const json = await res.json();
+  if (!json?.secure_url) throw new Error('Cloudinary không trả về URL ảnh.');
+  return json.secure_url as string;
+}
+
 // Chọn ảnh từ thư viện/máy ảnh.
 // WEB: không upload Firebase Storage — nén rồi nhúng thẳng base64 (data URL) vào product.image,
 //      bấm chọn ảnh là hiện lên liền, khỏi chờ tải. Ảnh đã nén ≤900px (~150-300KB) nên vẫn dưới
@@ -27,6 +56,20 @@ export async function pickAndUploadImage(
 
   const localUri = picked.assets[0].uri;
 
+  // Ưu tiên 1: Cloudinary (đã cấu hình .env) — nén phía web rồi đẩy lên CDN
+  if (cloudinaryReady) {
+    if (Platform.OS === 'web') {
+      const rawBlob = await fetch(localUri).then((r) => r.blob());
+      if (!rawBlob || rawBlob.size === 0) throw new Error('Không đọc được file ảnh đã chọn.');
+      const blob = await downscaleForUpload(rawBlob);
+      return uploadToCloudinary(blob);
+    }
+    // Native: Cloudinary nhận trực tiếp file URI của Expo
+    const fileName = localUri.split('/').pop() || `dish-${Date.now()}.jpg`;
+    return uploadToCloudinary({ uri: localUri, name: fileName, type: 'image/jpeg' });
+  }
+
+  // Ưu tiên 2 (web, chưa cấu hình Cloudinary): nhúng base64 thẳng vào document Firestore
   if (Platform.OS === 'web' && typeof FileReader !== 'undefined') {
     const rawBlob = await fetch(localUri).then((r) => r.blob());
     if (!rawBlob || rawBlob.size === 0) throw new Error('Không đọc được file ảnh đã chọn.');

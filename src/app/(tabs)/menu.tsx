@@ -223,7 +223,10 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
 };
 
 export default function MenuScreen() {
-  const { promptMemberDiscount } = useLocalSearchParams<{ promptMemberDiscount?: string }>();
+  const { promptMemberDiscount, category: categoryParam } = useLocalSearchParams<{
+    promptMemberDiscount?: string;
+    category?: string;
+  }>();
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('cheese_party');
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -277,6 +280,12 @@ export default function MenuScreen() {
   useEffect(() => {
     loadMenu();
   }, [loadMenu]);
+
+  // Nhóm đang được lọc từ home ('category' trên URL). null = xem toàn bộ menu.
+  const filterCategory = useMemo<CategoryId | null>(() => {
+    const catId = typeof categoryParam === 'string' && categoryParam !== 'all' ? categoryParam : null;
+    return catId && mockCategories.some((c) => c.id === catId) ? (catId as CategoryId) : null;
+  }, [categoryParam]);
 
   // Khi bấm card category từ home: chỉ hiện nhóm đó, cuộn tab tương ứng lên đầu
   useEffect(() => {

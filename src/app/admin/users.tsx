@@ -385,7 +385,7 @@ export default function AdminUsersScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            !activeSectionMeta ? null : (
+            !activeSectionMeta ? undefined : (
               <View style={styles.sectionHeader}>
                 <View style={[styles.sectionDot, { backgroundColor: activeSectionMeta.color }]} />
                 <AppText variant="bodySemiBold" color={colors.textPrimary}>
