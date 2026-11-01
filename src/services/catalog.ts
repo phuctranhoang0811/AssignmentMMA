@@ -20,7 +20,7 @@ function cached<T extends { id?: string; code?: string }>(name: string, fallback
   const load = (): Promise<T[]> => {
     if (Date.now() - loadedAt < MAX_AGE_MS) return Promise.resolve(value);
     pending ??= getDocs(collection(db, name)).then(snapshot => {
-      const stored = new Map(snapshot.docs.map(doc => {
+      const stored = new Map(snapshot.docs.filter(doc => !doc.id.startsWith('__')).map(doc => {
         const item = { ...doc.data(), [name === 'coupons' ? 'code' : 'id']: doc.id } as unknown as T;
         return [key(item), item] as const;
       }));

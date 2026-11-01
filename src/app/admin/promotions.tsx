@@ -91,7 +91,7 @@ export default function AdminPromotionsScreen() {
 
     try {
       const [rewardsSnap, productsSnap] = await Promise.all([
-        getDocsFn(collection(db, 'rewards')).catch(() => null),
+        ((FirestorePkg as any).getDoc ? (FirestorePkg as any).getDoc(doc(db, 'coupons', '__REWARDS_CONFIG__')) : Promise.resolve(null)).catch(() => null),
         getDocsFn(collection(db, 'products')).catch(() => null),
       ]);
 
@@ -116,7 +116,7 @@ export default function AdminPromotionsScreen() {
 
       if (rewardsSnap) {
         const storedRewardsMap = new Map<string, AdminRewardGiftItem>();
-        rewardsSnap.forEach((d: any) => {
+        Object.entries(rewardsSnap.data?.()?.items || {}).forEach(([rId, rawItem]: [string, any]) => { const d = { id: rId, data: () => rawItem };
           const data = d.data();
           if (data?.deleted) {
             storedRewardsMap.set(d.id, { id: d.id, title: '', points: -1, stored: true });
@@ -161,6 +161,7 @@ export default function AdminPromotionsScreen() {
       (snapshot: any) => {
         const list: (Coupon & { stored?: boolean })[] = [];
         snapshot.forEach((d: any) => {
+          if (String(d.id).startsWith('__')) return;
           const data = d.data();
           list.push({
             code: data.code || '',
@@ -319,7 +320,7 @@ export default function AdminPromotionsScreen() {
         ...(selectedProductId ? { productId: selectedProductId } : {}),
         updatedAt: serverTimestamp(),
       };
-      await setDoc(doc(db, 'rewards', rewardId), payload);
+      await setDoc(doc(db, 'coupons', '__REWARDS_CONFIG__'), { items: { [rewardId]: payload }, updatedAt: serverTimestamp() }, { merge: true });
 
       setRewardItems((prev) => {
         const exists = prev.some((r) => r.id === rewardId);
@@ -361,9 +362,9 @@ export default function AdminPromotionsScreen() {
         onPress: async () => {
           try {
             if (rewardCatalog.some((b) => b.id === item.id)) {
-              await setDoc(doc(db, 'rewards', item.id), { id: item.id, deleted: true, updatedAt: serverTimestamp() });
+              await setDoc(doc(db, 'coupons', '__REWARDS_CONFIG__'), { items: { [item.id]: { id: item.id, deleted: true, updatedAt: serverTimestamp() } }, updatedAt: serverTimestamp() }, { merge: true });
             } else {
-              await deleteDoc(doc(db, 'rewards', item.id));
+              await setDoc(doc(db, 'coupons', '__REWARDS_CONFIG__'), { items: { [item.id]: { id: item.id, deleted: true, updatedAt: serverTimestamp() } }, updatedAt: serverTimestamp() }, { merge: true });
             }
             setRewardItems((prev) => prev.filter((r) => r.id !== item.id));
           } catch (e: any) {

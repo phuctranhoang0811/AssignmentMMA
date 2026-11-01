@@ -2,7 +2,7 @@ import { PizzaCustomizationState } from './pizzaCustomization';
 import type { Delivery } from './delivery';
 
 export type StaffOrder = {
-  id: string; orderCode: string; status: string; fulfillmentType: string; address: string;
+  id: string; orderCode: string; status: string; fulfillmentType: string; address: string; storeId?: string; storeName?: string;
   customer: { fullname: string; phone: string }; total: number; paymentName?: string; paymentStatus?: string;
   createdAt?: string | { seconds?: number; _seconds?: number };
   deliveryNote?: string; paymentMethod?: string;
@@ -100,6 +100,8 @@ export type Order = {
   };
   fulfillmentType: FulfillmentType;
   needCutlery?: boolean;
+  storeId?: string;
+  storeName?: string;
   address?: string;
   items: OrderItemSnapshot[];
   status: OrderStatus;

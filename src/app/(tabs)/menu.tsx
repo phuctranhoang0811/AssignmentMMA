@@ -306,7 +306,7 @@ export default function MenuScreen() {
 
   // Nhóm promo = nhãn dán lên món, KHÔNG phải danh mục gốc:
   // món vẫn ở Pizza/Khai vị/Nước uống đồng thời hiện thêm trong Tiệc Cheese / Thành Viên / Deal Hot.
-  const PROMO_GROUP_IDS = ['cheese_party', 'member_deals', 'hot_deals'];
+
   const inPromoGroup = (p: Product, g: string) =>
     (p.promoGroups || []).includes(g) || p.categoryId === g; // categoryId === group: dữ liệu kiểu cũ
 
@@ -314,7 +314,7 @@ export default function MenuScreen() {
   const productsByCategory = useMemo(() => {
     const map: Record<string, Product[]> = {};
     for (const cat of mockCategories) {
-      map[cat.id] = PROMO_GROUP_IDS.includes(cat.id)
+      map[cat.id] = ['cheese_party', 'member_deals', 'hot_deals'].includes(cat.id)
         ? allProducts.filter((p) => inPromoGroup(p, cat.id))
         : allProducts.filter((p) => p.categoryId === cat.id);
     }

@@ -12,9 +12,13 @@ import {
   TrendingUp,
   Clock,
   CheckCircle,
-  PackageCheck,
   LogOut,
   BarChart2,
+  Store,
+  ChevronDown,
+  ChevronUp,
+  Check,
+  FileText,
 } from 'lucide-react-native';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -25,22 +29,141 @@ import { AppText } from '../../components/ui/AppText';
 import { colors } from '../../theme/colors';
 import { styles } from '../../styles/adminDashboard.styles';
 import { formatCurrency } from '../../utils/formatCurrency';
+import {
+  subscribeStoresConfig,
+  DEFAULT_STORE_BRANCHES,
+  type SyncedStoreBranch,
+} from '../../services/storeSync';
 
 const DAYS_OF_WEEK = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+
+function doesOrderMatchStore(
+  orderData: Record<string, any>,
+  targetStore: SyncedStoreBranch,
+  allStores: SyncedStoreBranch[]
+): boolean {
+  const orderStoreId = orderData.storeId ? String(orderData.storeId) : '';
+  const orderStoreName = orderData.storeName ? String(orderData.storeName) : '';
+  const orderAddr = String(orderData.address || orderData.deliveryAddress || '');
+
+  if (orderStoreId) {
+    return orderStoreId === targetStore.id;
+  }
+  if (orderStoreName) {
+    return orderStoreName === targetStore.name;
+  }
+  if (orderAddr && orderAddr.includes(targetStore.name)) {
+    return true;
+  }
+
+  // Với các đơn cũ chưa gắn storeId, phân bổ theo khu vực địa chỉ (Hà Nội vs TP.HCM / quán mặc định)
+  const addrLower = orderAddr.toLowerCase();
+  const isOrderHanoi =
+    addrLower.includes('hà nội') ||
+    addrLower.includes('ba đình') ||
+    addrLower.includes('liễu giai') ||
+    addrLower.includes('cầu giấy') ||
+    addrLower.includes('đống đa') ||
+    addrLower.includes('hoàn kiếm');
+
+  const storeAddrLower = `${targetStore.name} ${targetStore.address}`.toLowerCase();
+  const isStoreHanoi =
+    storeAddrLower.includes('hà nội') ||
+    storeAddrLower.includes('ba đình') ||
+    storeAddrLower.includes('liễu giai');
+
+  if (isOrderHanoi && isStoreHanoi) {
+    return true;
+  }
+  if (!isOrderHanoi && !isStoreHanoi) {
+    const firstNonHanoi = allStores.find((s) => {
+      const stLower = `${s.name} ${s.address}`.toLowerCase();
+      return (
+        !stLower.includes('hà nội') &&
+        !stLower.includes('ba đình') &&
+        !stLower.includes('liễu giai')
+      );
+    });
+    return firstNonHanoi ? firstNonHanoi.id === targetStore.id : allStores[0]?.id === targetStore.id;
+  }
+
+  return false;
+}
+
+function parseOrderDate(orderData: Record<string, any>): Date {
+  const raw = orderData.updatedAt || orderData.createdAt;
+  if (!raw) return new Date();
+  if (typeof raw?.toDate === 'function') {
+    return raw.toDate();
+  }
+  if (typeof raw === 'object' && typeof raw.seconds === 'number') {
+    return new Date(raw.seconds * 1000);
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function isSameCalendarDay(d1: Date, d2: Date): boolean {
+  return (
+    d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate()
+  );
+}
+
+function isDateInCurrentWeek(d: Date, now: Date): boolean {
+  const dayOfWeek = (now.getDay() + 6) % 7; // 0 = T2, 6 = CN
+  const mondayStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - dayOfWeek,
+    0,
+    0,
+    0,
+    0
+  );
+  const nextMondayStart = new Date(
+    mondayStart.getFullYear(),
+    mondayStart.getMonth(),
+    mondayStart.getDate() + 7,
+    0,
+    0,
+    0,
+    0
+  );
+  return d >= mondayStart && d < nextMondayStart;
+}
 
 export default function AdminDashboardScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState({
-    totalRevenue: 0,
-    pendingOrdersCount: 0,
-    activeProductsCount: 0,
-    completedOrdersCount: 0,
-  });
-  const [dailyRevenue, setDailyRevenue] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
-  const [topProducts, setTopProducts] = useState<{ name: string; count: number; revenue: number }[]>([]);
+  const [storesList, setStoresList] = useState<SyncedStoreBranch[]>(DEFAULT_STORE_BRANCHES);
+  const [selectedStoreId, setSelectedStoreId] = useState<string>(user?.storeId || 'ALL');
+  const [storeDropdownOpen, setStoreDropdownOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [rawOrders, setRawOrders] = useState<Record<string, any>[]>([]);
+
+  useEffect(() => {
+    if (user?.storeId) {
+      setSelectedStoreId(user.storeId);
+    }
+  }, [user?.storeId]);
+
+  useEffect(() => {
+    const unsubStores = subscribeStoresConfig((state) => {
+      const active = state.stores.filter((s) => s.isActive !== false);
+      const list = active.length > 0 ? active : state.stores;
+      if (list.length > 0) {
+        setStoresList(list);
+        setSelectedStoreId((prev) =>
+          prev === 'ALL' || list.some((s) => s.id === prev) ? prev : 'ALL'
+        );
+      }
+    });
+    return () => unsubStores();
+  }, []);
 
   useEffect(() => {
     let unsubscribeOrders = () => {};
@@ -49,57 +172,11 @@ export default function AdminDashboardScreen() {
       unsubscribeOrders = onSnapshot(
         qOrders,
         (snapshot: any) => {
-          let revenue = 0;
-          let pendingCount = 0;
-          let completedCount = 0;
-          const daily = [0, 0, 0, 0, 0, 0, 0];
-          const prodMap: Record<string, { name: string; count: number; revenue: number }> = {};
-
+          const list: Record<string, any>[] = [];
           snapshot.forEach((docSnap: any) => {
-            const data = docSnap.data();
-            const total = Number(data.totalAmount || data.total || 0);
-            const status = data.status;
-
-            if (status === 'COMPLETED' || status === 'DELIVERED') {
-              revenue += total;
-              completedCount++;
-
-              const d = data.createdAt?.toDate?.()
-                ? data.createdAt.toDate()
-                : new Date(data.createdAt || Date.now());
-              const dayIdx = (d.getDay() + 6) % 7;
-              if (dayIdx >= 0 && dayIdx < 7) {
-                daily[dayIdx] += total;
-              }
-
-              const items = data.items || [];
-              items.forEach((it: any) => {
-                const name = it.productName || it.name || 'Món ăn';
-                const qty = Number(it.quantity || 1);
-                const lineRev = Number(it.lineTotal || (it.unitPrice || it.price || 0) * qty);
-                if (!prodMap[name]) {
-                  prodMap[name] = { name, count: 0, revenue: 0 };
-                }
-                prodMap[name].count += qty;
-                prodMap[name].revenue += lineRev;
-              });
-            } else if (status === 'PENDING' || status === 'PENDING_CONFIRMATION') {
-              pendingCount++;
-            }
+            list.push(docSnap.data());
           });
-
-          setStats((prev) => ({
-            ...prev,
-            totalRevenue: revenue,
-            pendingOrdersCount: pendingCount,
-            completedOrdersCount: completedCount,
-          }));
-          setDailyRevenue(daily);
-          setTopProducts(
-            Object.values(prodMap)
-              .sort((a, b) => b.count - a.count)
-              .slice(0, 5)
-          );
+          setRawOrders(list);
         },
         (err: any) => {
           console.warn('Lỗi đọc realtime orders:', err.message);
@@ -109,38 +186,127 @@ export default function AdminDashboardScreen() {
       console.warn('Không thể kết nối orders realtime:', e);
     }
 
-    let unsubscribeProducts = () => {};
-    try {
-      const qProducts = query(collection(db, 'products'));
-      unsubscribeProducts = onSnapshot(
-        qProducts,
-        (snapshot: any) => {
-          if (!snapshot.empty) {
-            let active = 0;
-            snapshot.forEach((docSnap: any) => {
-              const p = docSnap.data();
-              if (p.isAvailable !== false) {
-                active++;
-              }
-            });
-            setStats((prev) => ({ ...prev, activeProductsCount: active }));
-          } else {
-            setStats((prev) => ({ ...prev, activeProductsCount: 0 }));
-          }
-        },
-        (err: any) => {
-          console.warn('Lỗi đọc realtime products:', err.message);
-        }
-      );
-    } catch (e) {
-      console.warn('Không thể kết nối products realtime:', e);
-    }
-
     return () => {
       unsubscribeOrders();
-      unsubscribeProducts();
     };
   }, []);
+
+  const selectedStore =
+    selectedStoreId === 'ALL'
+      ? null
+      : storesList.find((s) => s.id === selectedStoreId) || null;
+
+  const now = new Date();
+
+  // Thống kê TRONG NGÀY HÔM NAY (tự động reset lúc 00:00 sang ngày mới)
+  let todayRevenue = 0;
+  let todayCompletedCount = 0;
+  let pendingOrdersCount = 0;
+  const todayProdMap: Record<string, { name: string; count: number; revenue: number }> = {};
+
+  // Thống kê TUẦN HIỆN TẠI (biểu đồ T2 -> CN)
+  const dailyRevenue = [0, 0, 0, 0, 0, 0, 0];
+  let weekRevenue = 0;
+  let weekCompletedCount = 0;
+
+  // Thống kê TỔNG KẾT TÍCH LŨY (hiển thị trong Ô Tổng kết dưới cùng khi bấm mở)
+  let allTimeRevenue = 0;
+  let allTimeCompletedCount = 0;
+  let monthRevenue = 0;
+  let cancelledOrdersCount = 0;
+  const allTimeProdMap: Record<string, { name: string; count: number; revenue: number }> = {};
+  const storeBreakdownMap: Record<string, { name: string; count: number; revenue: number }> = {};
+
+  storesList.forEach((st) => {
+    storeBreakdownMap[st.id] = { name: st.name, count: 0, revenue: 0 };
+  });
+
+  rawOrders.forEach((data) => {
+    const total = Number(data.totalAmount || data.total || 0);
+    const status = data.status;
+    const d = parseOrderDate(data);
+
+    // Tính doanh thu phân bổ từng quán cho Ô Tổng kết
+    if (status === 'COMPLETED' || status === 'DELIVERED') {
+      for (const st of storesList) {
+        if (doesOrderMatchStore(data, st, storesList)) {
+          if (!storeBreakdownMap[st.id]) {
+            storeBreakdownMap[st.id] = { name: st.name, count: 0, revenue: 0 };
+          }
+          storeBreakdownMap[st.id].count += 1;
+          storeBreakdownMap[st.id].revenue += total;
+          break;
+        }
+      }
+    }
+
+    if (selectedStore && !doesOrderMatchStore(data, selectedStore, storesList)) {
+      return;
+    }
+
+    if (status === 'COMPLETED' || status === 'DELIVERED') {
+      const isToday = isSameCalendarDay(d, now);
+      const isThisWeek = isDateInCurrentWeek(d, now);
+      const isThisMonth =
+        d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+
+      // 1. Cộng vào Tổng kết tích lũy
+      allTimeRevenue += total;
+      allTimeCompletedCount++;
+      if (isThisMonth) {
+        monthRevenue += total;
+      }
+
+      // 2. Cộng vào Biểu đồ tuần hiện tại
+      if (isThisWeek) {
+        weekRevenue += total;
+        weekCompletedCount++;
+        const dayIdx = (d.getDay() + 6) % 7;
+        if (dayIdx >= 0 && dayIdx < 7) {
+          dailyRevenue[dayIdx] += total;
+        }
+      }
+
+      // 3. Cộng vào Thống kê trong ngày hôm nay (reset hằng ngày)
+      if (isToday) {
+        todayRevenue += total;
+        todayCompletedCount++;
+      }
+
+      const items = data.items || [];
+      items.forEach((it: any) => {
+        const name = it.productName || it.name || 'Món ăn';
+        const qty = Number(it.quantity || 1);
+        const lineRev = Number(it.lineTotal || (it.unitPrice || it.price || 0) * qty);
+
+        if (!allTimeProdMap[name]) {
+          allTimeProdMap[name] = { name, count: 0, revenue: 0 };
+        }
+        allTimeProdMap[name].count += qty;
+        allTimeProdMap[name].revenue += lineRev;
+
+        if (isToday) {
+          if (!todayProdMap[name]) {
+            todayProdMap[name] = { name, count: 0, revenue: 0 };
+          }
+          todayProdMap[name].count += qty;
+          todayProdMap[name].revenue += lineRev;
+        }
+      });
+    } else if (status === 'PENDING' || status === 'PENDING_CONFIRMATION') {
+      pendingOrdersCount++;
+    } else if (status === 'CANCELLED' || status === 'REJECTED') {
+      cancelledOrdersCount++;
+    }
+  });
+
+  const topProducts = Object.values(todayProdMap)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  const allTimeTopProducts = Object.values(allTimeProdMap)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -175,7 +341,7 @@ export default function AdminDashboardScreen() {
       {/* Không có nút back: admin không quay lại giao diện khách hàng được nữa */}
       <ScreenHeader
         title="Tổng quan"
-        subtitle="Pizza FPT Admin"
+        subtitle={selectedStore ? selectedStore.name : 'Tất cả cơ sở Pizza FPT'}
         showBack={false}
       />
 
@@ -225,25 +391,140 @@ export default function AdminDashboardScreen() {
           </View>
         </View>
 
-        {/* 4 Stats Grid */}
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <View style={styles.statHeader}>
-              <AppText variant="captionMedium" color={colors.textSecondary}>
-                Doanh thu
-              </AppText>
-              <View style={[styles.statIconWrap, { backgroundColor: colors.successSoft }]}>
-                <TrendingUp size={20} color={colors.success} />
+        {/* Thanh Dropdown chọn Quán / Chi nhánh (bấm xổ xuống) */}
+        <View
+          style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 16,
+            marginBottom: 14,
+            borderWidth: 1,
+            borderColor: storeDropdownOpen ? colors.primary : colors.border,
+            overflow: 'hidden',
+          }}
+        >
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => setStoreDropdownOpen((prev) => !prev)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 14,
+              paddingVertical: 13,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, paddingRight: 8 }}>
+              <View
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  backgroundColor: colors.primarySoft,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Store size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <AppText variant="small" color={colors.textSecondary}>
+                  Cơ sở đang xem
+                </AppText>
+                <AppText variant="bodySemiBold" color={colors.textPrimary} numberOfLines={1}>
+                  {selectedStore ? selectedStore.name : `Tất cả cơ sở (${storesList.length} quán)`}
+                </AppText>
               </View>
             </View>
-            <AppText variant="price" color={colors.success} style={styles.statValue} numberOfLines={1}>
-              {formatCurrency(stats.totalRevenue)}
-            </AppText>
-            <AppText variant="small" color={colors.textSecondary}>
-              Đơn hoàn tất
-            </AppText>
-          </View>
+            {storeDropdownOpen ? (
+              <ChevronUp size={20} color={colors.primary} />
+            ) : (
+              <ChevronDown size={20} color={colors.textSecondary} />
+            )}
+          </TouchableOpacity>
 
+          {storeDropdownOpen && (
+            <View
+              style={{
+                borderTopWidth: 1,
+                borderTopColor: colors.border,
+                backgroundColor: colors.surface,
+              }}
+            >
+              {!user?.storeId && (
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={() => {
+                    setSelectedStoreId('ALL');
+                    setStoreDropdownOpen(false);
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingHorizontal: 16,
+                    paddingVertical: 12,
+                    backgroundColor: selectedStoreId === 'ALL' ? colors.primarySoft : '#FFFFFF',
+                  }}
+                >
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <AppText
+                      variant="bodySemiBold"
+                      color={selectedStoreId === 'ALL' ? colors.primary : colors.textPrimary}
+                    >
+                      Tất cả cơ sở ({storesList.length} quán)
+                    </AppText>
+                    <AppText variant="small" color={colors.textSecondary}>
+                      Tổng hợp doanh thu & đơn hàng toàn hệ thống
+                    </AppText>
+                  </View>
+                  {selectedStoreId === 'ALL' && <Check size={18} color={colors.primary} />}
+                </TouchableOpacity>
+              )}
+
+              {storesList
+                .filter((st) => !user?.storeId || st.id === user.storeId)
+                .map((st, idx) => {
+                  const isSelected = selectedStoreId === st.id;
+                  return (
+                    <TouchableOpacity
+                      key={st.id}
+                      activeOpacity={0.75}
+                      onPress={() => {
+                        setSelectedStoreId(st.id);
+                        setStoreDropdownOpen(false);
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        borderTopWidth: !user?.storeId || idx > 0 ? 1 : 0,
+                        borderTopColor: colors.border,
+                        backgroundColor: isSelected ? colors.primarySoft : '#FFFFFF',
+                      }}
+                    >
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <AppText
+                          variant="bodySemiBold"
+                          color={isSelected ? colors.primary : colors.textPrimary}
+                        >
+                          {st.name}
+                        </AppText>
+                        <AppText variant="small" color={colors.textSecondary} numberOfLines={1}>
+                          {st.address}
+                        </AppText>
+                      </View>
+                      {isSelected && <Check size={18} color={colors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })}
+            </View>
+          )}
+        </View>
+
+        {/* Top 2 Stats (Chờ duyệt & Hoàn tất hôm nay) + Bottom Full-Width Stat (Doanh thu hôm nay) */}
+        <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <View style={styles.statHeader}>
               <AppText variant="captionMedium" color={colors.textSecondary}>
@@ -254,27 +535,10 @@ export default function AdminDashboardScreen() {
               </View>
             </View>
             <AppText variant="price" color={colors.warning} style={styles.statValue} numberOfLines={1}>
-              {stats.pendingOrdersCount} đơn
+              {pendingOrdersCount} đơn
             </AppText>
             <AppText variant="small" color={colors.textSecondary}>
               Đang chờ xử lý
-            </AppText>
-          </View>
-
-          <View style={styles.statCard}>
-            <View style={styles.statHeader}>
-              <AppText variant="captionMedium" color={colors.textSecondary}>
-                Món đang bán
-              </AppText>
-              <View style={[styles.statIconWrap, { backgroundColor: colors.primarySoft }]}>
-                <PackageCheck size={20} color={colors.primary} />
-              </View>
-            </View>
-            <AppText variant="price" color={colors.primary} style={styles.statValue} numberOfLines={1}>
-              {stats.activeProductsCount} món
-            </AppText>
-            <AppText variant="small" color={colors.textSecondary}>
-              Trạng thái mở bán
             </AppText>
           </View>
 
@@ -288,10 +552,29 @@ export default function AdminDashboardScreen() {
               </View>
             </View>
             <AppText variant="price" color={colors.textPrimary} style={styles.statValue} numberOfLines={1}>
-              {stats.completedOrdersCount} đơn
+              {todayCompletedCount} đơn
             </AppText>
             <AppText variant="small" color={colors.textSecondary}>
-              Giao thành công
+              Trong ngày hôm nay
+            </AppText>
+          </View>
+
+          <View style={[styles.statCard, { flexBasis: '100%', width: '100%' }]}>
+            <View style={styles.statHeader}>
+              <AppText variant="captionMedium" color={colors.textSecondary}>
+                Doanh thu hôm nay
+              </AppText>
+              <View style={[styles.statIconWrap, { backgroundColor: colors.successSoft }]}>
+                <TrendingUp size={20} color={colors.success} />
+              </View>
+            </View>
+            <AppText variant="price" color={colors.success} style={styles.statValue} numberOfLines={1}>
+              {formatCurrency(todayRevenue)}
+            </AppText>
+            <AppText variant="small" color={colors.textSecondary} numberOfLines={1}>
+              {selectedStore
+                ? `Doanh thu hôm nay tại ${selectedStore.name}`
+                : 'Doanh thu trong ngày (Tự reset lúc 00:00)'}
             </AppText>
           </View>
         </View>
@@ -311,7 +594,7 @@ export default function AdminDashboardScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <BarChart2 size={18} color={colors.primary} />
               <AppText variant="cardTitle" color={colors.textPrimary}>
-                Doanh thu theo thứ
+                Doanh thu theo thứ (Tuần này)
               </AppText>
             </View>
           </View>
@@ -347,24 +630,24 @@ export default function AdminDashboardScreen() {
           </View>
         </View>
 
-        {/* Minimalist Top Selling Products Card */}
+        {/* Minimalist Top Selling Products Card (Trong ngày) */}
         <View
           style={{
             backgroundColor: '#FFFFFF',
             borderRadius: 16,
             padding: 16,
-            marginBottom: 24,
+            marginBottom: 16,
             borderWidth: 1,
             borderColor: colors.border,
           }}
         >
           <AppText variant="cardTitle" color={colors.textPrimary} style={{ marginBottom: 12 }}>
-            Món bán chạy nhất
+            Món bán chạy trong ngày
           </AppText>
 
           {topProducts.length === 0 ? (
             <AppText variant="caption" color={colors.textSecondary}>
-              Chưa có dữ liệu đơn hoàn tất.
+              Hôm nay chưa có đơn hoàn tất tại cơ sở này.
             </AppText>
           ) : (
             topProducts.map((item, idx) => (
@@ -403,6 +686,222 @@ export default function AdminDashboardScreen() {
                 </AppText>
               </View>
             ))
+          )}
+        </View>
+
+        {/* Ô TỔNG KẾT DƯỚI CÙNG (Khi nào cần xem tổng tích lũy thì bấm vô) */}
+        <View
+          style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 16,
+            marginBottom: 24,
+            borderWidth: 1,
+            borderColor: summaryOpen ? colors.primary : colors.border,
+            overflow: 'hidden',
+          }}
+        >
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => setSummaryOpen((prev) => !prev)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  backgroundColor: colors.primarySoft,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <FileText size={19} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Tổng kết doanh thu & đơn hàng
+                </AppText>
+                <AppText variant="small" color={colors.textSecondary}>
+                  {summaryOpen
+                    ? 'Bấm để thu gọn bảng tổng kết'
+                    : 'Bấm vào đây khi cần xem tổng tích lũy tất cả các ngày'}
+                </AppText>
+              </View>
+            </View>
+            {summaryOpen ? (
+              <ChevronUp size={20} color={colors.primary} />
+            ) : (
+              <ChevronDown size={20} color={colors.textSecondary} />
+            )}
+          </TouchableOpacity>
+
+          {summaryOpen && (
+            <View
+              style={{
+                borderTopWidth: 1,
+                borderTopColor: colors.border,
+                padding: 16,
+                backgroundColor: colors.surface,
+              }}
+            >
+              {/* Tổng doanh thu tích lũy nổi bật */}
+              <View
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 12,
+                  padding: 14,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  marginBottom: 12,
+                }}
+              >
+                <AppText variant="small" color={colors.textSecondary}>
+                  Tổng doanh thu tích lũy ({selectedStore ? selectedStore.name : 'Tất cả cơ sở'})
+                </AppText>
+                <AppText variant="price" color={colors.success} style={{ marginTop: 4 }}>
+                  {formatCurrency(allTimeRevenue)}
+                </AppText>
+                <AppText variant="small" color={colors.textSecondary} style={{ marginTop: 2 }}>
+                  Tổng cộng {allTimeCompletedCount} đơn giao thành công
+                  {cancelledOrdersCount > 0 ? ` • ${cancelledOrdersCount} đơn đã hủy` : ''}
+                </AppText>
+              </View>
+
+              {/* Doanh thu Tuần này & Tháng này */}
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+                <View
+                  style={{
+                    flex: 1,
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 12,
+                    padding: 12,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <AppText variant="small" color={colors.textSecondary}>
+                    Doanh thu tuần này
+                  </AppText>
+                  <AppText variant="bodySemiBold" color={colors.textPrimary} style={{ marginTop: 4 }}>
+                    {formatCurrency(weekRevenue)}
+                  </AppText>
+                  <AppText variant="small" color={colors.textSecondary}>
+                    {weekCompletedCount} đơn hoàn tất
+                  </AppText>
+                </View>
+
+                <View
+                  style={{
+                    flex: 1,
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 12,
+                    padding: 12,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <AppText variant="small" color={colors.textSecondary}>
+                    Doanh thu tháng này
+                  </AppText>
+                  <AppText variant="bodySemiBold" color={colors.textPrimary} style={{ marginTop: 4 }}>
+                    {formatCurrency(monthRevenue)}
+                  </AppText>
+                  <AppText variant="small" color={colors.textSecondary}>
+                    Tháng {now.getMonth() + 1}/{now.getFullYear()}
+                  </AppText>
+                </View>
+              </View>
+
+              {/* Doanh thu theo từng cơ sở (hiển thị khi xem Tất cả cơ sở) */}
+              {!selectedStore && storesList.length > 0 && (
+                <View
+                  style={{
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 12,
+                    padding: 12,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    marginBottom: 12,
+                  }}
+                >
+                  <AppText variant="captionSemiBold" color={colors.textPrimary} style={{ marginBottom: 8 }}>
+                    Phân bổ theo từng cơ sở
+                  </AppText>
+                  {storesList.map((st, idx) => {
+                    const stStat = storeBreakdownMap[st.id] || { count: 0, revenue: 0 };
+                    return (
+                      <View
+                        key={st.id}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          paddingVertical: 8,
+                          borderTopWidth: idx === 0 ? 0 : 1,
+                          borderTopColor: colors.border,
+                        }}
+                      >
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          <AppText variant="bodyMedium" color={colors.textPrimary} numberOfLines={1}>
+                            {st.name}
+                          </AppText>
+                          <AppText variant="small" color={colors.textSecondary}>
+                            {stStat.count} đơn hoàn tất
+                          </AppText>
+                        </View>
+                        <AppText variant="bodySemiBold" color={colors.success}>
+                          {formatCurrency(stStat.revenue)}
+                        </AppText>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Top món bán chạy tích lũy */}
+              {allTimeTopProducts.length > 0 && (
+                <View
+                  style={{
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 12,
+                    padding: 12,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <AppText variant="captionSemiBold" color={colors.textPrimary} style={{ marginBottom: 8 }}>
+                    Tổng món bán chạy tích lũy
+                  </AppText>
+                  {allTimeTopProducts.map((item, idx) => (
+                    <View
+                      key={item.name}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingVertical: 6,
+                        borderTopWidth: idx === 0 ? 0 : 1,
+                        borderTopColor: colors.border,
+                      }}
+                    >
+                      <AppText variant="small" color={colors.textPrimary} numberOfLines={1} style={{ flex: 1, paddingRight: 8 }}>
+                        {idx + 1}. {item.name}
+                      </AppText>
+                      <AppText variant="small" color={colors.primary}>
+                        {item.count} phần ({formatCurrency(item.revenue)})
+                      </AppText>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
           )}
         </View>
       </ScrollView>

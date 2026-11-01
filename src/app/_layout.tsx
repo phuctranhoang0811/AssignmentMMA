@@ -59,7 +59,7 @@ export default function RootLayout() {
         animation: 'slide_from_right',
       }}
     >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="product/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="search" options={{ headerShown: false }} />
       <Stack.Screen name="checkout/index" options={{ headerShown: false }} />
@@ -68,7 +68,7 @@ export default function RootLayout() {
       <Stack.Screen name="checkout/review" options={{ headerShown: false }} />
       <Stack.Screen name="order/success" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="order/[id]" options={{ headerShown: false }} />
-      <Stack.Screen name="welcome" options={{ headerShown: false }} />
+      <Stack.Screen name="welcome" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="auth/login" options={{ headerShown: false }} />
       <Stack.Screen name="auth/register" options={{ headerShown: false }} />
       <Stack.Screen name="auth/verify-email" options={{ headerShown: false }} />
@@ -77,9 +77,9 @@ export default function RootLayout() {
       <Stack.Screen name="profile/settings" options={{ headerShown: false }} />
       <Stack.Screen name="favorites" options={{ headerShown: false }} />
       <Stack.Screen name="offers" options={{ headerShown: false }} />
-      <Stack.Screen name="staff" options={{ headerShown: false }} />
-      <Stack.Screen name="rider" options={{ headerShown: false }} />
-      <Stack.Screen name="admin" options={{ headerShown: false }} />
+      <Stack.Screen name="staff" options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="rider" options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="admin" options={{ headerShown: false, gestureEnabled: false }} />
     </Stack>
   );
 

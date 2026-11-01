@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Platform, BackHandler } from 'react-native';
 import { Stack, useRouter, usePathname } from 'expo-router';
-import { LayoutDashboard, UtensilsCrossed, Ticket, Users } from 'lucide-react-native';
+import { LayoutDashboard, UtensilsCrossed, Ticket, Store, Users } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAdminGuard } from '../../hooks/useAdminGuard';
 import { useAuth } from '../../state/AuthContext';
@@ -34,10 +34,17 @@ const ADMIN_TABS = [
     Icon: Ticket,
   },
   {
+    key: 'store',
+    label: 'Cửa hàng',
+    route: '/admin/store',
+    match: (path: string) => path.includes('/admin/store'),
+    Icon: Store,
+  },
+  {
     key: 'users',
     label: 'Tài khoản',
     route: '/admin/users',
-    match: (path: string) => path.includes('/admin/users') || path.includes('/admin/store'),
+    match: (path: string) => path.includes('/admin/users'),
     Icon: Users,
   },
 ] as const;
@@ -47,6 +54,12 @@ export default function AdminLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
+
+  // Chặn nút Back vật lý / vuốt cạnh trái để không bị văng khỏi trang Admin khi chưa bấm Đăng xuất
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
+  }, []);
 
   if (isLoading) {
     return (
@@ -70,6 +83,7 @@ export default function AdminLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
+            gestureEnabled: false,
             contentStyle: { backgroundColor: colors.background },
             animation: 'fade',
           }}
