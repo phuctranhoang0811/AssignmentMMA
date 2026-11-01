@@ -15,6 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, ChevronDown, Check, Eye, EyeOff, CalendarDays } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
+import { db } from '../../services/firebase';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { sendOtpToEmail, verifyOtp } from '../../services/otpService';
 import { styles, BRAND_RED } from '../../styles/register.styles';
 import { CelebrationPopper } from '../../components/auth/CelebrationPopper';
@@ -95,6 +97,23 @@ export default function RegisterScreen() {
     }
 
     setIsSendingOtp(true);
+    try {
+      // Kiểm tra ngay ở bước 1 xem email đã tồn tại trên hệ thống chưa
+      const existingSnap = await getDocs(
+        query(collection(db, 'users'), where('email', '==', trimmedEmail))
+      );
+      if (!existingSnap.empty) {
+        setIsSendingOtp(false);
+        Alert.alert(
+          'Email đã được sử dụng',
+          'Email này đã được đăng ký tài khoản trên hệ thống. Vui lòng đăng nhập hoặc sử dụng email khác.'
+        );
+        return;
+      }
+    } catch {
+      // Nếu không kiểm tra được do mạng thì tiếp tục gửi OTP
+    }
+
     const result = await sendOtpToEmail(trimmedEmail);
     setIsSendingOtp(false);
     if (!result.success) {
@@ -174,7 +193,7 @@ export default function RegisterScreen() {
   };
 
   // Step 2: Submit Personal Info
-  const handleStep2Submit = () => {
+  const handleStep2Submit = async () => {
     if (!fullname.trim()) {
       Alert.alert('Thông báo', 'Vui lòng nhập tên của bạn.');
       return;
@@ -196,6 +215,23 @@ export default function RegisterScreen() {
       );
       return;
     }
+
+    try {
+      const [phoneUsersSnap, phoneClaimSnap] = await Promise.all([
+        getDocs(query(collection(db, 'users'), where('phone', '==', cleanPhone))),
+        getDoc(doc(db, 'phone_numbers', cleanPhone)).catch(() => null),
+      ]);
+      if (!phoneUsersSnap.empty || phoneClaimSnap?.exists()) {
+        Alert.alert(
+          'Số điện thoại đã được sử dụng',
+          'Số điện thoại này đã được đăng ký tài khoản. Vui lòng sử dụng số điện thoại khác.'
+        );
+        return;
+      }
+    } catch {
+      // Bỏ qua nếu lỗi mạng tạm thời
+    }
+
     setCurrentStep(3);
   };
 

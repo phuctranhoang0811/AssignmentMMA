@@ -28,6 +28,7 @@ import {
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { hasPromptedMemberDiscount } from '../../utils/sessionFlags';
+import { memberDiscountLabel } from '../../utils/memberDiscount';
 import { useFavorites } from '../../state/FavoritesContext';
 import { useToast } from '../../state/ToastContext';
 import { replaceCartItem } from '../../utils/cartOperations';
@@ -304,9 +305,9 @@ export default function ProductDetailScreen() {
               </View>
             )}
           </View>
-          {!!product.memberDiscountTag && (
+          {!!memberDiscountLabel(product) && (
             <AppText variant="captionMedium" color={colors.success} style={styles.memberNote}>
-              🎁 {product.memberDiscountTag}
+              🎁 {memberDiscountLabel(product)}
             </AppText>
           )}
 

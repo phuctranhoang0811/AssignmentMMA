@@ -22,7 +22,29 @@ import {
   getCurrentPhoneLocation,
 } from '../../services/addressService';
 
-const BRAND_RED = '#CF4226';
+const BRAND_RED = '#C8102E';
+
+export interface MockStoreItem {
+  id: string;
+  name: string;
+  address: string;
+  openingTime: string;
+}
+
+export const MOCK_PICKUP_STORES: MockStoreItem[] = [
+  {
+    id: 'store-lieu-giai',
+    name: 'Pizza FPT Liễu Giai (Signature)',
+    address: '40 Liễu Giai, Phường Cống Vị, Quận Ba Đình, Hà Nội',
+    openingTime: 'Opening time: 10:00 - 22:00',
+  },
+  {
+    id: 'store-thu-duc',
+    name: 'Pizza FPT Hiệp Bình Chánh (Signature)',
+    address: '240 Phạm Văn Đồng, Phường Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh',
+    openingTime: 'Opening time: 10:00 - 22:00',
+  },
+];
 
 interface StoreLocationModalProps {
   visible: boolean;
@@ -50,18 +72,29 @@ export function StoreLocationModal({
   const [manualAddressInput, setManualAddressInput] = useState(currentAddress);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [isLocating, setIsLocating] = useState(false);
+  const [selectedStoreId, setSelectedStoreId] = useState<string>(MOCK_PICKUP_STORES[0].id);
 
   useEffect(() => {
     if (visible) {
-      setManualAddressInput(currentAddress || '');
       setFulfillmentType(initialFulfillment);
       setAddressSuggestions([]);
+      const matchedStore = MOCK_PICKUP_STORES.find(
+        (s) => currentAddress?.includes(s.name) || currentAddress?.includes(s.address)
+      );
+      if (matchedStore) {
+        setSelectedStoreId(matchedStore.id);
+        if (initialFulfillment === 'delivery') {
+          setManualAddressInput('');
+        }
+      } else {
+        setManualAddressInput(currentAddress || '');
+      }
     }
   }, [visible, currentAddress, initialFulfillment]);
 
   // Debounced search for Vietnamese address autocomplete
   useEffect(() => {
-    if (!visible) {
+    if (!visible || fulfillmentType !== 'delivery') {
       setAddressSuggestions([]);
       return;
     }
@@ -81,7 +114,7 @@ export function StoreLocationModal({
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [manualAddressInput, visible]);
+  }, [manualAddressInput, visible, fulfillmentType]);
 
   const handleSelectSuggestion = (item: AddressSuggestion) => {
     triggerHaptic('light');
@@ -112,11 +145,18 @@ export function StoreLocationModal({
     }
   };
 
-  const needsAddress = fulfillmentType === 'delivery' && !(manualAddressInput.trim() || currentAddress);
+  const selectedStore =
+    MOCK_PICKUP_STORES.find((s) => s.id === selectedStoreId) || MOCK_PICKUP_STORES[0];
+
+  const needsAddress =
+    fulfillmentType === 'delivery' && !(manualAddressInput.trim() || currentAddress);
+
   const handleConfirm = () => {
     if (needsAddress) return;
-    // Pickup keeps the saved delivery address untouched.
-    const finalAddress = fulfillmentType === 'delivery' ? manualAddressInput.trim() || currentAddress : currentAddress;
+    const finalAddress =
+      fulfillmentType === 'takeaway'
+        ? `${selectedStore.name} - ${selectedStore.address}`
+        : manualAddressInput.trim() || currentAddress;
     triggerHaptic('success');
     onConfirmAddress(finalAddress, fulfillmentType);
     onClose();
@@ -136,7 +176,7 @@ export function StoreLocationModal({
           },
         ]}
       >
-        {/* Header */}
+        {/* Header: <  Tìm cửa hàng gần bạn nhất */}
         <View style={styles.addressModalHeader}>
           <TouchableOpacity
             style={styles.addressModalBackBtn}
@@ -146,9 +186,9 @@ export function StoreLocationModal({
             activeOpacity={0.7}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <ChevronLeft size={28} color="#111827" strokeWidth={2.4} />
+            <ChevronLeft size={26} color="#1F2937" strokeWidth={2.2} />
           </TouchableOpacity>
-          <Text style={styles.addressModalTitle}>Địa chỉ nhận hàng</Text>
+          <Text style={styles.addressModalTitle}>Tìm cửa hàng gần bạn nhất</Text>
           <View style={{ width: 36 }} />
         </View>
 
@@ -157,128 +197,197 @@ export function StoreLocationModal({
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.modeSwitch} accessibilityRole="tablist">
-            {([['delivery', 'Giao tận nơi'], ['takeaway', 'Đến lấy tại cửa hàng']] as const).map(([mode, label]) => (
-              <TouchableOpacity key={mode} onPress={() => setFulfillmentType(mode)} accessibilityRole="tab"
-                accessibilityState={{ selected: fulfillmentType === mode }}
-                style={[styles.modeButton, fulfillmentType === mode && styles.modeButtonActive]}>
-                <Text style={[styles.modeText, fulfillmentType === mode && styles.modeTextActive]}>{label}</Text>
-              </TouchableOpacity>
-            ))}
+          {/* Subtitle */}
+          <Text style={styles.introSubtitle}>
+            Nhập địa chỉ của bạn để xem các ưu đãi, phiếu giảm giá và khuyến mại tại địa phương.
+          </Text>
+
+          {/* Radio Row: ( ) Giao hàng tới   (•) Mua mang về */}
+          <View style={styles.radioRow} accessibilityRole="tablist">
+            <TouchableOpacity
+              style={styles.radioOption}
+              activeOpacity={0.75}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: fulfillmentType === 'delivery' }}
+              onPress={() => {
+                triggerHaptic('light');
+                setFulfillmentType('delivery');
+              }}
+            >
+              <View
+                style={[
+                  styles.radioOuter,
+                  fulfillmentType === 'delivery' && styles.radioOuterSelected,
+                ]}
+              >
+                {fulfillmentType === 'delivery' && <View style={styles.radioInner} />}
+              </View>
+              <Text style={styles.radioLabel}>Giao hàng tới</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.radioOption}
+              activeOpacity={0.75}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: fulfillmentType === 'takeaway' }}
+              onPress={() => {
+                triggerHaptic('light');
+                setFulfillmentType('takeaway');
+              }}
+            >
+              <View
+                style={[
+                  styles.radioOuter,
+                  fulfillmentType === 'takeaway' && styles.radioOuterSelected,
+                ]}
+              >
+                {fulfillmentType === 'takeaway' && <View style={styles.radioInner} />}
+              </View>
+              <Text style={styles.radioLabel}>Mua mang về</Text>
+            </TouchableOpacity>
           </View>
 
           {fulfillmentType === 'takeaway' ? (
-            <Text style={styles.pickupNote}>
-              Bạn sẽ nhận món tại quầy, không mất phí giao hàng. Cửa hàng sẽ báo khi món đã sẵn sàng trong mục Đơn hàng.
-            </Text>
-          ) : (<>
-          {/* Section: Vị trí của tôi */}
-          <Text style={styles.myLocationSectionTitle}>Vị trí của tôi</Text>
+            <View style={styles.storeCardsWrap}>
+              {MOCK_PICKUP_STORES.map((store) => {
+                const isSelected = store.id === selectedStore.id;
+                return (
+                  <TouchableOpacity
+                    key={store.id}
+                    style={[
+                      styles.storeCard,
+                      isSelected && styles.storeCardSelected,
+                    ]}
+                    activeOpacity={0.82}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setSelectedStoreId(store.id);
+                    }}
+                  >
+                    <Text style={styles.storeNameText}>{store.name}</Text>
+                    <Text style={styles.storeAddressText}>{store.address}</Text>
+                    <Text style={styles.storeOpeningText}>{store.openingTime}</Text>
+                  </TouchableOpacity>
+                );
+              })}
 
-          {/* Address Search Bar */}
-          <View style={styles.addressSearchBox}>
-            <TouchableOpacity
-              style={styles.crosshairBadge}
-              activeOpacity={0.8}
-              onPress={handleGetCurrentLocation}
-              disabled={isLocating}
-              accessibilityRole="button"
-              accessibilityLabel="Lấy vị trí hiện tại"
-            >
-              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-                <Circle cx="12" cy="12" r="7" stroke="#FFFFFF" strokeWidth={2} />
-                <Circle cx="12" cy="12" r="2.5" fill="#FFFFFF" />
-                <Path
-                  d="M12 2 L12 5 M12 19 L12 22 M2 12 L5 12 M19 12 L22 12"
-                  stroke="#FFFFFF"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                />
-              </Svg>
-            </TouchableOpacity>
-
-            <TextInput
-              style={styles.addressSearchInput}
-              value={manualAddressInput}
-              onChangeText={setManualAddressInput}
-              placeholder="Nhập địa chỉ của bạn"
-              placeholderTextColor="#9CA3AF"
-              returnKeyType="search"
-              autoCorrect={false}
-            />
-
-            {manualAddressInput.length > 0 && (
+              {/* Nút Bắt đầu đặt hàng ngay dưới danh sách cửa hàng (bỏ nút Thay đổi cửa hàng) */}
               <TouchableOpacity
-                onPress={() => {
-                  setManualAddressInput('');
-                  setAddressSuggestions([]);
-                }}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                style={styles.clearInputBtn}
+                style={styles.confirmAddressBtn}
+                onPress={handleConfirm}
+                activeOpacity={0.88}
               >
-                <XCircle size={20} color="#9CA3AF" />
+                <Text style={styles.confirmAddressBtnText}>Bắt đầu đặt hàng</Text>
               </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          ) : (
+            <View>
+              {/* Section: Vị trí của tôi */}
+              <Text style={styles.myLocationSectionTitle}>Vị trí của tôi</Text>
 
-          {/* Autocomplete Suggestions Dropdown */}
-          {addressSuggestions.length > 0 && (
-            <View style={styles.suggestionsCard}>
-              {addressSuggestions.map((item, index) => (
+              {/* Address Search Bar */}
+              <View style={styles.addressSearchBox}>
                 <TouchableOpacity
-                  key={item.id || index}
-                  style={[
-                    styles.suggestionRowItem,
-                    index === addressSuggestions.length - 1 && { borderBottomWidth: 0 },
-                  ]}
-                  activeOpacity={0.65}
-                  onPress={() => handleSelectSuggestion(item)}
+                  style={styles.crosshairBadge}
+                  activeOpacity={0.8}
+                  onPress={handleGetCurrentLocation}
+                  disabled={isLocating}
+                  accessibilityRole="button"
+                  accessibilityLabel="Lấy vị trí hiện tại"
                 >
-                  <View style={styles.suggestionPinBox}>
-                    <MapPin size={22} color="#1E2024" strokeWidth={1.8} />
-                  </View>
-                  <View style={styles.suggestionTextCol}>
-                    <Text style={styles.suggestionTitleText} numberOfLines={1}>
-                      {item.title}
-                    </Text>
-                    <Text style={styles.suggestionSubText} numberOfLines={1}>
-                      {item.subtitle}
-                    </Text>
-                  </View>
+                  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                    <Circle cx="12" cy="12" r="7" stroke="#FFFFFF" strokeWidth={2} />
+                    <Circle cx="12" cy="12" r="2.5" fill="#FFFFFF" />
+                    <Path
+                      d="M12 2 L12 5 M12 19 L12 22 M2 12 L5 12 M19 12 L22 12"
+                      stroke="#FFFFFF"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                    />
+                  </Svg>
                 </TouchableOpacity>
-              ))}
+
+                <TextInput
+                  style={styles.addressSearchInput}
+                  value={manualAddressInput}
+                  onChangeText={setManualAddressInput}
+                  placeholder="Nhập địa chỉ của bạn"
+                  placeholderTextColor="#9CA3AF"
+                  returnKeyType="search"
+                  autoCorrect={false}
+                />
+
+                {manualAddressInput.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setManualAddressInput('');
+                      setAddressSuggestions([]);
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    style={styles.clearInputBtn}
+                  >
+                    <XCircle size={20} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Autocomplete Suggestions Dropdown */}
+              {addressSuggestions.length > 0 && (
+                <View style={styles.suggestionsCard}>
+                  {addressSuggestions.map((item, index) => (
+                    <TouchableOpacity
+                      key={item.id || index}
+                      style={[
+                        styles.suggestionRowItem,
+                        index === addressSuggestions.length - 1 && { borderBottomWidth: 0 },
+                      ]}
+                      activeOpacity={0.65}
+                      onPress={() => handleSelectSuggestion(item)}
+                    >
+                      <View style={styles.suggestionPinBox}>
+                        <MapPin size={22} color="#1E2024" strokeWidth={1.8} />
+                      </View>
+                      <View style={styles.suggestionTextCol}>
+                        <Text style={styles.suggestionTitleText} numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                        <Text style={styles.suggestionSubText} numberOfLines={1}>
+                          {item.subtitle}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {!manualAddressInput && addressSuggestions.length === 0 && (
+                <Text style={styles.pickupNote}>
+                  Gõ tên đường, tòa nhà hoặc bấm biểu tượng định vị để lấy vị trí hiện tại.
+                </Text>
+              )}
+
+              <TouchableOpacity
+                style={[
+                  styles.confirmAddressBtn,
+                  { marginTop: 20 },
+                  needsAddress && { opacity: 0.5 },
+                ]}
+                onPress={handleConfirm}
+                disabled={needsAddress}
+                accessibilityState={{ disabled: needsAddress }}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.confirmAddressBtnText}>Bắt đầu đặt hàng</Text>
+              </TouchableOpacity>
             </View>
           )}
-          {!manualAddressInput && addressSuggestions.length === 0 && (
-            <Text style={styles.pickupNote}>Gõ tên đường, tòa nhà hoặc bấm biểu tượng định vị để lấy vị trí hiện tại.</Text>
-          )}
-          </>)}
         </ScrollView>
-
-        {/* Confirm Button */}
-        <View style={styles.modalBottomBar}>
-          <TouchableOpacity
-            style={[styles.confirmAddressBtn, needsAddress && { opacity: 0.5 }]}
-            onPress={handleConfirm}
-            disabled={needsAddress}
-            accessibilityState={{ disabled: needsAddress }}
-            activeOpacity={0.88}
-          >
-            <Text style={styles.confirmAddressBtnText}>Bắt đầu đặt hàng</Text>
-          </TouchableOpacity>
-        </View>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  modeSwitch: { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 999, padding: 4, marginBottom: 16 },
-  modeButton: { flex: 1, paddingVertical: 10, borderRadius: 999, alignItems: 'center' },
-  modeButtonActive: { backgroundColor: '#FFFFFF' },
-  modeText: { color: '#6B7280', fontWeight: '500' },
-  modeTextActive: { color: BRAND_RED, fontWeight: '700' },
-  pickupNote: { color: '#6B7280', lineHeight: 20, marginTop: 12 },
   modalFullContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -292,8 +401,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
     backgroundColor: '#FFFFFF',
   },
   addressModalBackBtn: {
@@ -303,9 +410,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   addressModalTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
-    color: '#111827',
+    color: '#1F2937',
     textAlign: 'center',
     flex: 1,
   },
@@ -313,11 +420,93 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
   },
+  introSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#4B5563',
+    marginTop: 8,
+    marginBottom: 18,
+  },
+  radioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 32,
+    marginBottom: 18,
+  },
+  radioOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioOuterSelected: {
+    borderColor: BRAND_RED,
+    borderWidth: 1.8,
+  },
+  radioInner: {
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
+    backgroundColor: BRAND_RED,
+  },
+  radioLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1F2937',
+  },
+  storeCardsWrap: {
+    marginTop: 2,
+    paddingBottom: 24,
+  },
+  storeCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 12,
+  },
+  storeCardSelected: {
+    borderColor: BRAND_RED,
+    borderWidth: 1.5,
+    backgroundColor: '#FFFDFD',
+  },
+  storeNameText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 6,
+  },
+  storeAddressText: {
+    fontSize: 14,
+    color: '#1F2937',
+    lineHeight: 20,
+    marginBottom: 6,
+  },
+  storeOpeningText: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  pickupNote: {
+    color: '#6B7280',
+    lineHeight: 20,
+    marginTop: 12,
+  },
   myLocationSectionTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#111827',
-    marginTop: 18,
+    marginTop: 6,
     marginBottom: 12,
   },
   addressSearchBox: {
@@ -351,27 +540,29 @@ const styles = StyleSheet.create({
   },
   suggestionsCard: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    borderRadius: 8,
-    marginBottom: 12,
+    marginTop: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-    overflow: 'hidden',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
   },
   suggestionRowItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E5E7EB',
   },
   suggestionPinBox: {
-    marginRight: 12,
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
   suggestionTextCol: {
     flex: 1,
@@ -380,42 +571,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 2,
+    marginBottom: 3,
   },
   suggestionSubText: {
-    fontSize: 12.5,
+    fontSize: 13.5,
     color: '#6B7280',
-  },
-  chooseFromMapBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    marginTop: 6,
-    marginBottom: 20,
-  },
-  chooseFromMapText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: BRAND_RED,
-    marginLeft: 8,
-  },
-  modalBottomBar: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
   },
   confirmAddressBtn: {
     backgroundColor: BRAND_RED,
+    height: 48,
     borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
   },
   confirmAddressBtnText: {
-    fontSize: 16,
-    fontWeight: '700',
     color: '#FFFFFF',
+    fontSize: 15.5,
+    fontWeight: '600',
   },
 });

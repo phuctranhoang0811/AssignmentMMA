@@ -30,6 +30,7 @@ import { styles } from '../../styles/adminProducts.styles';
 import { Product } from '../../types/product';
 import { mockProducts } from '../../data/mockProducts';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { memberDiscountLabel } from '../../utils/memberDiscount';
 import { reportAdminAction } from '../../services/orderApi';
 
 // 3 nhóm promo hiển thị card trên trang chủ — mỗi nhóm có "đặc sản" riêng khi thêm món
@@ -79,7 +80,7 @@ export default function AdminMenuGroupsScreen() {
 
   // Form đặc trưng theo nhóm (bấm món trong picker -> mở form này)
   const [pendingItem, setPendingItem] = useState<Product | null>(null);
-  const [formValue, setFormValue] = useState(''); // member: số tiền giảm; hot: % giảm
+  const [formValue, setFormValue] = useState(''); // member/hot/cheese: % giảm
   const [formNote, setFormNote] = useState(''); // cheese: điểm nhấn phô mai
   const [formNew, setFormNew] = useState(true); // cheese: badge New
 
@@ -183,8 +184,7 @@ export default function AdminMenuGroupsScreen() {
   // Bấm món trong picker -> mở form đặc trưng nhóm
   const handlePickItem = (item: Product) => {
     setPendingItem(item);
-    setFormValue(group === 'hot_deals' ? '50' : group === 'member_deals' ? '40000' : '');
-    setFormNote(group === 'cheese_party' ? 'X3 phô mai kéo sợi' : '');
+    setFormValue(group === 'hot_deals' ? '50' : group === 'member_deals' ? '15' : '');    setFormNote(group === 'cheese_party' ? 'X3 phô mai kéo sợi' : '');
     setFormNew(true);
   };
 
@@ -200,8 +200,23 @@ export default function AdminMenuGroupsScreen() {
 
     if (group === 'cheese_party') {
       const note = formNote.trim();
+      const pct = parseNumber(formValue); // 0 = không giảm giá, chỉ dán nhãn
+      if (formValue.trim() && (pct <= 0 || pct >= 100)) {
+        Alert.alert('% giảm không hợp lệ', 'Tiệc Cheese chỉ nhận số giảm từ 1% đến 99% (để trống nếu không giảm giá).');
+        return null;
+      }
+      const deal: Record<string, any> = {};
+      if (pct > 0) {
+        const original = baseOf(item);
+        const salePrice = Math.round((original * (100 - pct)) / 100 / 1000) * 1000; // làm tròn nghìn
+        deal.originalPrice = original;
+        deal.basePrice = salePrice;
+        deal.discountPercent = pct;
+        deal.memberDiscountTag = `Ưu đãi thành viên ${pct}%`;
+      }
       return {
         ...migration,
+        ...deal,
         promoGroups,
         isNew: formNew,
         description: note
@@ -211,18 +226,19 @@ export default function AdminMenuGroupsScreen() {
     }
 
     if (group === 'member_deals') {
-      const discount = parseNumber(formValue);
+      const pct = parseNumber(formValue);
       const original = baseOf(item);
-      if (discount <= 0 || discount >= original) {
-        Alert.alert('Số giảm không hợp lệ', `Ưu đãi thành viên phải từ 1đ đến ${vnd(original - 1)}.`);
+      if (pct <= 0 || pct >= 100) {
+        Alert.alert('% giảm không hợp lệ', 'Ưu đãi thành viên chỉ nhận số giảm từ 1% đến 99%.');
         return null;
       }
+      const salePrice = Math.round((original * (100 - pct)) / 100 / 1000) * 1000; // làm tròn nghìn
       return {
         ...migration,
         promoGroups,
         originalPrice: original,
-        basePrice: original - discount,
-        memberDiscountTag: `Ưu đãi thành viên -${vnd(discount)}`,
+        basePrice: salePrice,
+        memberDiscountTag: `Ưu đãi thành viên ${pct}%`,
       };
     }
 
@@ -343,12 +359,13 @@ export default function AdminMenuGroupsScreen() {
   const previewLine = (() => {
     if (!pendingItem) return '';
     if (group === 'member_deals') {
-      const discount = parseNumber(formValue);
+      const pct = parseNumber(formValue);
       const original = baseOf(pendingItem);
-      if (discount > 0 && discount < original) {
-        return `Giá bán: ${vnd(original - discount)} (giữ nguyên ${vnd(original)} gạch ngang) + badge "Ưu đãi thành viên -${vnd(discount)}"`;
+      if (pct > 0 && pct < 100) {
+        const salePrice = Math.round((original * (100 - pct)) / 100 / 1000) * 1000;
+        return `Giá bán tự tính: ${vnd(salePrice)} (giữ nguyên ${vnd(original)} gạch ngang) + badge "Ưu đãi thành viên ${pct}%"`;
       }
-      return `Nhập số tiền giảm (tối đa ${vnd(original - 1)})`;
+      return 'Nhập % giảm (1–99%)';
     }
     if (group === 'hot_deals') {
       const pct = parseNumber(formValue);
@@ -359,11 +376,20 @@ export default function AdminMenuGroupsScreen() {
       }
       return 'Nhập % giảm (1–70%)';
     }
-    return formNote.trim()
-      ? `Mô tả sẽ thêm "· ${formNote.trim().toUpperCase()}"${formNew ? ' + badge New' : ''}`
-      : formNew
-        ? 'Món sẽ có badge New'
-        : 'Chỉ dán nhãn nhóm, giữ nguyên món gốc';
+    // cheese_party: điểm nhấn + badge New + (tùy chọn) % giảm tự tính giá
+    const note = formNote.trim();
+    const parts: string[] = [];
+    if (note) parts.push(`Mô tả sẽ thêm "· ${note.toUpperCase()}"`);
+    if (formNew) parts.push('badge New');
+    const pct = parseNumber(formValue);
+    if (formValue.trim() && (pct <= 0 || pct >= 100)) {
+      parts.push('Nhập % giảm từ 1–99 hoặc để trống');
+    } else if (pct > 0) {
+      const original = baseOf(pendingItem);
+      const salePrice = Math.round((original * (100 - pct)) / 100 / 1000) * 1000;
+      parts.push(`giá tự tính ${vnd(salePrice)} (gốc ${vnd(original)} gạch ngang) + badge "Ưu đãi thành viên ${pct}%"`);
+    }
+    return parts.length ? parts.join(' + ') : 'Chỉ dán nhãn nhóm, giữ nguyên món gốc';
   })();
 
   return (
@@ -390,7 +416,7 @@ export default function AdminMenuGroupsScreen() {
                 key={g.id}
                 style={[styles.categoryPill, isActive && styles.categoryPillActive]}
                 activeOpacity={0.7}
-                onPress={() => setGroup(g.id)}
+                onPress={() => { setGroup(g.id); setPendingItem(null); }}
               >
                 <AppText variant="captionMedium" color={isActive ? colors.white : colors.textPrimary}>
                   {g.name}
@@ -428,7 +454,7 @@ export default function AdminMenuGroupsScreen() {
           {groupProducts.length === 0 ? (
             <View style={styles.emptyContainer}>
               <AppText variant="bodyMedium" color={colors.textSecondary}>
-                Nhóm đang trống. Bấm "Thêm món" để gán món có sẵn vào đây.
+                {'Nhóm đang trống. Bấm "Thêm món" để gán món có sẵn vào đây.'}
               </AppText>
             </View>
           ) : (
@@ -450,10 +476,10 @@ export default function AdminMenuGroupsScreen() {
                         </AppText>
                       )}
                     </View>
-                    {!!item.memberDiscountTag && (
+                    {!!memberDiscountLabel(item) && (
                       <View style={{ alignSelf: 'flex-start', backgroundColor: '#DE3B2B', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, marginTop: 2 }}>
                         <AppText variant="small" color={colors.white}>
-                          {item.memberDiscountTag}
+                          {memberDiscountLabel(item)}
                         </AppText>
                       </View>
                     )}
@@ -474,12 +500,12 @@ export default function AdminMenuGroupsScreen() {
         </ScrollView>
       )}
 
-      {/* Bước 1: chọn món có sẵn */}
+      {/* Bước 1: chọn món có sẵn (cùng 1 modal với form — tránh 2 modal chồng nhau trên web) */}
       <Modal
         visible={pickerVisible && !pendingItem}
         transparent
         animationType="slide"
-        onRequestClose={() => setPickerVisible(false)}
+        onRequestClose={() => { setPickerVisible(false); setPendingItem(null); }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
@@ -487,7 +513,7 @@ export default function AdminMenuGroupsScreen() {
               <AppText variant="h3" color={colors.textPrimary}>
                 Chọn món để thêm vào {groupName}
               </AppText>
-              <TouchableOpacity onPress={() => setPickerVisible(false)}>
+              <TouchableOpacity onPress={() => { setPickerVisible(false); setPendingItem(null); }}>
                 <X size={22} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -547,12 +573,12 @@ export default function AdminMenuGroupsScreen() {
         </View>
       </Modal>
 
-      {/* Bước 2: form đặc trưng theo nhóm */}
+      {/* Bước 2: form đặc trưng theo nhóm — vẫn trong luồng modal bước 1 */}
       <Modal
-        visible={!!pendingItem}
+        visible={pickerVisible && !!pendingItem}
         transparent
         animationType="slide"
-        onRequestClose={() => setPendingItem(null)}
+        onRequestClose={() => { setPendingItem(null); setPickerVisible(false); }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
@@ -560,7 +586,7 @@ export default function AdminMenuGroupsScreen() {
               <AppText variant="h3" color={colors.textPrimary}>
                 {pendingItem?.name} → {groupName}
               </AppText>
-              <TouchableOpacity onPress={() => setPendingItem(null)}>
+              <TouchableOpacity onPress={() => { setPendingItem(null); setPickerVisible(false); }}>
                 <X size={22} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -581,7 +607,7 @@ export default function AdminMenuGroupsScreen() {
                 <View style={styles.formGroup}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <AppText variant="captionMedium" color={colors.textSecondary}>
-                      Gắn badge "New" cho món
+                      {'Gắn badge "New" cho món'}
                     </AppText>
                     <Switch
                       value={formNew}
@@ -591,18 +617,30 @@ export default function AdminMenuGroupsScreen() {
                     />
                   </View>
                 </View>
+                <View style={styles.formGroup}>
+                  <AppText variant="captionSemiBold" style={styles.inputLabel}>
+                    % giảm cho món (giá mới tự tính — để trống nếu không giảm)
+                  </AppText>
+                  <TextInput
+                    style={styles.formInput}
+                    keyboardType="numeric"
+                    placeholder="Ví dụ: 20"
+                    value={formValue}
+                    onChangeText={setFormValue}
+                  />
+                </View>
               </>
             )}
 
             {group === 'member_deals' && (
               <View style={styles.formGroup}>
                 <AppText variant="captionSemiBold" style={styles.inputLabel}>
-                  Số tiền giảm cho thành viên (VNĐ) *
+                  % giảm cho thành viên (giá mới tự tính) *
                 </AppText>
                 <TextInput
                   style={styles.formInput}
                   keyboardType="numeric"
-                  placeholder="Ví dụ: 40000"
+                  placeholder="Ví dụ: 15"
                   value={formValue}
                   onChangeText={setFormValue}
                 />
@@ -648,7 +686,7 @@ export default function AdminMenuGroupsScreen() {
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
-                    onPress={() => setPendingItem(null)}
+                    onPress={() => { setPendingItem(null); setPickerVisible(false); }}
                   >
                     <AppText variant="captionSemiBold" color={colors.textPrimary}>
                       Hủy

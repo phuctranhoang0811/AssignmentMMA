@@ -359,7 +359,7 @@ export default function HomeScreen() {
               <MapPin size={20} color={BRAND_RED} />
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.locationLabel}>Địa chỉ nhận hàng</Text>
+              <Text style={styles.locationLabel}>{fulfillmentMode === 'takeaway' ? 'Nhận tại cửa hàng (Mua mang về)' : 'Địa chỉ nhận hàng'}</Text>
               <Text
                 style={[
                   styles.locationDetail,
@@ -564,7 +564,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.actionCard}
             activeOpacity={0.72}
-            onPress={() => setShowStoreLocationModal(true)}
+            onPress={() => { setFulfillmentMode('takeaway'); setShowStoreLocationModal(true); }}
           >
             <View style={styles.actionIconBox}>
               <StoreLocationSvg />
@@ -737,7 +737,7 @@ export default function HomeScreen() {
           saveDeliveryAddress(addr);
           setFulfillmentMode(mode);
           showToast({
-            message: mode === 'delivery' ? `Đã chọn giao tới: ${addr}` : 'Đã chọn mua mang về',
+            message: mode === 'delivery' ? `Đã chọn giao tới: ${addr}` : `Đã chọn mua mang về: ${addr}`,
             type: 'success',
           });
         }}

@@ -18,6 +18,7 @@ import { Search, Plus, X } from 'lucide-react-native';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { triggerHaptic } from '../../utils/haptics';
 import { hasPromptedMemberDiscount, setPromptedMemberDiscount } from '../../utils/sessionFlags';
+import { memberDiscountLabel } from '../../utils/memberDiscount';
 import { productService } from '../../services';
 import { Product, CategoryId } from '../../types/product';
 import { mockCategories } from '../../data/mockCategories';
@@ -143,11 +144,11 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
 
   return (
     <View style={styles.cardOuter}>
-      {/* Red Member Discount Badge */}
-      {!!product.memberDiscountTag && (
+      {/* Red Member Discount Badge — hiển thị % giảm + giá sau giảm */}
+      {!!memberDiscountLabel(product) && (
         <View style={styles.memberTagWrapper}>
           <View style={styles.memberTag}>
-            <Text style={styles.memberTagText}>{product.memberDiscountTag}</Text>
+            <Text style={styles.memberTagText}>{memberDiscountLabel(product)}</Text>
           </View>
         </View>
       )}

@@ -246,7 +246,11 @@ export default function OrderLookupScreen() {
 
           {/* Card 1: Giao Đến */}
           <View style={styles.infoCard}>
-            <Text style={styles.infoCardTitle}>Giao Đến</Text>
+            <Text style={styles.infoCardTitle}>
+              {['TAKEAWAY', 'PICKUP'].includes(String(selectedOrder.fulfillmentType || '').toUpperCase())
+                ? 'Nhận tại cửa hàng'
+                : 'Giao đến'}
+            </Text>
             <Text style={styles.infoDeliveryTime}>
               Thời gian nhận: {selectedOrder.deliveryTime || 'Chưa có thời gian dự kiến'}
             </Text>

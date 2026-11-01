@@ -58,14 +58,24 @@ const PulsingRing: React.FC = () => {
 
 export const OrderTimeline: React.FC<OrderTimelineProps> = ({
   status,
+  fulfillmentType,
   history = [],
 }) => {
-  const steps: StepDefinition[] = [
-    { statuses: ['PENDING_CONFIRMATION', 'CONFIRMED'], title: 'Đã xác nhận', icon: Check },
-    { statuses: ['PREPARING', 'READY'], title: 'Đang chuẩn bị', icon: ChefHat },
-    { statuses: ['OUT_FOR_DELIVERY'], title: 'Đang giao hàng', icon: Truck },
-    { statuses: ['COMPLETED'], title: 'Hoàn thành', icon: CheckCircle },
-  ];
+  const isPickup =
+    fulfillmentType === 'PICKUP' ||
+    String(fulfillmentType || '').toLowerCase() === 'takeaway';
+  const steps: StepDefinition[] = isPickup
+    ? [
+        { statuses: ['PENDING_CONFIRMATION', 'CONFIRMED'], title: 'Đã xác nhận', icon: Check },
+        { statuses: ['PREPARING', 'READY'], title: 'Đang chuẩn bị', icon: ChefHat },
+        { statuses: ['COMPLETED'], title: 'Hoàn thành', icon: CheckCircle },
+      ]
+    : [
+        { statuses: ['PENDING_CONFIRMATION', 'CONFIRMED'], title: 'Đã xác nhận', icon: Check },
+        { statuses: ['PREPARING', 'READY'], title: 'Đang chuẩn bị', icon: ChefHat },
+        { statuses: ['OUT_FOR_DELIVERY'], title: 'Đang giao hàng', icon: Truck },
+        { statuses: ['COMPLETED'], title: 'Hoàn thành', icon: CheckCircle },
+      ];
 
   if (status === 'CANCELLED') {
     return (

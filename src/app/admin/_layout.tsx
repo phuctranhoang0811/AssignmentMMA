@@ -1,92 +1,52 @@
 import React from 'react';
-import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import { Stack, useRouter, usePathname } from 'expo-router';
+import { LayoutDashboard, UtensilsCrossed, Ticket, Users } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ShieldCheck, LogOut } from 'lucide-react-native';
 import { useAdminGuard } from '../../hooks/useAdminGuard';
 import { useAuth } from '../../state/AuthContext';
 import { colors } from '../../theme/colors';
+import { fontFamilies } from '../../theme/typography';
 
-// Dải nhận diện khu vực Quản trị — hiện trên MỌI màn hình admin để nhìn phát biết ngay
-// đây là trang quản lý (nền tối, viền vàng), không phải trang đặt hàng của khách.
-function AdminModeBar() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
-
-  const roleLabel =
-    user?.role === 'STORE_MANAGER' ? 'Cửa hàng trưởng' : user?.role === 'ADMIN' ? 'Quản trị viên' : 'Super Admin';
-
-  const handleLogout = async () => {
-    await logout();
-    router.replace('/welcome');
-  };
-
-  return (
-    <View style={[barStyles.container, { paddingTop: insets.top + 8 }]}>
-      <ShieldCheck size={16} color="#FBBF24" />
-      <View style={barStyles.textCol}>
-        <View style={barStyles.chip}>
-          <Text style={barStyles.chipText}>KHU VỰC QUẢN TRỊ</Text>
-        </View>
-        <Text style={barStyles.hintText} numberOfLines={1}>
-          {roleLabel} · Không phải trang đặt hàng
-        </Text>
-      </View>
-      <TouchableOpacity style={barStyles.logoutBtn} activeOpacity={0.75} onPress={handleLogout}>
-        <LogOut size={13} color="#FBBF24" />
-        <Text style={barStyles.logoutText}>Đăng xuất</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-const barStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0B1220',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    gap: 8,
-    borderBottomWidth: 2,
-    borderBottomColor: '#FBBF24',
+const ADMIN_TABS = [
+  {
+    key: 'dashboard',
+    label: 'Tổng quan',
+    route: '/admin/dashboard',
+    match: (path: string) => path.includes('/admin/dashboard') || path.includes('/admin/reports') || path === '/admin',
+    Icon: LayoutDashboard,
   },
-  textCol: { flex: 1 },
-  chip: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#DC2626',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+  {
+    key: 'products',
+    label: 'Thực đơn',
+    route: '/admin/products',
+    match: (path: string) =>
+      path.includes('/admin/products') ||
+      path.includes('/admin/menu-groups') ||
+      path.includes('/admin/recommendations'),
+    Icon: UtensilsCrossed,
   },
-  chipText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
+  {
+    key: 'promotions',
+    label: 'Ưu đãi',
+    route: '/admin/promotions',
+    match: (path: string) => path.includes('/admin/promotions'),
+    Icon: Ticket,
   },
-  hintText: {
-    color: '#94A3B8',
-    fontSize: 10,
-    marginTop: 2,
+  {
+    key: 'users',
+    label: 'Tài khoản',
+    route: '/admin/users',
+    match: (path: string) => path.includes('/admin/users') || path.includes('/admin/store'),
+    Icon: Users,
   },
-  logoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-  },
-  logoutText: {
-    color: '#FBBF24',
-    fontSize: 11,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-});
+] as const;
 
 export default function AdminLayout() {
   const { isAdmin, isLoading } = useAdminGuard();
+  const router = useRouter();
+  const pathname = usePathname();
+  const insets = useSafeAreaInsets();
 
   if (isLoading) {
     return (
@@ -100,15 +60,18 @@ export default function AdminLayout() {
     return null;
   }
 
+  const isAndroid = Platform.OS === 'android';
+  const tabBottomPadding = Math.max(insets.bottom, isAndroid ? 12 : 8);
+  const tabHeight = 60 + tabBottomPadding;
+
   return (
-    <View style={styles.shell}>
-      <AdminModeBar />
+    <View style={styles.root}>
       <View style={styles.content}>
         <Stack
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: colors.background },
-            animation: 'slide_from_right',
+            animation: 'fade',
           }}
         >
           <Stack.Screen name="dashboard" options={{ headerShown: false }} />
@@ -126,11 +89,50 @@ export default function AdminLayout() {
           <Stack.Screen name="riders" options={{ headerShown: false }} />
         </Stack>
       </View>
+
+      {/* Minimalist 4-Tab Bar for Admin (matching User Tab Bar style) */}
+      <View
+        style={[
+          styles.tabBar,
+          {
+            height: tabHeight,
+            paddingBottom: tabBottomPadding,
+          },
+        ]}
+      >
+        {ADMIN_TABS.map((tab) => {
+          const active = tab.match(pathname);
+          const tint = active ? colors.primary : '#6B7280';
+          const IconComp = tab.Icon;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={styles.tabItem}
+              activeOpacity={0.75}
+              onPress={() => {
+                if (!pathname.endsWith(tab.route)) {
+                  router.replace(tab.route as any);
+                }
+              }}
+            >
+              <IconComp size={22} color={tint} strokeWidth={active ? 2.2 : 1.8} />
+              <Text style={[styles.tabLabel, { color: tint }]}>{tab.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    flex: 1,
+  },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
@@ -141,8 +143,27 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  content: {
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderTopColor: '#ECECEC',
+    borderTopWidth: 1,
+    paddingTop: 8,
+    elevation: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+  },
+  tabItem: {
     flex: 1,
-    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabLabel: {
+    fontFamily: fontFamilies.semiBold,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 3,
   },
 });

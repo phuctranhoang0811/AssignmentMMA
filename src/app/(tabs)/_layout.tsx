@@ -35,18 +35,21 @@ const RewardBadgeIcon = ({ size = 22, color = '#6B7280' }: { size?: number; colo
 export default function TabsLayout() {
   const router = useRouter();
   const pathname = usePathname();
-  const { isAuthenticated, user, isLoading } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const isAdmin = isAdminRole(user?.role);
+
+  useEffect(() => {
+    if (isAdmin) {
+      router.replace('/admin/dashboard');
+    }
+  }, [isAdmin, router]);
   const { itemCount } = useCart();
   const insets = useSafeAreaInsets();
   const cartScaleAnim = useRef(new Animated.Value(itemCount > 0 ? 1 : 0)).current;
 
-  // Tài khoản Admin/Manager chỉ để quản lý: không dùng giao diện khách hàng (không mua hàng, không giỏ hàng).
+  // Tài khoản Admin chỉ để quản lý: không dùng giao diện khách hàng (không mua hàng, không giỏ hàng).
   // Bị đưa thẳng về Bảng quản trị nếu cố vào tab khách (back gesture, deep link, đổi role lúc đang mở app).
-  const isBlockedAdmin = !isLoading && isAdminRole(user?.role);
-  useEffect(() => {
-    if (isBlockedAdmin) router.replace('/admin/dashboard');
-  }, [isBlockedAdmin, router]);
-  if (isBlockedAdmin) return null;
+  if (isAdmin) return null;
 
   const isAndroid = Platform.OS === 'android';
   const bottomInset = insets.bottom;
@@ -81,6 +84,7 @@ export default function TabsLayout() {
     }
   }, [showFloatingCart, itemCount, cartScaleAnim]);
 
+  if (isAdmin) return null;
   return (
     <View style={styles.container}>
       <Tabs

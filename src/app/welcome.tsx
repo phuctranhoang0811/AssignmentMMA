@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -6,29 +6,27 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { usePathname, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../state/AuthContext';
 import { styles } from '../styles/welcome.styles';
-import { loginDestination } from '../utils/staff';
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const { user, isLoading } = useAuth();
+  const { user, logout } = useAuth();
 
-  useEffect(() => {
-    if (pathname === '/welcome' && !isLoading && user) {
-      router.replace(loginDestination(user.role));
+  const handleLogin = async () => {
+    if (user) {
+      await logout();
     }
-  }, [pathname, user, isLoading, router]);
-
-  const handleLogin = () => {
     router.push('/auth/login');
   };
 
-  const handleGuest = () => {
+  const handleGuest = async () => {
+    if (user) {
+      await logout();
+    }
     router.replace('/(tabs)/home');
   };
 
