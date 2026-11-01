@@ -464,6 +464,9 @@ export default function CheckoutScreen() {
       }, formatDeliveryTime(deliveryTime));
       setOrderCode(result.orderCode);
       saved = result;
+      if (fulfillmentType !== 'delivery' && address.trim() && result.id) {
+        updateDoc(doc(db, 'orders', result.id), { address: address.trim() }).catch(() => {});
+      }
       if (earnedPoints > 0 && user.id) {
         updateDoc(doc(db, 'users', user.id), {
           rewardPoints: increment(earnedPoints),

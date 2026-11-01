@@ -211,7 +211,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             <View style={styles.infoCard}>
               <OrderTimeline
                 status={selectedOrder.status}
-                fulfillmentType={['takeaway', 'PICKUP'].includes(selectedOrder.fulfillmentType) ? 'PICKUP' : 'DELIVERY'}
+                fulfillmentType={['TAKEAWAY', 'PICKUP'].includes(String(selectedOrder.fulfillmentType || '').toUpperCase()) ? 'PICKUP' : 'DELIVERY'}
                 history={selectedOrder.statusHistory}
               />
             </View>
@@ -241,7 +241,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
 
           {/* Card 1: Giao Đến */}
           <View style={styles.infoCard}>
-            <Text style={styles.infoCardTitle}>{selectedOrder.fulfillmentType?.toUpperCase() === 'PICKUP' ? 'Nhận tại cửa hàng' : 'Giao đến'}</Text>
+            <Text style={styles.infoCardTitle}>{['TAKEAWAY', 'PICKUP'].includes(String(selectedOrder.fulfillmentType || '').toUpperCase()) ? 'Nhận tại cửa hàng' : 'Giao đến'}</Text>
             <Text style={styles.infoDeliveryTime}>
               Thời gian nhận: {estimatedWindow(selectedOrder)}
             </Text>
