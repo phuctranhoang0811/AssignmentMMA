@@ -40,6 +40,8 @@ export type Product = {
   discountPercent?: number;
   ingredients?: string[];
   tags?: string[];
+  /** Nhãn promo (cheese_party | member_deals | hot_deals). Món vẫn giữ categoryId gốc — promo chỉ là "dán nhãn". */
+  promoGroups?: string[];
 };
 
 export type Category = {

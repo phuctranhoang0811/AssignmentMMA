@@ -70,6 +70,8 @@ export default function AdminProductsScreen() {
   const [formCategory, setFormCategory] = useState<any>('pizza');
   const [formImage, setFormImage] = useState('');
   const [formDesc, setFormDesc] = useState('');
+  // Pizza: giá theo 3 cỡ Nhỏ/Vừa/Lớn (chỉ hiện khi danh mục = pizza)
+  const [sizePrices, setSizePrices] = useState({ nho: '', vua: '', lon: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
@@ -152,6 +154,7 @@ export default function AdminProductsScreen() {
     setFormName('');
     setFormPrice('');
     setFormCategory('pizza');
+    setSizePrices({ nho: '', vua: '', lon: '' });
     setFormImage(''); // để trống — admin tự upload ảnh
     setFormDesc('');
     setModalVisible(true);
@@ -163,6 +166,14 @@ export default function AdminProductsScreen() {
     setFormName(item.name);
     setFormPrice(String(item.basePrice));
     setFormCategory(item.categoryId);
+    // nạp giá 3 cỡ từ variants cũ (khớp theo tên Nhỏ/Vừa/Lớn hoặc 7"/9"/12")
+    const pick = (keys: string[]) =>
+      item.variants?.find((v) => keys.some((k) => v.name.toLowerCase().includes(k)))?.price;
+    setSizePrices({
+      nho: String(pick(['nhỏ', '7"']) ?? item.basePrice),
+      vua: String(pick(['vừa', '9"']) ?? item.basePrice),
+      lon: String(pick(['lớn', '12"']) ?? item.basePrice),
+    });
     setFormImage(item.image);
     setFormDesc(item.description);
     setModalVisible(true);
@@ -170,15 +181,38 @@ export default function AdminProductsScreen() {
 
   // Lưu món (Thêm mới hoặc Cập nhật)
   const handleSaveProduct = async () => {
-    if (!formName.trim() || !formPrice.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập tên món và giá bán');
+    const isPizza = formCategory === 'pizza';
+
+    if (!formName.trim()) {
+      Alert.alert('Lỗi', 'Vui lòng nhập tên món');
       return;
     }
 
-    const priceNum = Number(formPrice.replace(/[^0-9]/g, ''));
-    if (isNaN(priceNum) || priceNum <= 0) {
-      Alert.alert('Lỗi', 'Giá bán phải là số hợp lệ');
-      return;
+    const toPrice = (s: string) => Number(s.replace(/[^0-9]/g, ''));
+
+    // Pizza: 3 cỡ Nhỏ/Vừa/Lớn với 3 mức giá — giá hiển thị = cỡ Vừa
+    let priceNum: number;
+    let variants: { id: string; name: string; price: number }[] = [];
+    if (isPizza) {
+      const nho = toPrice(sizePrices.nho);
+      const vua = toPrice(sizePrices.vua);
+      const lon = toPrice(sizePrices.lon);
+      if (!nho || !vua || !lon) {
+        Alert.alert('Lỗi', 'Pizza cần giá cho cả 3 cỡ Nhỏ, Vừa, Lớn');
+        return;
+      }
+      priceNum = vua;
+      variants = [
+        { id: 'v1', name: 'Size Nhỏ (7")', price: nho },
+        { id: 'v2', name: 'Size Vừa (9")', price: vua },
+        { id: 'v3', name: 'Size Lớn (12")', price: lon },
+      ];
+    } else {
+      priceNum = toPrice(formPrice);
+      if (!priceNum || priceNum <= 0) {
+        Alert.alert('Lỗi', 'Giá bán phải là số hợp lệ');
+        return;
+      }
     }
     const imageUrl = formImage.trim() || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500';
 
@@ -193,6 +227,7 @@ export default function AdminProductsScreen() {
           categoryId: formCategory,
           image: imageUrl,
           description: formDesc.trim(),
+          ...(isPizza ? { variants } : {}),
           updatedAt: serverTimestamp(),
         });
         void reportAdminAction('PRODUCT_UPDATED', `products/${editingProduct.id}`, { name: formName.trim(), basePrice: priceNum });
@@ -207,10 +242,9 @@ export default function AdminProductsScreen() {
           description: formDesc.trim(),
           isAvailable: true,
           // A variant price is the full selling price (see getItemLineUnitPrice), not a surcharge.
-          variants: [
-            { id: 'v1', name: 'Size Vừa (9")', price: priceNum },
-            { id: 'v2', name: 'Size Lớn (12")', price: priceNum + 60000 },
-          ],
+          variants: isPizza
+            ? variants
+            : [{ id: 'v1', name: 'Size Vừa (9")', price: priceNum }],
           addons: [],
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -524,31 +558,6 @@ export default function AdminProductsScreen() {
             <ScrollView showsVerticalScrollIndicator={false}>
               <View style={styles.formGroup}>
                 <AppText variant="captionSemiBold" style={styles.inputLabel}>
-                  Tên món ăn *
-                </AppText>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="Ví dụ: Pizza Hải Sản Sốt Pesto"
-                  value={formName}
-                  onChangeText={setFormName}
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <AppText variant="captionSemiBold" style={styles.inputLabel}>
-                  Giá bán gốc (VNĐ) *
-                </AppText>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="Ví dụ: 189000"
-                  keyboardType="numeric"
-                  value={formPrice}
-                  onChangeText={setFormPrice}
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <AppText variant="captionSemiBold" style={styles.inputLabel}>
                   Danh mục
                 </AppText>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -559,7 +568,15 @@ export default function AdminProductsScreen() {
                         styles.categoryPill,
                         formCategory === cat.id && styles.categoryPillActive,
                       ]}
-                      onPress={() => setFormCategory(cat.id)}
+                      onPress={() => {
+                        setFormCategory(cat.id);
+                        // Chuyển sang Pizza: nếu chưa nhập giá 3 cỡ thì lấy giá đang có điền sẵn cho tiện
+                        if (cat.id === 'pizza' && formPrice) {
+                          setSizePrices((prev) =>
+                            prev.nho || prev.vua || prev.lon ? prev : { nho: formPrice, vua: formPrice, lon: formPrice }
+                          );
+                        }
+                      }}
                     >
                       <AppText
                         variant="captionMedium"
@@ -575,6 +592,62 @@ export default function AdminProductsScreen() {
                   ))}
                 </ScrollView>
               </View>
+
+              <View style={styles.formGroup}>
+                <AppText variant="captionSemiBold" style={styles.inputLabel}>
+                  Tên món ăn *
+                </AppText>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Ví dụ: Pizza Hải Sản Sốt Pesto"
+                  value={formName}
+                  onChangeText={setFormName}
+                />
+              </View>
+
+              {formCategory === 'pizza' ? (
+                <View style={styles.formGroup}>
+                  <AppText variant="captionSemiBold" style={styles.inputLabel}>
+                    Giá 3 cỡ pizza (VNĐ) *
+                  </AppText>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    {([
+                      { key: 'nho', label: 'Nhỏ (7")' },
+                      { key: 'vua', label: 'Vừa (9")' },
+                      { key: 'lon', label: 'Lớn (12")' },
+                    ] as const).map((s) => (
+                      <View key={s.key} style={{ flex: 1 }}>
+                        <AppText variant="small" color={colors.textSecondary} style={{ marginBottom: 4 }}>
+                          {s.label}
+                        </AppText>
+                        <TextInput
+                          style={styles.formInput}
+                          placeholder="VD: 159000"
+                          keyboardType="numeric"
+                          value={sizePrices[s.key]}
+                          onChangeText={(t) => setSizePrices((prev) => ({ ...prev, [s.key]: t }))}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                  <AppText variant="small" color={colors.textSecondary} style={{ marginTop: 6 }}>
+                    Khách chọn cỡ nào trên app sẽ tính đúng giá cỡ đó.
+                  </AppText>
+                </View>
+              ) : (
+                <View style={styles.formGroup}>
+                  <AppText variant="captionSemiBold" style={styles.inputLabel}>
+                    Giá bán gốc (VNĐ) *
+                  </AppText>
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder="Ví dụ: 189000"
+                    keyboardType="numeric"
+                    value={formPrice}
+                    onChangeText={setFormPrice}
+                  />
+                </View>
+              )}
 
               <View style={styles.formGroup}>
                 <AppText variant="captionSemiBold" style={styles.inputLabel}>

@@ -82,13 +82,16 @@ export default function AdminPromotionsScreen() {
   const [rewardImageUrl, setRewardImageUrl] = useState('');
   const [isSavingReward, setIsSavingReward] = useState(false);
 
+  // 2 ô chuyển đổi: chỉ hiện nội dung của ô được chọn
+  const [section, setSection] = useState<'voucher' | 'rewards'>('voucher');
+
   const loadRewardsAndProducts = useCallback(async () => {
     const getDocsFn = (FirestorePkg as any).getDocs;
     if (typeof getDocsFn !== 'function') return;
 
     try {
       const [rewardsSnap, productsSnap] = await Promise.all([
-        getDocsFn(collection(db, 'rewards')).catch(() => null),
+        ((FirestorePkg as any).getDoc ? (FirestorePkg as any).getDoc(doc(db, 'coupons', '__REWARDS_CONFIG__')) : Promise.resolve(null)).catch(() => null),
         getDocsFn(collection(db, 'products')).catch(() => null),
       ]);
 
@@ -113,7 +116,7 @@ export default function AdminPromotionsScreen() {
 
       if (rewardsSnap) {
         const storedRewardsMap = new Map<string, AdminRewardGiftItem>();
-        rewardsSnap.forEach((d: any) => {
+        Object.entries(rewardsSnap.data?.()?.items || {}).forEach(([rId, rawItem]: [string, any]) => { const d = { id: rId, data: () => rawItem };
           const data = d.data();
           if (data?.deleted) {
             storedRewardsMap.set(d.id, { id: d.id, title: '', points: -1, stored: true });
@@ -158,6 +161,7 @@ export default function AdminPromotionsScreen() {
       (snapshot: any) => {
         const list: (Coupon & { stored?: boolean })[] = [];
         snapshot.forEach((d: any) => {
+          if (String(d.id).startsWith('__')) return;
           const data = d.data();
           list.push({
             code: data.code || '',
@@ -316,7 +320,7 @@ export default function AdminPromotionsScreen() {
         ...(selectedProductId ? { productId: selectedProductId } : {}),
         updatedAt: serverTimestamp(),
       };
-      await setDoc(doc(db, 'rewards', rewardId), payload);
+      await setDoc(doc(db, 'coupons', '__REWARDS_CONFIG__'), { items: { [rewardId]: payload }, updatedAt: serverTimestamp() }, { merge: true });
 
       setRewardItems((prev) => {
         const exists = prev.some((r) => r.id === rewardId);
@@ -358,9 +362,9 @@ export default function AdminPromotionsScreen() {
         onPress: async () => {
           try {
             if (rewardCatalog.some((b) => b.id === item.id)) {
-              await setDoc(doc(db, 'rewards', item.id), { id: item.id, deleted: true, updatedAt: serverTimestamp() });
+              await setDoc(doc(db, 'coupons', '__REWARDS_CONFIG__'), { items: { [item.id]: { id: item.id, deleted: true, updatedAt: serverTimestamp() } }, updatedAt: serverTimestamp() }, { merge: true });
             } else {
-              await deleteDoc(doc(db, 'rewards', item.id));
+              await setDoc(doc(db, 'coupons', '__REWARDS_CONFIG__'), { items: { [item.id]: { id: item.id, deleted: true, updatedAt: serverTimestamp() } }, updatedAt: serverTimestamp() }, { merge: true });
             }
             setRewardItems((prev) => prev.filter((r) => r.id !== item.id));
           } catch (e: any) {
@@ -380,7 +384,45 @@ export default function AdminPromotionsScreen() {
       />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Card 1: Quản lý Voucher */}
+        {/* 2 ô chuyển đổi: Voucher / FPT Rewards */}
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+          {([
+            { key: 'voucher', label: 'Mã Giảm Giá (Voucher)', icon: Ticket },
+            { key: 'rewards', label: 'FPT Rewards', icon: Gift },
+          ] as const).map((tab) => {
+            const isActive = section === tab.key;
+            const Icon = tab.icon;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                activeOpacity={0.8}
+                accessibilityRole="tab"
+                accessibilityLabel={tab.label}
+                onPress={() => setSection(tab.key)}
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 12,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: isActive ? colors.primary : colors.border,
+                  backgroundColor: isActive ? colors.primarySoft : colors.surface,
+                }}
+              >
+                <Icon size={16} color={isActive ? colors.primary : colors.textSecondary} />
+                <AppText variant="captionSemiBold" color={isActive ? colors.primary : colors.textSecondary}>
+                  {tab.label}
+                </AppText>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {section === 'voucher' && (
+        /* Card: Quản lý Voucher */
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.headerLeft}>
@@ -439,8 +481,11 @@ export default function AdminPromotionsScreen() {
             </View>
           ))}
         </View>
+        )}
 
-        {/* Card 2: Quản lý Món Đổi Điểm FPT Rewards */}
+        {section === 'rewards' && (
+        <>
+        {/* Card: Quản lý Món Đổi Điểm FPT Rewards */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.headerLeft}>
@@ -591,6 +636,8 @@ export default function AdminPromotionsScreen() {
             </AppText>
           </View>
         </View>
+        </>
+        )}
       </ScrollView>
 
       {/* Modal Tạo Voucher Mới */}

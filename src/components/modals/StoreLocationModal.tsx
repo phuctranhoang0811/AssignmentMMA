@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, MapPin, XCircle } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
+import { subscribeStoresConfig } from '../../services/storeSync';
 import { triggerHaptic } from '../../utils/haptics';
 import {
   searchVietnamAddresses,
@@ -29,6 +30,7 @@ export interface MockStoreItem {
   name: string;
   address: string;
   openingTime: string;
+  isActive?: boolean;
 }
 
 export const MOCK_PICKUP_STORES: MockStoreItem[] = [
@@ -37,12 +39,14 @@ export const MOCK_PICKUP_STORES: MockStoreItem[] = [
     name: 'Pizza FPT Liễu Giai (Signature)',
     address: '40 Liễu Giai, Phường Cống Vị, Quận Ba Đình, Hà Nội',
     openingTime: 'Opening time: 10:00 - 22:00',
+    isActive: true,
   },
   {
     id: 'store-thu-duc',
     name: 'Pizza FPT Hiệp Bình Chánh (Signature)',
     address: '240 Phạm Văn Đồng, Phường Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh',
     openingTime: 'Opening time: 10:00 - 22:00',
+    isActive: true,
   },
 ];
 
@@ -72,13 +76,41 @@ export function StoreLocationModal({
   const [manualAddressInput, setManualAddressInput] = useState(currentAddress);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [isLocating, setIsLocating] = useState(false);
+  const [pickupStores, setPickupStores] = useState<MockStoreItem[]>(MOCK_PICKUP_STORES);
   const [selectedStoreId, setSelectedStoreId] = useState<string>(MOCK_PICKUP_STORES[0].id);
+
+  // Đồng bộ danh sách cửa hàng từ storeSync (AsyncStorage + Firestore)
+  useEffect(() => {
+    const unsub = subscribeStoresConfig((state) => {
+      const list: MockStoreItem[] = state.stores
+        .filter((d) => d && d.isActive !== false && d.name && d.address)
+        .map((d) => {
+          const rawTime = String(d.openingTime || '10:00 - 22:00').trim();
+          return {
+            id: String(d.id || d.name),
+            name: String(d.name),
+            address: String(d.address),
+            openingTime: rawTime.toLowerCase().startsWith('opening time')
+              ? rawTime
+              : `Opening time: ${rawTime}`,
+            isActive: true,
+          };
+        });
+      if (list.length > 0) {
+        setPickupStores(list);
+        setSelectedStoreId((prev) =>
+          list.some((s) => s.id === prev) ? prev : list[0].id
+        );
+      }
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     if (visible) {
       setFulfillmentType(initialFulfillment);
       setAddressSuggestions([]);
-      const matchedStore = MOCK_PICKUP_STORES.find(
+      const matchedStore = pickupStores.find(
         (s) => currentAddress?.includes(s.name) || currentAddress?.includes(s.address)
       );
       if (matchedStore) {
@@ -90,7 +122,7 @@ export function StoreLocationModal({
         setManualAddressInput(currentAddress || '');
       }
     }
-  }, [visible, currentAddress, initialFulfillment]);
+  }, [visible, currentAddress, initialFulfillment, pickupStores]);
 
   // Debounced search for Vietnamese address autocomplete
   useEffect(() => {
@@ -146,7 +178,7 @@ export function StoreLocationModal({
   };
 
   const selectedStore =
-    MOCK_PICKUP_STORES.find((s) => s.id === selectedStoreId) || MOCK_PICKUP_STORES[0];
+    pickupStores.find((s) => s.id === selectedStoreId) || pickupStores[0] || MOCK_PICKUP_STORES[0];
 
   const needsAddress =
     fulfillmentType === 'delivery' && !(manualAddressInput.trim() || currentAddress);
@@ -249,7 +281,7 @@ export function StoreLocationModal({
 
           {fulfillmentType === 'takeaway' ? (
             <View style={styles.storeCardsWrap}>
-              {MOCK_PICKUP_STORES.map((store) => {
+              {pickupStores.map((store) => {
                 const isSelected = store.id === selectedStore.id;
                 return (
                   <TouchableOpacity

@@ -18,6 +18,7 @@ import { Search, Plus, X } from 'lucide-react-native';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { triggerHaptic } from '../../utils/haptics';
 import { hasPromptedMemberDiscount, setPromptedMemberDiscount } from '../../utils/sessionFlags';
+import { memberDiscountLabel } from '../../utils/memberDiscount';
 import { productService } from '../../services';
 import { Product, CategoryId } from '../../types/product';
 import { mockCategories } from '../../data/mockCategories';
@@ -143,11 +144,11 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
 
   return (
     <View style={styles.cardOuter}>
-      {/* Red Member Discount Badge */}
-      {!!product.memberDiscountTag && (
+      {/* Red Member Discount Badge — hiển thị % giảm + giá sau giảm */}
+      {!!memberDiscountLabel(product) && (
         <View style={styles.memberTagWrapper}>
           <View style={styles.memberTag}>
-            <Text style={styles.memberTagText}>{product.memberDiscountTag}</Text>
+            <Text style={styles.memberTagText}>{memberDiscountLabel(product)}</Text>
           </View>
         </View>
       )}
@@ -303,11 +304,19 @@ export default function MenuScreen() {
     }, 50);
   }, [filterCategory]);
 
+  // Nhóm promo = nhãn dán lên món, KHÔNG phải danh mục gốc:
+  // món vẫn ở Pizza/Khai vị/Nước uống đồng thời hiện thêm trong Tiệc Cheese / Thành Viên / Deal Hot.
+
+  const inPromoGroup = (p: Product, g: string) =>
+    (p.promoGroups || []).includes(g) || p.categoryId === g; // categoryId === group: dữ liệu kiểu cũ
+
   // Group products by category
   const productsByCategory = useMemo(() => {
     const map: Record<string, Product[]> = {};
     for (const cat of mockCategories) {
-      map[cat.id] = allProducts.filter((p) => p.categoryId === cat.id);
+      map[cat.id] = ['cheese_party', 'member_deals', 'hot_deals'].includes(cat.id)
+        ? allProducts.filter((p) => inPromoGroup(p, cat.id))
+        : allProducts.filter((p) => p.categoryId === cat.id);
     }
     return map;
   }, [allProducts]);

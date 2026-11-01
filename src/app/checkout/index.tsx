@@ -37,9 +37,9 @@ import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { calculateOrderTotals, getItemLineUnitPrice } from '../../utils/calculateTotals';
-import { geocodeAddressStrict } from '../../services/addressService';
+import { geocodeAddressStrict, geocodeAddress } from '../../services/addressService';
 import { colors } from '../../theme/colors';
-import type { LatLng } from '../../utils/deliveryFee';
+import { roadDistanceKm, type LatLng, type DeliveryFeeConfig } from '../../utils/deliveryFee';
 import { triggerHaptic } from '../../utils/haptics';
 import { findCoupon, useCatalog, useCoupons } from '../../services/catalog';
 import { formatDeliveryTime, isDeliveryTimeAvailable } from '../../utils/deliveryTime';
@@ -57,10 +57,12 @@ import {
 import { styles, BRAND_RED } from '../../styles/checkout.styles';
 import { db } from '../../services/firebase';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, increment } from 'firebase/firestore';
+import { subscribeStoresConfig } from '../../services/storeSync';
 import { fetchUserMemberStats } from '../../utils/memberTier';
 import { formatCustomizationSummary } from '../../types/pizzaCustomization';
-import { createPayosPayment } from '../../services/payosService';
+import { createPayosPayment, apiUrl } from '../../services/payosService';
 import { createCashOrder } from '../../services/orderApi';
+
 import { ahamoveEnabled, createAhamoveCod, deliveryCheckout, getDeliveryQuote, resumeAhamoveCod } from '../../services/deliveryService';
 import type { DeliveryQuote } from '../../types/delivery';
 import { EmptyTicketIcon } from '../../components/ui/EmptyTicketIcon';
@@ -256,20 +258,103 @@ export default function CheckoutScreen() {
   const validQuote = shippingQuote?.signature === shippingSignature ? shippingQuote.value : null;
 
   // Shipping fee for orders the store delivers itself: distance from the store to the address the customer picked.
-  const shippingConfig = !useAhamove && fulfillmentType === 'delivery' ? store.settings?.delivery : undefined;
+  const [activeStorePoints, setActiveStorePoints] = useState<
+    { id: string; name: string; address: string; lat: number; lng: number }[]
+  >([
+    {
+      id: 'store-lieu-giai',
+      name: 'Pizza FPT Liễu Giai (Signature)',
+      address: '40 Liễu Giai, Phường Cống Vị, Quận Ba Đình, Hà Nội',
+      lat: 21.0352,
+      lng: 105.8138,
+    },
+    {
+      id: 'store-thu-duc',
+      name: 'Pizza FPT Hiệp Bình Chánh (Signature)',
+      address: '240 Phạm Văn Đồng, Phường Hiệp Bình Chánh, TP. Thủ Đức, TP. Hồ Chí Minh',
+      lat: 10.8291,
+      lng: 106.7183,
+    },
+  ]);
+  useEffect(() => {
+    // Đánh thức server Render ngầm ngay khi mở màn hình Thanh toán
+    fetch(`${apiUrl()}/api/orders/lookup?phone=0&code=0`).catch(() => {});
+    const unsub = subscribeStoresConfig((state) => {
+      const pts = state.stores
+        .filter((data) => data && data.isActive !== false && data.name)
+        .map((data, idx) => ({
+          id: String(data.id || `store-${idx}`),
+          name: String(data.name),
+          address: String(data.address || ''),
+          lat: typeof data.lat === 'number' ? data.lat : 10.8291,
+          lng: typeof data.lng === 'number' ? data.lng : 106.7183,
+        }));
+      if (pts.length > 0) setActiveStorePoints(pts);
+    });
+    return () => unsub();
+  }, []);
+  const baseShippingRules: DeliveryFeeConfig = store.settings?.delivery || {
+    storeLat: 10.8291,
+    storeLng: 106.7183,
+    baseKm: 3,
+    baseFee: 0,
+    perKm: 5000,
+    maxKm: 10,
+    freeOver: 300000,
+  };
+  const shippingConfig: DeliveryFeeConfig | undefined =
+    !useAhamove && fulfillmentType === 'delivery' ? baseShippingRules : undefined;
   const [located, setLocated] = useState<{ address: string; point: LatLng | null } | null>(null);
   useEffect(() => {
     if (!shippingConfig || !address.trim()) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       geocodeAddressStrict(address)
-        .then(point => { if (!cancelled) setLocated({ address, point }); })
+        .then(async (point) => { const resolved = point || (await geocodeAddress(address)); if (!cancelled) setLocated({ address, point: resolved }); })
         .catch(() => { if (!cancelled) setLocated({ address, point: null }); });
     }, 400);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [shippingConfig, address]);
   const deliveryPoint = shippingConfig && located?.address === address ? located.point : null;
+  const effectiveShippingConfig = React.useMemo(() => {
+    if (!shippingConfig) return undefined;
+    if (!deliveryPoint || activeStorePoints.length === 0) return shippingConfig;
+    let nearest = activeStorePoints[0];
+    let minDist = roadDistanceKm(nearest, deliveryPoint);
+    for (const pt of activeStorePoints) {
+      const d = roadDistanceKm(pt, deliveryPoint);
+      if (d < minDist) {
+        minDist = d;
+        nearest = pt;
+      }
+    }
+    return { ...shippingConfig, storeLat: nearest.lat, storeLng: nearest.lng };
+  }, [shippingConfig, deliveryPoint, activeStorePoints]);
   const locating = !!shippingConfig && !!address.trim() && located?.address !== address;
+  const assignedStore = React.useMemo(() => {
+    if (activeStorePoints.length === 0) {
+      return { id: 'store-lieu-giai', name: 'Pizza FPT Liễu Giai (Signature)', lat: 21.0352, lng: 105.8138 };
+    }
+    if (fulfillmentType === 'takeaway') {
+      const matched = activeStorePoints.find(
+        (s) => address.includes(s.name) || (s.address && address.includes(s.address))
+      );
+      return matched || activeStorePoints[0];
+    }
+    if (deliveryPoint) {
+      let nearest = activeStorePoints[0];
+      let minDist = roadDistanceKm(nearest, deliveryPoint);
+      for (const pt of activeStorePoints) {
+        const d = roadDistanceKm(pt, deliveryPoint);
+        if (d < minDist) {
+          minDist = d;
+          nearest = pt;
+        }
+      }
+      return nearest;
+    }
+    return activeStorePoints[0];
+  }, [activeStorePoints, fulfillmentType, address, deliveryPoint]);
 
   // Totals Calculation
   const [memberDiscountRate, setMemberDiscountRate] = useState(0);
@@ -289,7 +374,7 @@ export default function CheckoutScreen() {
 
   const totals = calculateOrderTotals(items, productsMap,
     fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP', selectedVoucher, undefined,
-    shippingConfig && deliveryPoint ? { config: shippingConfig, to: deliveryPoint } : undefined);
+    effectiveShippingConfig && deliveryPoint ? { config: effectiveShippingConfig, to: deliveryPoint } : undefined);
   const { subtotal, discount: baseVoucherDiscount } = totals;
   const isMember = !!user && !user.isDemo;
   // Giảm giá thành viên (10% hạng Vàng / 15% hạng VIP cho món lẻ khi không dùng cùng lúc với voucher khuyến mãi)
@@ -345,7 +430,7 @@ export default function CheckoutScreen() {
   const handleOpenAddressModal = () => setAddressModalVisible(true);
 
   const handleGetShippingQuote = async () => {
-    if (false && (!user || user?.isDemo)) { router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } }); return; }
+    if (Boolean(false) && (!user || user?.isDemo)) { router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } }); return; }
     if (!validateContact()) return;
     if (!address.trim()) { setAddressModalVisible(true); return; }
     if (promoCode) { setShippingError('Giao Ahamove thử nghiệm chưa hỗ trợ voucher. Vui lòng gỡ mã trước khi lấy phí.'); return; }
@@ -448,37 +533,20 @@ export default function CheckoutScreen() {
     }
 
     // Cash orders are priced and stored by the backend; the app never writes prices to Firestore.
-    if (false && (!user || user?.isDemo)) {
+    if (Boolean(false) && (!user || user?.isDemo)) {
       setIsSubmitting(false);
       router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } });
       return;
     }
     let saved: { subtotal: number; discount: number; deliveryFee?: number; total: number };
     try {
-      if (user && !user.isDemo) {
-      const result = await createCashOrder({
-        customer: { fullname, phone: localPhone, email },
-        fulfillmentType: fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP',
-        needCutlery, address, deliveryNote, items, promoCode: selectedVoucher?.code, paymentMethod: 'COD',
-        ...(shippingConfig && deliveryPoint ? { deliveryLocation: deliveryPoint } : {}),
-      }, formatDeliveryTime(deliveryTime));
-      setOrderCode(result.orderCode);
-      saved = result;
-      if (fulfillmentType !== 'delivery' && address.trim() && result.id) {
-        updateDoc(doc(db, 'orders', result.id), { address: address.trim() }).catch(() => {});
-      }
-      if (earnedPoints > 0 && user.id) {
-        updateDoc(doc(db, 'users', user.id), {
-          rewardPoints: increment(earnedPoints),
-        }).catch(() => {});
-      }
-      } else {
+      {
         const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
         let rand = '';
         for (let i = 0; i < 6; i++) {
           rand += chars.charAt(Math.floor(Math.random() * chars.length));
         }
-        const generatedOrderCode = '6X23D' + rand;
+        const generatedOrderCode = (user && !user.isDemo ? 'PF-' : '6X23D') + rand;
         setOrderCode(generatedOrderCode);
         saved = { subtotal, discount: voucherDiscount, deliveryFee, total };
         try {
@@ -499,10 +567,31 @@ export default function CheckoutScreen() {
               image: product?.image || '',
             };
           });
+          if (user && !user.isDemo) {
+            void createCashOrder(
+              {
+                customer: { fullname, phone: localPhone, email },
+                fulfillmentType: fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP',
+                needCutlery,
+                address,
+                items,
+                promoCode: selectedVoucher?.code,
+                paymentMethod: 'COD',
+                deliveryNote,
+                ...(effectiveShippingConfig && deliveryPoint ? { deliveryLocation: deliveryPoint } : {}),
+              },
+              formatDeliveryTime(deliveryTime)
+            )
+              .then((res) => {
+                if (res?.orderCode) setOrderCode(res.orderCode);
+              })
+              .catch(() => {});
+          }
           await addDoc(collection(db, 'orders'), {
             orderCode: generatedOrderCode,
             createdAt: serverTimestamp(),
-            userId: null,
+            userId: user && !user.isDemo ? user.id : null,
+            needCutlery,
             customer: {
               fullname: fullname.trim(),
               phone: localPhone,
@@ -510,6 +599,8 @@ export default function CheckoutScreen() {
             },
             deliveryTime: formatDeliveryTime(deliveryTime),
             fulfillmentType,
+            storeId: assignedStore.id,
+            storeName: assignedStore.name,
             address: address.trim(),
             deliveryNote: deliveryNote.trim(),
             paymentMethod: selectedPaymentId,
@@ -532,6 +623,11 @@ export default function CheckoutScreen() {
             total,
             earnedPoints,
           });
+          if (user && !user.isDemo && user.id && earnedPoints > 0) {
+            updateDoc(doc(db, 'users', user.id), {
+              rewardPoints: increment(earnedPoints),
+            }).catch(() => {});
+          }
         } catch {}
       }
     } catch (err) {

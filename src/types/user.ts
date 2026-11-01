@@ -10,6 +10,8 @@ export type DemoUser = {
   gender?: string;
   role?: UserRole;
   branchId?: string;
+  storeId?: string;
+  storeName?: string;
   rewardPoints?: number;
   /** False until the e-mail is proven; such an account cannot order or redeem rewards. Missing = older account, verified. */
   emailVerified?: boolean;

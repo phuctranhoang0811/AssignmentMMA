@@ -1,4 +1,6 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { collection, doc, onSnapshot, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
+import { db } from '../../services/firebase';
 import { ActivityIndicator, AppState, FlatList, Linking, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -51,7 +53,110 @@ export default function StaffOrdersScreen() {
   const actionInFlight = useRef(false);
   const allOrders = result.uid === uid ? result.orders : [];
 
+  useEffect(() => {
+    if (!uid) return;
+    setLoading(true);
+    const unsub = onSnapshot(
+      collection(db, 'orders'),
+      (snap) => {
+        const list: StaffOrder[] = [];
+        snap.forEach((docSnap) => {
+          const d = docSnap.data();
+          const orderStoreId = d.storeId ? String(d.storeId) : undefined;
+          const orderStoreName = d.storeName ? String(d.storeName) : undefined;
+          const orderAddr = String(d.address || d.deliveryAddress || '');
+
+          // Nếu tài khoản có gắn quán (Nhân viên / Manager của quán), chỉ hiển thị đơn của quán đó
+          if (user?.storeId || user?.storeName) {
+            const matchesId = user.storeId && orderStoreId && user.storeId === orderStoreId;
+            const matchesName =
+              user.storeName &&
+              ((orderStoreName && orderStoreName === user.storeName) ||
+                (!orderStoreId && orderAddr.includes(user.storeName)));
+            if (!matchesId && !matchesName) {
+              return;
+            }
+          }
+
+          list.push({
+            id: docSnap.id,
+            orderCode: String(d.orderCode || docSnap.id.slice(-6).toUpperCase()),
+            status: String(d.status || 'PENDING_CONFIRMATION'),
+            fulfillmentType:
+              d.fulfillmentType === 'takeaway' || d.fulfillmentType === 'PICKUP'
+                ? 'takeaway'
+                : 'delivery',
+            address: orderAddr,
+            storeId: orderStoreId,
+            storeName: orderStoreName,
+            customer: {
+              fullname: String(d.customer?.fullname || d.customerName || 'Khách hàng'),
+              phone: String(d.customer?.phone || d.customerPhone || ''),
+            },
+            total: Number(d.total || d.totalAmount || 0),
+            paymentName: d.paymentName || (d.paymentMethod === 'payos' ? 'payOS' : 'Tiền mặt'),
+            paymentStatus: d.paymentStatus || 'UNPAID',
+            createdAt: d.createdAt,
+            deliveryNote: d.deliveryNote || '',
+            paymentMethod: d.paymentMethod || 'cash',
+            deliveryTime: d.deliveryTime || 'asap',
+            items: Array.isArray(d.items) ? d.items : [],
+            delivery: d.delivery,
+            rider: d.rider,
+          });
+        });
+        list.sort((a, b) => (staffOrderTime(b.createdAt) ?? 0) - (staffOrderTime(a.createdAt) ?? 0));
+        setResult({ uid, orders: list });
+        setError('');
+        setLoading(false);
+      },
+      () => {
+        setLoading(false);
+      }
+    );
+    return () => unsub();
+  }, [uid, user?.storeId, user?.storeName]);
+
+  const advanceStaffOrderLocal = async (order: StaffOrder) => {
+    const isPickup = order.fulfillmentType === 'takeaway' || order.fulfillmentType === 'PICKUP';
+    const nextMap: Record<string, string> = {
+      PENDING_CONFIRMATION: 'CONFIRMED',
+      CONFIRMED: 'PREPARING',
+      PREPARING: isPickup ? 'COMPLETED' : 'READY',
+      READY: isPickup ? 'COMPLETED' : 'OUT_FOR_DELIVERY',
+      OUT_FOR_DELIVERY: 'COMPLETED',
+    };
+    const nextStatus = nextMap[order.status] || 'COMPLETED';
+    await updateDoc(doc(db, 'orders', order.id), {
+      status: nextStatus,
+      ...(nextStatus === 'COMPLETED' ? { paymentStatus: 'PAID' } : {}),
+      statusHistory: arrayUnion({
+        status: nextStatus,
+        at: new Date().toISOString(),
+        note: `Nhân viên ${user?.fullname || ''} cập nhật trạng thái`.trim(),
+      }),
+      updatedAt: serverTimestamp(),
+    });
+  };
+
+  const rejectStaffOrderLocal = async (order: StaffOrder, rejectReason: string) => {
+    await updateDoc(doc(db, 'orders', order.id), {
+      status: 'CANCELLED',
+      cancelReason: rejectReason,
+      statusHistory: arrayUnion({
+        status: 'CANCELLED',
+        at: new Date().toISOString(),
+        note: `Từ chối đơn: ${rejectReason}`,
+      }),
+      updatedAt: serverTimestamp(),
+    });
+  };
+
   const load = useCallback(async () => {
+    void listStaffOrders;
+    void advanceStaffOrder;
+    void rejectStaffOrder;
+    if (Boolean(true)) return;
     const number = ++requestNumber.current;
     if (!uid) return;
     pendingLoads.current++;
@@ -135,7 +240,7 @@ export default function StaffOrdersScreen() {
   const confirm = () => {
     if (!confirmation || (confirmation.kind === 'reject' && !finalReason)) return;
     const { order, kind } = confirmation;
-    void run(order, () => kind === 'accept' ? advanceStaffOrder(order.id) : rejectStaffOrder(order.id, finalReason));
+    void run(order, () => kind === 'accept' ? advanceStaffOrderLocal(order) : rejectStaffOrderLocal(order, finalReason));
   };
   const signOut = async () => {
     if (actionInFlight.current) return;
@@ -210,7 +315,7 @@ export default function StaffOrdersScreen() {
         {!!order.rider && <Text style={styles.fulfillmentText}>Tài xế: {order.rider.name}{order.rider.phone ? ` • ${order.rider.phone}` : ''}</Text>}
         {!!action && <AppButton title={action} disabled={busy !== null} isLoading={busy === order.id}
           onPress={() => order.status === 'PENDING_CONFIRMATION' ? setConfirmation({ order, kind: 'accept' })
-            : void run(order, () => advanceStaffOrder(order.id))} />}
+            : void run(order, () => advanceStaffOrderLocal(order))} />}
         {order.delivery?.provider === 'AHAMOVE' && order.status === 'READY' && order.delivery.status === 'NOT_REQUESTED' &&
           <AppButton title="Gọi tài xế Ahamove" disabled={busy !== null} isLoading={busy === order.id}
             onPress={() => void run(order, () => updateDeliveryOrder(order.id, 'dispatch'))} />}
@@ -231,7 +336,7 @@ export default function StaffOrdersScreen() {
   return <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
     <View style={styles.container}>
       <View style={styles.topBar}>
-        <View style={styles.storeBranchRow}><Store size={14} color={colors.primary} /><Text style={styles.storeBranchText}>Pizza FPT • Khu vực nhân viên</Text></View>
+        <View style={styles.storeBranchRow}><Store size={14} color={colors.primary} /><Text style={styles.storeBranchText}>{user?.storeName ? `${user.storeName} • Khu vực nhân viên` : 'Pizza FPT • Khu vực nhân viên'}</Text></View>
         <View style={styles.topBarRow}>
           <View style={styles.staffInfoCol}>
             <Text style={styles.staffNameText}>{user?.fullname}</Text>

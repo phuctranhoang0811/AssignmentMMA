@@ -87,7 +87,7 @@ export default function LoginScreen() {
     const destination = loginDestination(user.role, returnTo);
     setShouldNavigate(false);
     if (destination === 'back') router.back();
-    else router.replace(destination);
+    else { if (router.canDismiss()) router.dismissAll(); router.replace(destination); }
   }, [shouldNavigate, authLoading, user, returnTo]);
 
   const handleLogin = async () => {

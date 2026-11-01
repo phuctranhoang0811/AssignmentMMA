@@ -1,4 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
 // @ts-ignore - subpath cho react-native persistence trong Firebase v10/v11
 import { initializeAuth, getAuth, getReactNativePersistence } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -30,4 +31,12 @@ export function getProvisioningAuth() {
     provisionAuth = getAuth(secondary);
   }
   return provisionAuth;
+}
+
+export function getProvisioningDb() {
+  getProvisioningAuth();
+  const secondary =
+    getApps().find((a) => a.name === PROVISION_APP_NAME) ??
+    initializeApp(app.options, PROVISION_APP_NAME);
+  return getFirestore(secondary);
 }

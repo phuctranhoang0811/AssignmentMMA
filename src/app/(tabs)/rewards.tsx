@@ -99,15 +99,16 @@ export default function RewardsScreen() {
       if (!userId || isDemo) return;
       setLoading(true);
 
-      const getDocsFn = (FirestorePkg as any).getDocs;
-      const collFn = (FirestorePkg as any).collection;
-      if (typeof getDocsFn === 'function' && typeof collFn === 'function') {
-        getDocsFn(collFn(db, 'rewards'))
+      const getDocFn = (FirestorePkg as any).getDoc;
+      const docFn = (FirestorePkg as any).doc;
+      if (typeof getDocFn === 'function' && typeof docFn === 'function') {
+        getDocFn(docFn(db, 'coupons', '__REWARDS_CONFIG__'))
           .then((snap: any) => {
-            if (!active || !snap) return;
+            if (!active || !snap || !snap.exists?.()) return;
+            const itemsObj = snap.data()?.items || {};
             const customMap = new Map<string, any>();
-            snap.forEach((d: any) => {
-              customMap.set(d.id, { id: d.id, ...d.data() });
+            Object.entries(itemsObj).forEach(([rId, rData]: [string, any]) => {
+              customMap.set(rId, { id: rId, ...(rData || {}) });
             });
             if (customMap.size === 0) return;
 
