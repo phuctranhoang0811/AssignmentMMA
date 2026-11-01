@@ -47,13 +47,10 @@ import { pickAndUploadImage } from '../../../services/imageUpload';
 
 const CATEGORIES = [
   { id: 'all', name: 'Tất cả' },
-  { id: 'cheese_party', name: 'Tiệc Cheese' },
-  { id: 'member_deals', name: 'Giá Ưu Đãi Thành Viên' },
-  { id: 'hot_deals', name: 'Deal Nóng 70%' },
   { id: 'pizza', name: 'Pizza' },
   { id: 'starters', name: 'Khai vị' },
-  { id: 'drinks', name: 'Thức uống' },
   { id: 'pasta', name: 'Mì Ý' },
+  { id: 'drinks', name: 'Thức uống' },
   { id: 'sushi', name: 'Sushi' },
 ];
 
@@ -70,7 +67,7 @@ export default function AdminProductsScreen() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formName, setFormName] = useState('');
   const [formPrice, setFormPrice] = useState('');
-  const [formCategory, setFormCategory] = useState<any>('cheese_party');
+  const [formCategory, setFormCategory] = useState<any>('pizza');
   const [formImage, setFormImage] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -154,7 +151,7 @@ export default function AdminProductsScreen() {
     setEditingProduct(null);
     setFormName('');
     setFormPrice('');
-    setFormCategory('cheese_party');
+    setFormCategory('pizza');
     setFormImage(''); // để trống — admin tự upload ảnh
     setFormDesc('');
     setModalVisible(true);
@@ -183,10 +180,7 @@ export default function AdminProductsScreen() {
       Alert.alert('Lỗi', 'Giá bán phải là số hợp lệ');
       return;
     }
-    if (!formImage.trim()) {
-      Alert.alert('Thiếu hình ảnh', 'Vui lòng chọn và upload ảnh cho món ăn.');
-      return;
-    }
+    const imageUrl = formImage.trim() || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500';
 
     setIsSubmitting(true);
     try {
@@ -197,7 +191,7 @@ export default function AdminProductsScreen() {
           name: formName.trim(),
           basePrice: priceNum,
           categoryId: formCategory,
-          image: formImage.trim(),
+          image: imageUrl,
           description: formDesc.trim(),
           updatedAt: serverTimestamp(),
         });
@@ -209,7 +203,7 @@ export default function AdminProductsScreen() {
           name: formName.trim(),
           basePrice: priceNum,
           categoryId: formCategory,
-          image: formImage.trim(),
+          image: imageUrl,
           description: formDesc.trim(),
           isAvailable: true,
           // A variant price is the full selling price (see getItemLineUnitPrice), not a surcharge.
@@ -271,11 +265,67 @@ export default function AdminProductsScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScreenHeader
-        title="Quản Trị Thực Đơn"
-        subtitle="Công tắc In-Stock & Cập nhật giá bán"
-        showBack={true}
-        onBack={() => router.back()}
+        title="Thực đơn"
+        subtitle="Quản lý món ăn & nhóm khuyến mãi"
+        showBack={false}
       />
+
+      {/* Minimalist Segmented Navigation: Món gốc | Nhóm Ưu Đãi | Bạn sẽ thích */}
+      <View
+        style={{
+          flexDirection: 'row',
+          gap: 8,
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          backgroundColor: colors.surface,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+        }}
+      >
+        <View
+          style={{
+            flex: 1,
+            paddingVertical: 8,
+            borderRadius: 10,
+            backgroundColor: colors.primary,
+            alignItems: 'center',
+          }}
+        >
+          <AppText variant="captionSemiBold" color={colors.white}>
+            Món lẻ gốc
+          </AppText>
+        </View>
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            paddingVertical: 8,
+            borderRadius: 10,
+            backgroundColor: colors.surfaceAlt,
+            alignItems: 'center',
+          }}
+          activeOpacity={0.75}
+          onPress={() => router.push('/admin/menu-groups')}
+        >
+          <AppText variant="captionSemiBold" color={colors.textPrimary}>
+            Nhóm Ưu Đãi
+          </AppText>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            paddingVertical: 8,
+            borderRadius: 10,
+            backgroundColor: colors.surfaceAlt,
+            alignItems: 'center',
+          }}
+          activeOpacity={0.75}
+          onPress={() => router.push('/admin/recommendations')}
+        >
+          <AppText variant="captionSemiBold" color={colors.textPrimary}>
+            Bạn sẽ thích
+          </AppText>
+        </TouchableOpacity>
+      </View>
 
       {/* Search & Add Row */}
       <View style={styles.headerRow}>

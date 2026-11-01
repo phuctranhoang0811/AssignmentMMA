@@ -6,6 +6,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
+import { isAdminRole } from '../../utils/staff';
 import { triggerHaptic } from '../../utils/haptics';
 import { fontFamilies } from '../../theme/typography';
 import { styles, BRAND_RED, FLOATING_CART_OFFSET, FLOATING_CART_OFFSET_HOME } from '../../styles/tabsLayout.styles';
@@ -34,7 +35,14 @@ const RewardBadgeIcon = ({ size = 22, color = '#6B7280' }: { size?: number; colo
 export default function TabsLayout() {
   const router = useRouter();
   const pathname = usePathname();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const isAdmin = isAdminRole(user?.role);
+
+  useEffect(() => {
+    if (isAdmin) {
+      router.replace('/admin/dashboard');
+    }
+  }, [isAdmin, router]);
   const { itemCount } = useCart();
   const insets = useSafeAreaInsets();
   const cartScaleAnim = useRef(new Animated.Value(itemCount > 0 ? 1 : 0)).current;
@@ -72,6 +80,7 @@ export default function TabsLayout() {
     }
   }, [showFloatingCart, itemCount, cartScaleAnim]);
 
+  if (isAdmin) return null;
   return (
     <View style={styles.container}>
       <Tabs

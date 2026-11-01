@@ -386,7 +386,7 @@ export default function AdminMenuGroupsScreen() {
           {groupProducts.length === 0 ? (
             <View style={styles.emptyContainer}>
               <AppText variant="bodyMedium" color={colors.textSecondary}>
-                Nhóm đang trống. Bấm "Thêm món" để gán món có sẵn vào đây.
+                {'Nhóm đang trống. Bấm "Thêm món" để gán món có sẵn vào đây.'}
               </AppText>
             </View>
           ) : (
@@ -536,7 +536,7 @@ export default function AdminMenuGroupsScreen() {
                 <View style={styles.formGroup}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <AppText variant="captionMedium" color={colors.textSecondary}>
-                      Gắn badge "New" cho món
+                      {'Gắn badge "New" cho món'}
                     </AppText>
                     <Switch
                       value={formNew}

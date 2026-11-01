@@ -12,6 +12,7 @@ import { Alert } from '../../utils/alert';
 import { AppButton } from '../../components/ui/AppButton';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, usePathname, useRouter } from 'expo-router';
+import * as FirestorePkg from 'firebase/firestore';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { useAuth } from '../../state/AuthContext';
@@ -68,6 +69,7 @@ export default function RewardsScreen() {
   const [activeTab, setActiveTab] = useState<'list' | 'my_gifts' | 'history'>('list');
   const [wallet, setWallet] = useState<RewardWallet | null>(null);
   const [walletOwner, setWalletOwner] = useState<string>();
+  const [rewardItems, setRewardItems] = useState<RewardItem[]>(REWARD_ITEMS);
   const [tierInfo, setTierInfo] = useState<MemberTierInfo>(() =>
     getMemberTierFromSpent(0, 0, calculateMaturityDate())
   );
@@ -96,6 +98,48 @@ export default function RewardsScreen() {
       setLoading(false);
       if (!userId || isDemo) return;
       setLoading(true);
+
+      const getDocsFn = (FirestorePkg as any).getDocs;
+      const collFn = (FirestorePkg as any).collection;
+      if (typeof getDocsFn === 'function' && typeof collFn === 'function') {
+        getDocsFn(collFn(db, 'rewards'))
+          .then((snap: any) => {
+            if (!active || !snap) return;
+            const customMap = new Map<string, any>();
+            snap.forEach((d: any) => {
+              customMap.set(d.id, { id: d.id, ...d.data() });
+            });
+            if (customMap.size === 0) return;
+
+            const merged: RewardItem[] = [];
+            customMap.forEach((val) => {
+              if (!val.deleted && !REWARD_ITEMS.some((b) => b.id === val.id)) {
+                merged.push({
+                  id: val.id,
+                  title: val.title || 'Món quà FPT Rewards',
+                  points: Number(val.points || 30),
+                  image: val.imageUrl ? { uri: val.imageUrl } : REWARD_IMAGES[5],
+                });
+              }
+            });
+            REWARD_ITEMS.forEach((base) => {
+              const override = customMap.get(base.id);
+              if (override?.deleted) return;
+              if (override) {
+                merged.push({
+                  ...base,
+                  title: override.title || base.title,
+                  points: Number(override.points || base.points),
+                  image: override.imageUrl ? { uri: override.imageUrl } : base.image,
+                });
+              } else {
+                merged.push(base);
+              }
+            });
+            setRewardItems(merged);
+          })
+          .catch(() => {});
+      }
 
       Promise.all([
         fetchUserMemberStats(userId),
@@ -358,7 +402,7 @@ export default function RewardsScreen() {
         )}
         {activeTab === 'list' && (
           <View style={styles.itemsListContainer}>
-            {REWARD_ITEMS.map((item) => (
+            {rewardItems.map((item) => (
               <View key={item.id} style={styles.itemRow}>
                 {/* Product Thumbnail */}
                 <View style={styles.itemImageWrap}>

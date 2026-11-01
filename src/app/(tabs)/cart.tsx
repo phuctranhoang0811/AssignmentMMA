@@ -380,6 +380,17 @@ export default function CartScreen() {
             <Text style={styles.sectionTitle}>Bạn sẽ thích</Text>
           </View>
 
+          {hasAddedAllRecommendations && (
+            <View style={styles.allAddedCard}>
+              <View style={styles.allAddedIconWrap}>
+                <PartyPopper size={22} color={BRAND_RED} />
+              </View>
+              <View style={styles.allAddedTextWrap}>
+                <Text style={styles.allAddedTitle}>Bạn đã chọn tất cả món gợi ý!</Text>
+                <Text style={styles.allAddedSubtitle}>Toàn bộ món đề xuất đã nằm trong giỏ. Cùng kiểm tra và đặt hàng nhé </Text>
+              </View>
+            </View>
+          )}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}

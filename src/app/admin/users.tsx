@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Alert } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+
 import {
   Search,
   User as UserIcon,
@@ -48,10 +48,8 @@ const ROLE_SECTIONS: {
   color: string;
   match: (role?: string) => boolean;
 }[] = [
-  { key: 'admin', title: 'Admin', hint: 'Toàn quyền hệ thống', color: colors.primary, match: (r) => r === 'SUPER_ADMIN' || r === 'ADMIN' },
-  { key: 'manager', title: 'Quản lý', hint: 'Vận hành cửa hàng', color: colors.warning, match: (r) => r === 'STORE_MANAGER' },
-  { key: 'kitchen', title: 'Bếp', hint: 'Nhận đơn & nấu món', color: colors.success, match: (r) => r === 'EMPLOYEE' || r === 'ROLE_KITCHEN' },
-  { key: 'rider', title: 'Tài xế', hint: 'Giao hàng', color: '#1D4ED8', match: (r) => r === 'ROLE_RIDER' },
+  { key: 'admin', title: 'Admin', hint: 'Toàn quyền hệ thống', color: colors.primary, match: (r) => r === 'SUPER_ADMIN' || r === 'ADMIN' || r === 'STORE_MANAGER' },
+  { key: 'kitchen', title: 'Nhân viên', hint: 'Xử lý đơn hàng', color: colors.success, match: (r) => r === 'EMPLOYEE' || r === 'ROLE_KITCHEN' || r === 'ROLE_RIDER' },
   { key: 'user', title: 'Khách hàng', hint: 'Đặt món & tích điểm', color: colors.textSecondary, match: (r) => r === 'BLACKLISTED' ? false : true },
   { key: 'blocked', title: 'Đã khóa', hint: 'Không đặt được đơn', color: colors.error, match: (r) => r === 'BLACKLISTED' },
 ];
@@ -61,7 +59,7 @@ const sectionKeyForRole = (role?: string): string =>
   ROLE_SECTIONS.find((s) => s.match(role))?.key || 'user';
 
 export default function AdminUsersScreen() {
-  const router = useRouter();
+
 
   const { user: me } = useAuth();
   const [users, setUsers] = useState<DemoUser[]>([]);
@@ -289,10 +287,9 @@ export default function AdminUsersScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScreenHeader
-        title="Quản Lý Người Dùng"
-        subtitle="Phân quyền tài khoản & Giám sát khách hàng"
-        showBack={true}
-        onBack={() => router.back()}
+        title="Tài khoản"
+        subtitle="Quản lý Khách hàng & Nhân viên"
+        showBack={false}
       />
 
       {/* Search Input + nút cấp tài khoản */}
