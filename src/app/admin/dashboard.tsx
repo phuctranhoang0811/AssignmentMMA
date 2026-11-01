@@ -19,6 +19,7 @@ import {
   ClipboardList,
   BarChart2,
   Sparkles,
+  LayoutGrid,
 } from 'lucide-react-native';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -126,11 +127,10 @@ export default function AdminDashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      {/* Không có nút back: admin không quay lại giao diện khách hàng được nữa */}
       <ScreenHeader
         title="Quản Trị Hệ Thống"
         subtitle="Pizza FPT Manager Portal"
-        showBack={true}
-        onBack={() => router.replace('/(tabs)/profile')}
       />
 
       <ScrollView
@@ -259,6 +259,30 @@ export default function AdminDashboardScreen() {
                 </AppText>
                 <AppText variant="caption" color={colors.textSecondary}>
                   Thêm món, cập nhật giá bán, bật/tắt In-Stock & cấu hình Size/Đế.
+                </AppText>
+              </View>
+            </View>
+            <ChevronRight size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {/* Module: Thêm món vào nhóm promo */}
+          <TouchableOpacity
+            style={styles.moduleCard}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Thêm món vào nhóm promo"
+            onPress={() => router.push('/admin/menu-groups')}
+          >
+            <View style={styles.moduleLeft}>
+              <View style={[styles.moduleIconBox, { backgroundColor: colors.successSoft }]}>
+                <LayoutGrid size={24} color={colors.success} />
+              </View>
+              <View style={styles.moduleTextBox}>
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  Thêm Món Vào Nhóm Promo
+                </AppText>
+                <AppText variant="caption" color={colors.textSecondary}>
+                  Gán món có sẵn vào Tiệc Cheese, Thành Viên hoặc Deal Hot kèm ưu đãi riêng.
                 </AppText>
               </View>
             </View>
@@ -474,4 +498,3 @@ export default function AdminDashboardScreen() {
     </SafeAreaView>
   );
 }
-

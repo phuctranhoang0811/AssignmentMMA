@@ -38,9 +38,18 @@ const PROMO_GROUPS = [
   { id: 'member_deals', name: 'Thành Viên' },
   { id: 'hot_deals', name: 'Deal Hot 70%' },
 ];
+const PROMO_IDS = PROMO_GROUPS.map((g) => g.id);
 
-// Nhóm trả về khi bỏ món khỏi nhóm promo
+// Nhóm trả về khi món không còn promo nào (dữ liệu kiểu cũ bị "chuyển nhà" sang nhóm promo)
 const FALLBACK_GROUP = 'pizza';
+
+// Danh sách nhóm promo của một món = promoGroups mới + categoryId kiểu cũ (nếu từng là nhóm promo)
+const groupsOf = (p: Product): string[] => {
+  const set = new Set<string>(p.promoGroups || []);
+  if (PROMO_IDS.includes(p.categoryId)) set.add(p.categoryId);
+  return [...set];
+};
+const inGroup = (p: Product, g: string) => groupsOf(p).includes(g);
 
 const CAT_NAMES: Record<string, string> = {
   cheese_party: 'Tiệc Cheese',
@@ -96,6 +105,7 @@ export default function AdminMenuGroupsScreen() {
               isAvailable: data.isAvailable !== false,
               variants: data.variants || [],
               addons: data.addons || [],
+              promoGroups: Array.isArray(data.promoGroups) ? data.promoGroups : undefined,
             } as Product);
           });
           setProducts(list);
@@ -114,13 +124,14 @@ export default function AdminMenuGroupsScreen() {
   }, []);
 
   const groupName = PROMO_GROUPS.find((g) => g.id === group)?.name || group;
-  const groupProducts = products.filter((p) => p.categoryId === group);
+  const groupProducts = products.filter((p) => inGroup(p, group));
 
   // Điều kiện riêng của Tiệc Cheese: chỉ nhận món pizza / combo pizza
   const isPizzaOrCombo = (p: Product) => {
     const name = p.name.toLowerCase();
     return (
       p.categoryId === 'pizza' ||
+      p.categoryId === 'cheese_party' || // dữ liệu cũ từng bị "chuyển nhà" vào nhóm
       name.includes('pizza') ||
       name.includes('combo') ||
       p.id.startsWith('CB') ||
@@ -130,7 +141,7 @@ export default function AdminMenuGroupsScreen() {
 
   // Món có sẵn chưa nằm trong nhóm hiện tại (Tiệc Cheese chỉ hiện pizza/combo)
   const pickableProducts = products
-    .filter((p) => p.categoryId !== group)
+    .filter((p) => !inGroup(p, group))
     .filter((p) => (group === 'cheese_party' ? isPizzaOrCombo(p) : true))
     .filter(
       (p) =>
@@ -177,12 +188,21 @@ export default function AdminMenuGroupsScreen() {
     setFormNew(true);
   };
 
-  // Tính payload "đặc sản" theo từng nhóm
+  // Tính payload "đặc sản" theo từng nhóm.
+  // Nguyên tắc: KHÔNG đổi categoryId — món vẫn thuộc danh mục gốc (Pizza/Khai vị/Nước uống),
+  // chỉ thêm nhãn promoGroups + ưu đãi riêng của nhóm.
   const buildGroupPayload = (item: Product): Record<string, any> | null => {
+    const promoGroups = [...new Set([...groupsOf(item), group])];
+    // Dữ liệu kiểu cũ từng bị "chuyển nhà" vào nhóm promo → trả món về danh mục gốc khi dán nhãn lại
+    const migration: Record<string, any> = PROMO_IDS.includes(item.categoryId)
+      ? { categoryId: FALLBACK_GROUP }
+      : {};
+
     if (group === 'cheese_party') {
       const note = formNote.trim();
       return {
-        categoryId: 'cheese_party',
+        ...migration,
+        promoGroups,
         isNew: formNew,
         description: note
           ? `${item.description ? item.description + ' · ' : ''}${note.toUpperCase()}`
@@ -198,7 +218,8 @@ export default function AdminMenuGroupsScreen() {
         return null;
       }
       return {
-        categoryId: 'member_deals',
+        ...migration,
+        promoGroups,
         originalPrice: original,
         basePrice: original - discount,
         memberDiscountTag: `Ưu đãi thành viên -${vnd(discount)}`,
@@ -214,7 +235,8 @@ export default function AdminMenuGroupsScreen() {
     }
     const salePrice = Math.round((original * (100 - pct)) / 100 / 1000) * 1000; // làm tròn nghìn
     return {
-      categoryId: 'hot_deals',
+      ...migration,
+      promoGroups,
       originalPrice: original,
       basePrice: salePrice,
       discountPercent: pct,
@@ -243,51 +265,71 @@ export default function AdminMenuGroupsScreen() {
     );
     void reportAdminAction('PRODUCT_GROUP_CHANGED', `products/${pendingItem.id}`, {
       name: pendingItem.name,
-      from: pendingItem.categoryId,
-      to: group,
+      addPromoGroup: group,
+      keptCategory: payload.categoryId ?? pendingItem.categoryId,
     });
     setPendingItem(null);
     setPickerVisible(false);
     setSearchQuery('');
   };
 
-  // Bỏ món khỏi nhóm promo: xóa badge/giá gốc, đưa giá về gốc
+  // Bỏ món khỏi nhóm promo: chỉ gỡ NHÃN của nhóm đó.
+  // Nếu món không còn nhóm promo nào khác mới gỡ luôn giá ưu đãi/badge, trả về giá gốc.
   const handleRemoveFromGroup = (item: Product) => {
+    const remaining = groupsOf(item).filter((g) => g !== group);
     Alert.alert(
       'Bỏ khỏi nhóm',
-      `Bỏ "${item.name}" khỏi ${groupName}? Giá ưu đãi & badge của nhóm sẽ bị gỡ, món chuyển về Pizza.`,
+      remaining.length
+        ? `Bỏ nhãn ${groupName} của "${item.name}"? Món vẫn còn trong ${remaining.map((g) => CAT_NAMES[g] || g).join(', ')}.`
+        : `Bỏ "${item.name}" khỏi ${groupName}? Giá ưu đãi & badge sẽ bị gỡ, món trở về giá gốc và vẫn nằm ở ${CAT_NAMES[item.categoryId] || item.categoryId}.`,
       [
         { text: 'Hủy', style: 'cancel' },
         {
           text: 'Bỏ',
           style: 'destructive',
           onPress: async () => {
-            const ok = await writeProduct(item, {
-              categoryId: FALLBACK_GROUP,
-              basePrice: baseOf(item),
-              originalPrice: deleteField(),
-              memberDiscountTag: deleteField(),
-              discountPercent: deleteField(),
-            });
+            const cleanup: Record<string, any> = remaining.length
+              ? {}
+              : {
+                  basePrice: baseOf(item),
+                  originalPrice: deleteField(),
+                  memberDiscountTag: deleteField(),
+                  discountPercent: deleteField(),
+                };
+            // Dữ liệu kiểu cũ: món đang "sống" bằng categoryId promo → trả về danh mục gốc
+            const migration: Record<string, any> = PROMO_IDS.includes(item.categoryId)
+              ? { categoryId: FALLBACK_GROUP }
+              : {};
+            const payload = {
+              ...migration,
+              ...cleanup,
+              promoGroups: remaining.length ? remaining : deleteField(),
+            };
+            const ok = await writeProduct(item, payload);
             if (ok) {
               setProducts((prev) =>
                 prev.map((p) =>
                   p.id === item.id
                     ? ({
                         ...p,
-                        categoryId: FALLBACK_GROUP as any,
-                        basePrice: baseOf(item),
-                        originalPrice: undefined,
-                        memberDiscountTag: undefined,
-                        discountPercent: undefined,
+                        ...migration,
+                        ...(remaining.length
+                          ? {}
+                          : {
+                              basePrice: baseOf(item),
+                              originalPrice: undefined,
+                              memberDiscountTag: undefined,
+                              discountPercent: undefined,
+                            }),
+                        promoGroups: remaining.length ? remaining : undefined,
                       } as Product)
                     : p
                 )
               );
               void reportAdminAction('PRODUCT_GROUP_CHANGED', `products/${item.id}`, {
                 name: item.name,
-                from: item.categoryId,
-                to: FALLBACK_GROUP,
+                removePromoGroup: group,
+                remainingGroups: remaining.join(','),
               });
             }
           },
@@ -321,14 +363,14 @@ export default function AdminMenuGroupsScreen() {
       ? `Mô tả sẽ thêm "· ${formNote.trim().toUpperCase()}"${formNew ? ' + badge New' : ''}`
       : formNew
         ? 'Món sẽ có badge New'
-        : 'Chỉ chuyển nhóm, không đổi gì thêm';
+        : 'Chỉ dán nhãn nhóm, giữ nguyên món gốc';
   })();
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScreenHeader
         title="Thêm Món Vào Nhóm Promo"
-        subtitle="Mỗi nhóm có ưu đãi riêng: Cheese +badge New, Thành Viên giảm tiền, Deal Hot giảm %"
+        subtitle="Món giữ nguyên danh mục gốc — thêm vào đây chỉ là dán nhãn promo + ưu đãi riêng"
         showBack={true}
         onBack={() => router.back()}
       />
@@ -490,7 +532,10 @@ export default function AdminMenuGroupsScreen() {
                         {item.name}
                       </AppText>
                       <AppText variant="small" color={colors.textSecondary}>
-                        Đang ở: {CAT_NAMES[item.categoryId] || item.categoryId} · {formatCurrency(item.basePrice)}
+                        Đang ở: {CAT_NAMES[item.categoryId] || item.categoryId}
+                        {groupsOf(item).length > 0 &&
+                          ` · Đang có nhãn: ${groupsOf(item).map((g) => CAT_NAMES[g] || g).join(', ')}`}
+                        {` · ${formatCurrency(item.basePrice)}`}
                       </AppText>
                     </View>
                     <Plus size={18} color={colors.primary} />

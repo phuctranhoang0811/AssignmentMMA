@@ -23,6 +23,7 @@ function mapDocToProduct(id: string, data: any): Product {
     addons: data.addons || [],
     ingredients: data.ingredients || [],
     tags: data.tags || [],
+    promoGroups: Array.isArray(data.promoGroups) ? data.promoGroups : undefined,
     sizeOptions: data.sizeOptions,
     crustOptions: data.crustOptions,
   } as Product;
