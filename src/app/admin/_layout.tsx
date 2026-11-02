@@ -57,6 +57,19 @@ export default function AdminLayout() {
   // Chặn nút Back vật lý / vuốt cạnh trái để không bị văng khỏi trang Admin khi chưa bấm Đăng xuất
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.history.pushState(null, '', window.location.href);
+      const onPopState = () => {
+        window.history.pushState(null, '', window.location.href);
+      };
+      window.addEventListener('popstate', onPopState);
+      return () => {
+        sub.remove();
+        window.removeEventListener('popstate', onPopState);
+      };
+    }
+
     return () => sub.remove();
   }, []);
 

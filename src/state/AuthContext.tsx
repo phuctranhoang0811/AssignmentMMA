@@ -193,7 +193,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (docData.password !== password) {
                   throw new Error('Mật khẩu không chính xác.');
                 }
-                await signInWithEmailAndPassword(auth, targetEmail, password).catch(() => {});
+                try {
+                  await signInWithEmailAndPassword(auth, targetEmail, password);
+                } catch {
+                  for (const altPass of ['Staff@123', 'Staff@12345', '123456']) {
+                    if (altPass === password) continue;
+                    try {
+                      const cred = await signInWithEmailAndPassword(auth, targetEmail, altPass);
+                      await updatePassword(cred.user, password).catch(() => {});
+                      break;
+                    } catch {
+                      // try next fallback
+                    }
+                  }
+                }
                 const u: DemoUser = {
                   id: docSnap.id,
                   fullname: docData.fullName || 'Khách hàng',
