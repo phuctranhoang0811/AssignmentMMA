@@ -47,9 +47,6 @@ export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const cartScaleAnim = useRef(new Animated.Value(itemCount > 0 ? 1 : 0)).current;
 
-  // Tài khoản Admin chỉ để quản lý: không dùng giao diện khách hàng (không mua hàng, không giỏ hàng).
-  // Bị đưa thẳng về Bảng quản trị nếu cố vào tab khách (back gesture, deep link, đổi role lúc đang mở app).
-  if (isAdmin) return null;
 
   const isAndroid = Platform.OS === 'android';
   const bottomInset = insets.bottom;
