@@ -1,9 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { doc, getDoc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, onSnapshot, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from './firebase';
 import { parseDeliveryFeeConfig, type DeliveryFeeConfig } from '../utils/deliveryFee';
 
 const STORAGE_KEY = '@fpt_stores_config_sync_v2';
+const LEGACY_STORES_KEY = '@fpt_stores_branches_v1';
 
 export interface SyncedStoreBranch {
   id: string;
@@ -96,11 +98,77 @@ function notifyAll() {
   listeners.forEach((fn) => {
     try {
       fn(snapshot);
-    } catch {}
+    } catch { }
   });
 }
 
+let lastRemoteStoresTs = 0;
+let authSyncHooked = false;
+
+async function pushStoresConfigToFirestore() {
+  if (currentState.updatedAtMs <= 0 || !auth.currentUser) return;
+  await setDoc(
+    doc(db, 'coupons', '__STORES_CONFIG__'),
+    {
+      expiresAt: '01/01/2000',
+      stores: currentState.stores,
+      delivery: currentState.delivery,
+      shippingEnabled: currentState.shippingEnabled,
+      updatedAtMs: currentState.updatedAtMs,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  ).catch(() => { });
+}
+
+function ensureAuthSyncHook() {
+  if (authSyncHooked) return;
+  authSyncHooked = true;
+  try {
+    onAuthStateChanged(auth, (u) => {
+      if (!u) return;
+      if (currentState.updatedAtMs > lastRemoteStoresTs) {
+        void pushStoresConfigToFirestore();
+      }
+      if (Object.keys(currentStaffMap).length > 0) {
+        void setDoc(
+          doc(db, 'coupons', '__STAFF_STORES__'),
+          {
+            expiresAt: '01/01/2000',
+            mapping: currentStaffMap,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        ).catch(() => { });
+      }
+      if (Object.keys(currentSchedulesMap).length > 0) {
+        void setDoc(
+          doc(db, 'coupons', '__STAFF_SCHEDULES__'),
+          {
+            expiresAt: '01/01/2000',
+            schedules: currentSchedulesMap,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        ).catch(() => { });
+      }
+      if (Object.keys(currentOrdersSyncMap).length > 0) {
+        void setDoc(
+          doc(db, 'coupons', '__ORDERS_SYNC__'),
+          {
+            expiresAt: '01/01/2000',
+            overrides: currentOrdersSyncMap,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        ).catch(() => { });
+      }
+    });
+  } catch { }
+}
+
 async function ensureInitialized() {
+  ensureAuthSyncHook();
   if (!storageLoaded) {
     storageLoaded = true;
     try {
@@ -119,8 +187,21 @@ async function ensureInitialized() {
           };
           notifyAll();
         }
+      } else {
+        const legacyJson = await AsyncStorage.getItem(LEGACY_STORES_KEY);
+        if (legacyJson) {
+          const parsedLegacy = JSON.parse(legacyJson);
+          if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
+            currentState = {
+              ...currentState,
+              stores: parsedLegacy.map((s: any, idx: number) => sanitizeStoreBranch(s, idx)),
+              updatedAtMs: Date.now(),
+            };
+            notifyAll();
+          }
+        }
       }
-    } catch {}
+    } catch { }
   }
 
   if (!firestoreListening) {
@@ -130,7 +211,12 @@ async function ensureInitialized() {
         doc(db, 'coupons', '__STORES_CONFIG__'),
         (snap) => {
           const data = snap.data();
-          if (!data) return;
+          if (!data || !Array.isArray(data.stores) || data.stores.length === 0) {
+            if (currentState.updatedAtMs > 0) {
+              void pushStoresConfigToFirestore();
+            }
+            return;
+          }
           const remoteTs =
             typeof data.updatedAtMs === 'number'
               ? data.updatedAtMs
@@ -138,7 +224,10 @@ async function ensureInitialized() {
                 ? data.updatedAt.toMillis()
                 : 0;
 
-          if (remoteTs > 0 && currentState.updatedAtMs > remoteTs) {
+          lastRemoteStoresTs = remoteTs;
+
+          if (currentState.updatedAtMs > remoteTs) {
+            void pushStoresConfigToFirestore();
             return;
           }
 
@@ -164,13 +253,13 @@ async function ensureInitialized() {
             if (remoteTs > currentState.updatedAtMs) {
               currentState.updatedAtMs = remoteTs;
             }
-            AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(currentState)).catch(() => {});
+            AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(currentState)).catch(() => { });
             notifyAll();
           }
         },
-        () => {}
+        () => { }
       );
-    } catch {}
+    } catch { }
   }
 }
 
@@ -197,7 +286,7 @@ export async function saveSyncedStores(nextStores: SyncedStoreBranch[]): Promise
     updatedAtMs: nowMs,
   };
   notifyAll();
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(currentState)).catch(() => {});
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(currentState)).catch(() => { });
   await setDoc(
     doc(db, 'coupons', '__STORES_CONFIG__'),
     {
@@ -207,7 +296,7 @@ export async function saveSyncedStores(nextStores: SyncedStoreBranch[]): Promise
       updatedAt: serverTimestamp(),
     },
     { merge: true }
-  ).catch(() => {});
+  ).catch(() => { });
 }
 
 export async function saveSyncedShipping(
@@ -217,14 +306,14 @@ export async function saveSyncedShipping(
   const sanitizedDelivery =
     shippingEnabled && delivery
       ? {
-          storeLat: Number(delivery.storeLat) || 10.8291,
-          storeLng: Number(delivery.storeLng) || 106.7183,
-          baseKm: Number(delivery.baseKm) || 0,
-          baseFee: Number(delivery.baseFee) || 0,
-          perKm: Number(delivery.perKm) || 0,
-          maxKm: Number(delivery.maxKm) || 10,
-          freeOver: Number(delivery.freeOver || 0),
-        }
+        storeLat: Number(delivery.storeLat) || 10.8291,
+        storeLng: Number(delivery.storeLng) || 106.7183,
+        baseKm: Number(delivery.baseKm) || 0,
+        baseFee: Number(delivery.baseFee) || 0,
+        perKm: Number(delivery.perKm) || 0,
+        maxKm: Number(delivery.maxKm) || 10,
+        freeOver: Number(delivery.freeOver || 0),
+      }
       : null;
   const nowMs = Date.now();
   currentState = {
@@ -234,7 +323,7 @@ export async function saveSyncedShipping(
     updatedAtMs: nowMs,
   };
   notifyAll();
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(currentState)).catch(() => {});
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(currentState)).catch(() => { });
   await setDoc(
     doc(db, 'coupons', '__STORES_CONFIG__'),
     {
@@ -245,7 +334,7 @@ export async function saveSyncedShipping(
       updatedAt: serverTimestamp(),
     },
     { merge: true }
-  ).catch(() => {});
+  ).catch(() => { });
 }
 
 // ========================================================
@@ -272,7 +361,7 @@ function notifyStaffListeners() {
   staffListeners.forEach((fn) => {
     try {
       fn(copy);
-    } catch {}
+    } catch { }
   });
 }
 
@@ -288,7 +377,7 @@ async function ensureStaffInitialized() {
           notifyStaffListeners();
         }
       }
-    } catch {}
+    } catch { }
   }
 
   if (!staffFirestoreListening) {
@@ -300,13 +389,13 @@ async function ensureStaffInitialized() {
           const remoteMap = snap.data()?.mapping;
           if (remoteMap && typeof remoteMap === 'object') {
             currentStaffMap = { ...currentStaffMap, ...remoteMap };
-            AsyncStorage.setItem(STAFF_MAP_KEY, JSON.stringify(currentStaffMap)).catch(() => {});
+            AsyncStorage.setItem(STAFF_MAP_KEY, JSON.stringify(currentStaffMap)).catch(() => { });
             notifyStaffListeners();
           }
         },
-        () => {}
+        () => { }
       );
-    } catch {}
+    } catch { }
   }
 }
 
@@ -339,7 +428,7 @@ export async function saveStaffStoresEntry(
     [uid]: merged,
   };
   notifyStaffListeners();
-  await AsyncStorage.setItem(STAFF_MAP_KEY, JSON.stringify(currentStaffMap)).catch(() => {});
+  await AsyncStorage.setItem(STAFF_MAP_KEY, JSON.stringify(currentStaffMap)).catch(() => { });
   await setDoc(
     doc(db, 'coupons', '__STAFF_STORES__'),
     {
@@ -348,7 +437,7 @@ export async function saveStaffStoresEntry(
       updatedAt: serverTimestamp(),
     },
     { merge: true }
-  ).catch(() => {});
+  ).catch(() => { });
 }
 
 export async function findStaffEmailByPhone(rawPhone: string): Promise<string | null> {
@@ -373,7 +462,288 @@ export async function findStaffEmailByPhone(rawPhone: string): Promise<string | 
         }
       }
     }
-  } catch {}
+  } catch { }
 
   return null;
+}
+
+// ========================================================
+// STAFF WEEKLY SCHEDULE SYNC (Manager sắp xếp lịch làm việc)
+// ========================================================
+const STAFF_SCHEDULE_KEY = '@fpt_staff_schedules_sync_v1';
+
+export type ShiftType = 'MORNING' | 'EVENING' | 'FULL' | 'OFF';
+
+export interface StaffScheduleRecord {
+  days: Record<string, ShiftType>; // T2, T3, T4, T5, T6, T7, CN
+  note?: string;
+  updatedAtMs?: number;
+}
+
+export const DEFAULT_WEEKLY_DAYS: Record<string, ShiftType> = {
+  T2: 'OFF',
+  T3: 'OFF',
+  T4: 'OFF',
+  T5: 'OFF',
+  T6: 'OFF',
+  T7: 'OFF',
+  CN: 'OFF',
+};
+
+let currentSchedulesMap: Record<string, StaffScheduleRecord> = {};
+let scheduleStorageLoaded = false;
+let scheduleFirestoreListening = false;
+const scheduleListeners = new Set<(map: Record<string, StaffScheduleRecord>) => void>();
+
+function notifyScheduleListeners() {
+  const copy = { ...currentSchedulesMap };
+  scheduleListeners.forEach((fn) => {
+    try {
+      fn(copy);
+    } catch { }
+  });
+}
+
+async function ensureSchedulesInitialized() {
+  if (!scheduleStorageLoaded) {
+    scheduleStorageLoaded = true;
+    try {
+      const saved = await AsyncStorage.getItem(STAFF_SCHEDULE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          currentSchedulesMap = { ...parsed, ...currentSchedulesMap };
+          notifyScheduleListeners();
+        }
+      }
+    } catch { }
+  }
+
+  if (!scheduleFirestoreListening) {
+    scheduleFirestoreListening = true;
+    try {
+      onSnapshot(
+        doc(db, 'coupons', '__STAFF_SCHEDULES__'),
+        (snap) => {
+          const remoteMap = snap.data()?.schedules;
+          if (remoteMap && typeof remoteMap === 'object') {
+            currentSchedulesMap = { ...currentSchedulesMap, ...remoteMap };
+            AsyncStorage.setItem(STAFF_SCHEDULE_KEY, JSON.stringify(currentSchedulesMap)).catch(() => { });
+            notifyScheduleListeners();
+          }
+        },
+        () => { }
+      );
+    } catch { }
+  }
+}
+
+export function subscribeStaffSchedules(
+  listener: (map: Record<string, StaffScheduleRecord>) => void
+): () => void {
+  scheduleListeners.add(listener);
+  listener({ ...currentSchedulesMap });
+  void ensureSchedulesInitialized();
+  return () => {
+    scheduleListeners.delete(listener);
+  };
+}
+
+export async function saveStaffSchedule(
+  uid: string,
+  days: Record<string, ShiftType>,
+  note?: string
+): Promise<void> {
+  const prev = currentSchedulesMap[uid];
+  const record: StaffScheduleRecord = {
+    days: { ...DEFAULT_WEEKLY_DAYS, ...(prev?.days || {}), ...days },
+    note: note !== undefined ? note : prev?.note || '',
+    updatedAtMs: Date.now(),
+  };
+  currentSchedulesMap = {
+    ...currentSchedulesMap,
+    [uid]: record,
+  };
+  notifyScheduleListeners();
+  await AsyncStorage.setItem(STAFF_SCHEDULE_KEY, JSON.stringify(currentSchedulesMap)).catch(() => { });
+  await setDoc(
+    doc(db, 'coupons', '__STAFF_SCHEDULES__'),
+    {
+      expiresAt: '01/01/2000',
+      schedules: currentSchedulesMap,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  ).catch(() => { });
+}
+
+export function formatScheduleDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function getStaffShiftOnDate(
+  record: StaffScheduleRecord | undefined,
+  d: Date
+): ShiftType {
+  if (!record?.days) return 'OFF';
+  const dateKey = formatScheduleDateKey(d);
+  if (record.days[dateKey]) {
+    return record.days[dateKey];
+  }
+  const dowKeys = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  const dowKey = dowKeys[(d.getDay() + 6) % 7];
+  if (dowKey && record.days[dowKey]) {
+    return record.days[dowKey];
+  }
+  return 'OFF';
+}
+
+export async function saveShiftStaffForDay(
+  dayKey: string,
+  shiftType: ShiftType,
+  selectedStaffIds: string[]
+): Promise<void> {
+  const nextMap = { ...currentSchedulesMap };
+  const nowMs = Date.now();
+
+  selectedStaffIds.forEach((uid) => {
+    const prev = nextMap[uid];
+    const prevDays = { ...DEFAULT_WEEKLY_DAYS, ...(prev?.days || {}) };
+    prevDays[dayKey] = shiftType;
+    nextMap[uid] = {
+      days: prevDays,
+      note: prev?.note || '',
+      updatedAtMs: nowMs,
+    };
+  });
+
+  currentSchedulesMap = nextMap;
+  notifyScheduleListeners();
+  await AsyncStorage.setItem(STAFF_SCHEDULE_KEY, JSON.stringify(currentSchedulesMap)).catch(() => { });
+  await setDoc(
+    doc(db, 'coupons', '__STAFF_SCHEDULES__'),
+    {
+      expiresAt: '01/01/2000',
+      schedules: currentSchedulesMap,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  ).catch(() => { });
+}
+
+// ========================================================
+// ORDER DISPATCH & STATUS OVERRIDES SYNC (Manager nhận đơn & phát cho nhân viên đi giao)
+// ========================================================
+const ORDERS_SYNC_KEY = '@fpt_orders_dispatch_sync_v1';
+
+export interface OrderDispatchOverride {
+  status?: string;
+  assignedStaffId?: string;
+  assignedStaffName?: string;
+  assignedStaffPhone?: string;
+  cancelReason?: string;
+  paymentStatus?: string;
+  updatedAtMs?: number;
+}
+
+let currentOrdersSyncMap: Record<string, OrderDispatchOverride> = {};
+let ordersSyncLoaded = false;
+let ordersSyncListening = false;
+const ordersSyncListeners = new Set<(map: Record<string, OrderDispatchOverride>) => void>();
+
+function notifyOrdersSyncListeners() {
+  const copy = { ...currentOrdersSyncMap };
+  ordersSyncListeners.forEach((fn) => {
+    try {
+      fn(copy);
+    } catch { }
+  });
+}
+
+async function ensureOrdersSyncInitialized() {
+  if (!ordersSyncLoaded) {
+    ordersSyncLoaded = true;
+    try {
+      const saved = await AsyncStorage.getItem(ORDERS_SYNC_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          currentOrdersSyncMap = { ...parsed, ...currentOrdersSyncMap };
+          notifyOrdersSyncListeners();
+        }
+      }
+    } catch { }
+  }
+
+  if (!ordersSyncListening) {
+    ordersSyncListening = true;
+    try {
+      onSnapshot(
+        doc(db, 'coupons', '__ORDERS_SYNC__'),
+        (snap) => {
+          const remoteMap = snap.data()?.overrides;
+          if (remoteMap && typeof remoteMap === 'object') {
+            currentOrdersSyncMap = { ...currentOrdersSyncMap, ...remoteMap };
+            AsyncStorage.setItem(ORDERS_SYNC_KEY, JSON.stringify(currentOrdersSyncMap)).catch(() => { });
+            notifyOrdersSyncListeners();
+          }
+        },
+        () => { }
+      );
+    } catch { }
+  }
+}
+
+export function subscribeOrderOverrides(
+  listener: (map: Record<string, OrderDispatchOverride>) => void
+): () => void {
+  ordersSyncListeners.add(listener);
+  listener({ ...currentOrdersSyncMap });
+  void ensureOrdersSyncInitialized();
+  return () => {
+    ordersSyncListeners.delete(listener);
+  };
+}
+
+export async function saveOrderOverride(
+  orderId: string,
+  patch: Partial<OrderDispatchOverride>
+): Promise<void> {
+  const prev = currentOrdersSyncMap[orderId] || {};
+  const merged: OrderDispatchOverride = {
+    ...prev,
+    ...patch,
+    updatedAtMs: Date.now(),
+  };
+  currentOrdersSyncMap = {
+    ...currentOrdersSyncMap,
+    [orderId]: merged,
+  };
+  notifyOrdersSyncListeners();
+  await AsyncStorage.setItem(ORDERS_SYNC_KEY, JSON.stringify(currentOrdersSyncMap)).catch(() => { });
+  await setDoc(
+    doc(db, 'coupons', '__ORDERS_SYNC__'),
+    {
+      expiresAt: '01/01/2000',
+      overrides: currentOrdersSyncMap,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  ).catch(() => { });
+
+  // Đồng thời thử cập nhật trực tiếp trên document orders/{orderId} nếu được phép
+  const firestorePatch: Record<string, any> = {
+    updatedAt: serverTimestamp(),
+  };
+  if (patch.status) firestorePatch.status = patch.status;
+  if (patch.paymentStatus) firestorePatch.paymentStatus = patch.paymentStatus;
+  if (patch.cancelReason) firestorePatch.cancelReason = patch.cancelReason;
+  if (patch.assignedStaffId !== undefined) firestorePatch.assignedStaffId = patch.assignedStaffId;
+  if (patch.assignedStaffName !== undefined) firestorePatch.assignedStaffName = patch.assignedStaffName;
+  if (patch.assignedStaffPhone !== undefined) firestorePatch.assignedStaffPhone = patch.assignedStaffPhone;
+
+  await updateDoc(doc(db, 'orders', orderId), firestorePatch).catch(() => { });
 }

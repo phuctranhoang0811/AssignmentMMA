@@ -14,7 +14,10 @@ export const isStaffRole = (role?: string) => STAFF_ROLES.includes(role ?? '');
 // Riders are an outside delivery party, not store staff: they get their own portal and API, nothing of the kitchen's.
 export const isRiderRole = (role?: string) => role === 'ROLE_RIDER';
 
+export const isManagerRole = (role?: string) => role === 'STORE_MANAGER';
+
 export function loginDestination(role?: string, returnTo?: string) {
+  if (isManagerRole(role)) return '/manager/dashboard';
   if (isAdminRole(role)) return returnTo === 'staff' ? '/staff/orders' : '/admin/dashboard';
   if (isRiderRole(role)) return '/rider';
   if (returnTo === 'staff' || isStaffRole(role)) return '/staff/orders';

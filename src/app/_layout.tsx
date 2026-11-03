@@ -79,6 +79,7 @@ export default function RootLayout() {
       <Stack.Screen name="offers" options={{ headerShown: false }} />
       <Stack.Screen name="staff" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="rider" options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="manager" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="admin" options={{ headerShown: false, gestureEnabled: false }} />
     </Stack>
   );
