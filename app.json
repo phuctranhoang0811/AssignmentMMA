@@ -11,10 +11,23 @@
       "expo-router",
       "expo-font",
       "expo-status-bar",
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "orders"
+        }
+      ],
       [
         "expo-location",
         {
           "locationWhenInUsePermission": "Cho phép Pizza FPT truy cập vị trí để xác định địa chỉ giao hàng chính xác."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cho phép Pizza FPT truy cập thư viện ảnh để tải hình món ăn lên thực đơn."
         }
       ]
     ],

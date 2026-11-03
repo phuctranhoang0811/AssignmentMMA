@@ -7,6 +7,17 @@ export const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  container: { flex: 1 },
+  content: { padding: 24, paddingBottom: 40, gap: 16 },
+  icon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FFF7ED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
   header: {
     height: 52,
     flexDirection: 'row',

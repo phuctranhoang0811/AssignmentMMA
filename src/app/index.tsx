@@ -6,12 +6,10 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
-import { useAuth } from '../state/AuthContext';
 import { styles } from '../styles/splash.styles';
 
 export default function SplashScreen() {
   const router = useRouter();
-  const { user, isLoading } = useAuth();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.96)).current;
 
@@ -21,23 +19,9 @@ export default function SplashScreen() {
       duration: 300,
       useNativeDriver: true,
     }).start(() => {
-      if (!isLoading && user) {
-        const isStaff =
-          user.role === 'EMPLOYEE' ||
-          user.role === 'STORE_MANAGER' ||
-          user.role === 'SUPER_ADMIN' ||
-          user.role === 'ADMIN';
-
-        if (isStaff) {
-          router.replace('/staff/orders');
-        } else {
-          router.replace('/(tabs)/home');
-        }
-      } else {
-        router.replace('/welcome');
-      }
+      router.replace('/welcome');
     });
-  }, [fadeAnim, router, user, isLoading]);
+  }, [fadeAnim, router]);
 
   useEffect(() => {
     Animated.parallel([

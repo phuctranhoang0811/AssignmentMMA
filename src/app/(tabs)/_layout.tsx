@@ -6,9 +6,10 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
+import { isAdminRole } from '../../utils/staff';
 import { triggerHaptic } from '../../utils/haptics';
 import { fontFamilies } from '../../theme/typography';
-import { styles, BRAND_RED } from '../../styles/tabsLayout.styles';
+import { styles, BRAND_RED, FLOATING_CART_OFFSET, FLOATING_CART_OFFSET_HOME } from '../../styles/tabsLayout.styles';
 
 // Custom Pizza Slice Icon for Menu Tab (matches user screenshot)
 const MenuPizzaIcon = ({ size = 22, color = '#6B7280' }: { size?: number; color?: any }) => (
@@ -34,10 +35,21 @@ const RewardBadgeIcon = ({ size = 22, color = '#6B7280' }: { size?: number; colo
 export default function TabsLayout() {
   const router = useRouter();
   const pathname = usePathname();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const isAdmin = isAdminRole(user?.role);
+
+  useEffect(() => {
+    if (isAdmin) {
+      router.replace('/admin/dashboard');
+    }
+  }, [isAdmin, router]);
   const { itemCount } = useCart();
   const insets = useSafeAreaInsets();
   const cartScaleAnim = useRef(new Animated.Value(itemCount > 0 ? 1 : 0)).current;
+
+  // Tài khoản Admin chỉ để quản lý: không dùng giao diện khách hàng (không mua hàng, không giỏ hàng).
+  // Bị đưa thẳng về Bảng quản trị nếu cố vào tab khách (back gesture, deep link, đổi role lúc đang mở app).
+  if (isAdmin) return null;
 
   const isAndroid = Platform.OS === 'android';
   const bottomInset = insets.bottom;
@@ -72,6 +84,7 @@ export default function TabsLayout() {
     }
   }, [showFloatingCart, itemCount, cartScaleAnim]);
 
+  if (isAdmin) return null;
   return (
     <View style={styles.container}>
       <Tabs
@@ -126,7 +139,7 @@ export default function TabsLayout() {
                 e.preventDefault();
                 router.push({
                   pathname: '/auth/login',
-                  params: { returnTo: 'profile' },
+                  params: { returnTo: 'rewards' },
                 });
               }
             },
@@ -163,7 +176,7 @@ export default function TabsLayout() {
           style={[
             styles.floatingCartWrap,
             {
-              bottom: isHome ? tabHeight + 68 : tabHeight + 14,
+              bottom: tabHeight + (isHome ? FLOATING_CART_OFFSET_HOME : FLOATING_CART_OFFSET),
               transform: [{ scale: cartScaleAnim }],
             },
           ]}

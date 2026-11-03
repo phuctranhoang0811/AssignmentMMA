@@ -13,4 +13,9 @@ module.exports = defineConfig([
       'react-hooks/purity': 'off',
     },
   },
+  {
+    // Jest hoists jest.mock factories above imports, so they load their dependencies with require().
+    files: ['**/__tests__/**', 'jest.setup.js'],
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
 ]);

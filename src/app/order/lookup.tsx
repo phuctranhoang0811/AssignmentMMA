@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,26 +6,88 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  Alert,
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Info, Package } from 'lucide-react-native';
+import { ChevronLeft, Info, XCircle } from 'lucide-react-native';
 import { db } from '../../services/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
+import { OrderTimeline } from '../../components/order/OrderTimeline';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { triggerHaptic } from '../../utils/haptics';
 import { styles, BRAND_RED } from '../../styles/orderLookup.styles';
+
+function getStatusText(status?: string): string {
+  switch (status) {
+    case 'PREPARING':
+      return 'Đang chuẩn bị';
+    case 'READY_FOR_PICKUP':
+    case 'OUT_FOR_DELIVERY':
+      return 'Đang giao hàng';
+    case 'DELIVERED':
+    case 'COMPLETED':
+      return 'Hoàn thành';
+    case 'CANCELLED':
+      return 'Đã hủy';
+    case 'PENDING_CONFIRMATION':
+    case 'CONFIRMED':
+    default:
+      return 'Đã đặt hàng';
+  }
+}
+
+function getOrderTimestampMs(order: any): number {
+  const createdAt = order?.createdAt;
+  if (!createdAt) return 0;
+  if (typeof createdAt?.toMillis === 'function') return createdAt.toMillis();
+  const sec = createdAt?.seconds ?? createdAt?._seconds;
+  if (typeof sec === 'number') return sec * 1000;
+  if (typeof createdAt === 'number') return createdAt;
+  const parsed = Date.parse(String(createdAt));
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function isOrderFromToday(order: any, nowMs: number = Date.now()): boolean {
+  const ts = getOrderTimestampMs(order);
+  if (!ts) return false;
+  const orderDate = new Date(ts);
+  const today = new Date(nowMs);
+  return (
+    orderDate.getFullYear() === today.getFullYear() &&
+    orderDate.getMonth() === today.getMonth() &&
+    orderDate.getDate() === today.getDate()
+  );
+}
+
+function isOrderFinished(order: any): boolean {
+  const status = String(order?.status ?? '').toUpperCase();
+  return ['COMPLETED', 'DELIVERED', 'CANCELLED'].includes(status);
+}
 
 export default function OrderLookupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [foundOrders, setFoundOrders] = useState<any[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const current = Date.now();
+      setFoundOrders((prev) =>
+        prev.filter((o) => isOrderFromToday(o, current) && !isOrderFinished(o))
+      );
+      setSelectedOrder((prev: any) =>
+        prev && isOrderFromToday(prev, current) && !isOrderFinished(prev) ? prev : null
+      );
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleSearch = async () => {
     const rawQuery = searchQuery.trim();
@@ -43,16 +105,21 @@ export default function OrderLookupScreen() {
     try {
       const ordersCol = collection(db, 'orders');
       const cleanCode = rawQuery.replace(/^#/, '').toUpperCase();
-      const foundOrders: any[] = [];
+      const matched: any[] = [];
 
-      // 1. Tìm chính xác theo mã đơn hàng
+      const currentNow = Date.now();
+
+      // 1. Tìm chính xác theo mã đơn hàng (chỉ lấy đơn khách vãng lai !data.userId trong ngày hôm nay và chưa hoàn thành)
       const codeQuery = query(ordersCol, where('orderCode', '==', cleanCode));
       const codeSnapshot = await getDocs(codeQuery);
       codeSnapshot.forEach((doc) => {
-        foundOrders.push({ id: doc.id, ...doc.data() });
+        const data = doc.data();
+        if (!data.userId && isOrderFromToday(data, currentNow) && !isOrderFinished(data)) {
+          matched.push({ id: doc.id, ...data });
+        }
       });
 
-      // 2. Tìm theo số điện thoại (chỉ tìm bằng SĐT hoặc Mã đơn hàng, KHÔNG tìm theo tên hay gmail)
+      // 2. Tìm theo số điện thoại (chỉ lấy đơn khách vãng lai !data.userId trong ngày hôm nay và chưa hoàn thành)
       const cleanDigits = rawQuery.replace(/\D/g, '');
       if (cleanDigits.length >= 8) {
         const phoneVariations = new Set<string>();
@@ -67,23 +134,29 @@ export default function OrderLookupScreen() {
           const phoneQuery = query(ordersCol, where('customer.phone', '==', phone));
           const phoneSnapshot = await getDocs(phoneQuery);
           phoneSnapshot.forEach((doc) => {
-            if (!foundOrders.some((o) => o.id === doc.id)) {
-              foundOrders.push({ id: doc.id, ...doc.data() });
+            const data = doc.data();
+            if (
+              !data.userId &&
+              isOrderFromToday(data, currentNow) &&
+              !isOrderFinished(data) &&
+              !matched.some((o) => o.id === doc.id)
+            ) {
+              matched.push({ id: doc.id, ...data });
             }
           });
         }
       }
 
       // Sắp xếp đơn mới nhất lên đầu
-      foundOrders.sort((a, b) => {
+      matched.sort((a, b) => {
         const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0;
         const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0;
         return timeB - timeA;
       });
 
-      if (foundOrders.length > 0) {
+      setFoundOrders(matched);
+      if (matched.length > 0) {
         triggerHaptic('success');
-        setSelectedOrder(foundOrders[0]);
       } else {
         triggerHaptic('warning');
       }
@@ -96,7 +169,7 @@ export default function OrderLookupScreen() {
   };
 
   // ==========================================================
-  // VIEW 1: TRANG CHI TIẾT ĐƠN HÀNG (GIỐNG HỆT SAU KHI ĐẶT HÀNG)
+  // VIEW 1: TRANG CHI TIẾT ĐƠN HÀNG (KHI BẤM VÀO Ô NHỎ)
   // ==========================================================
   if (selectedOrder) {
     return (
@@ -138,6 +211,20 @@ export default function OrderLookupScreen() {
             </Text>
           </View>
 
+          {selectedOrder.status && selectedOrder.status !== 'CANCELLED' && (
+            <View style={styles.infoCard}>
+              <OrderTimeline
+                status={selectedOrder.status}
+                fulfillmentType={
+                  ['takeaway', 'PICKUP'].includes(selectedOrder.fulfillmentType)
+                    ? 'PICKUP'
+                    : 'DELIVERY'
+                }
+                history={selectedOrder.statusHistory}
+              />
+            </View>
+          )}
+
           {/* Action Buttons */}
           <View style={styles.actionButtonsContainer}>
             <TouchableOpacity
@@ -159,13 +246,22 @@ export default function OrderLookupScreen() {
 
           {/* Card 1: Giao Đến */}
           <View style={styles.infoCard}>
-            <Text style={styles.infoCardTitle}>Giao Đến</Text>
+            <Text style={styles.infoCardTitle}>
+              {['TAKEAWAY', 'PICKUP'].includes(String(selectedOrder.fulfillmentType || '').toUpperCase())
+                ? 'Nhận tại cửa hàng'
+                : 'Giao đến'}
+            </Text>
             <Text style={styles.infoDeliveryTime}>
-              Thời gian nhận: {selectedOrder.deliveryTime || '10:30'}
+              Thời gian nhận: {selectedOrder.deliveryTime || 'Chưa có thời gian dự kiến'}
             </Text>
             <Text style={styles.infoText}>{selectedOrder.customer?.fullname || 'Khách hàng'}</Text>
             <Text style={styles.infoText}>{selectedOrder.customer?.phone || ''}</Text>
             <Text style={styles.infoText}>{selectedOrder.address || ''}</Text>
+            {typeof selectedOrder.needCutlery === 'boolean' && (
+              <Text style={styles.infoText}>
+                Muỗng nĩa nhựa: {selectedOrder.needCutlery ? 'Có' : 'Không'}
+              </Text>
+            )}
           </View>
 
           {/* Card 2: Phương thức thanh toán */}
@@ -182,7 +278,12 @@ export default function OrderLookupScreen() {
               Có {selectedOrder.itemCount || selectedOrder.items?.length || 0} sản phẩm trong giỏ hàng của bạn
             </Text>
             <Text style={styles.orderTimestampText}>
-              {selectedOrder.createdAtFormatted || '26/10/2026'}
+              {selectedOrder.createdAtFormatted ||
+                (selectedOrder.createdAt?.seconds
+                  ? new Date(selectedOrder.createdAt.seconds * 1000).toLocaleString('vi-VN')
+                  : selectedOrder.createdAt
+                  ? new Date(selectedOrder.createdAt).toLocaleString('vi-VN')
+                  : '')}
             </Text>
 
             {/* Product list */}
@@ -196,15 +297,24 @@ export default function OrderLookupScreen() {
                     <Text style={styles.orderItemQty}>{item.quantity || 1}</Text>
                     <Text style={styles.orderItemPrice}>
                       {formatCurrency(
-                        item.lineTotal || (item.unitPrice * (item.quantity || 1)) || 0
+                        item.lineTotal || item.unitPrice * (item.quantity || 1) || 0
                       )}
                     </Text>
                   </View>
                   <Text style={styles.orderItemOptions}>
-                    {Array.isArray(item.customizationSummary) && item.customizationSummary.length > 0
-                      ? item.customizationSummary.join(' • ')
-                      : item.variantName || 'Đế Truyền Thống'}
+                    {[
+                      item.variantName,
+                      ...(item.addonNames ?? []),
+                      ...(Array.isArray(item.customizationSummary)
+                        ? item.customizationSummary
+                        : [item.customizationSummary]),
+                    ]
+                      .filter(Boolean)
+                      .join(' • ')}
                   </Text>
+                  {!!item.note && (
+                    <Text style={styles.orderItemOptions}>Ghi chú bếp: {item.note}</Text>
+                  )}
                 </View>
               ))}
 
@@ -238,12 +348,9 @@ export default function OrderLookupScreen() {
             )}
 
             <View style={styles.pricingRow}>
-              <View style={styles.infoLabelWrap}>
-                <Text style={styles.pricingLabel}>Phí giao hàng</Text>
-                <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
-              </View>
+              <Text style={styles.pricingLabel}>Phí giao hàng</Text>
               <Text style={styles.pricingValue}>
-                {formatCurrency(selectedOrder.deliveryFee || 22000)}
+                {formatCurrency(selectedOrder.deliveryFee ?? 22000)}
               </Text>
             </View>
 
@@ -252,13 +359,15 @@ export default function OrderLookupScreen() {
             <View style={styles.totalRow}>
               <View>
                 <Text style={styles.totalLabel}>Tổng cộng</Text>
-                <Text style={styles.rewardPointsNote}>
-                  Nhận{' '}
-                  <Text style={{ fontWeight: '700', color: '#111827' }}>
-                    {selectedOrder.earnedPoints || Math.floor((selectedOrder.total || 0) / 10000)} điểm
-                  </Text>{' '}
-                  Hut rewards
-                </Text>
+                {!!selectedOrder.userId && (
+                  <Text style={styles.rewardPointsNote}>
+                    Nhận{' '}
+                    <Text style={{ fontWeight: '700', color: '#111827' }}>
+                      {selectedOrder.earnedPoints || Math.floor((selectedOrder.total || 0) / 10000)} điểm
+                    </Text>{' '}
+                    FPT Rewards
+                  </Text>
+                )}
               </View>
               <Text style={styles.totalValue}>
                 {formatCurrency(selectedOrder.total || 0)}
@@ -284,8 +393,10 @@ export default function OrderLookupScreen() {
     );
   }
 
+  const showNotFoundError = hasSearched && !isSearching && foundOrders.length === 0;
+
   // ==========================================================
-  // VIEW 2: FORM NHẬP TÌM KIẾM ĐƠN HÀNG (THEO ĐÚNG HÌNH BẠN GỬI)
+  // VIEW 2: FORM NHẬP TÌM KIẾM ĐƠN HÀNG (KHỚP HÌNH 2 & HÌNH 3)
   // ==========================================================
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -305,21 +416,57 @@ export default function OrderLookupScreen() {
         </View>
 
         {/* Content */}
-        <View style={[styles.container, { paddingBottom: Math.max(insets.bottom + 20, 32) }]}>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 20, 32) }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {/* Input field */}
-          <TextInput
-            style={styles.input}
-            placeholder="Nhập số điện thoại hoặc mã đơn hàng"
-            placeholderTextColor="#9CA3AF"
-            value={searchQuery}
-            onChangeText={(text) => {
-              setSearchQuery(text);
-              if (hasSearched) setHasSearched(false);
-            }}
-            returnKeyType="search"
-            onSubmitEditing={handleSearch}
-            autoCapitalize="none"
-          />
+          <View
+            style={[
+              styles.inputWrapper,
+              showNotFoundError && styles.inputWrapperError,
+            ]}
+          >
+            <TextInput
+              style={styles.input}
+              placeholder="Nhập số điện thoại hoặc mã đơn hàng"
+              placeholderTextColor="#9CA3AF"
+              value={searchQuery}
+              onChangeText={(text) => {
+                setSearchQuery(text);
+                if (hasSearched) {
+                  setHasSearched(false);
+                  setFoundOrders([]);
+                }
+              }}
+              returnKeyType="search"
+              onSubmitEditing={handleSearch}
+              autoCapitalize="characters"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                style={styles.clearBtn}
+                onPress={() => {
+                  setSearchQuery('');
+                  setHasSearched(false);
+                  setFoundOrders([]);
+                }}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <XCircle size={18} color="#6B7280" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Inline Error Text (Matching Screenshot 2) */}
+          {showNotFoundError && (
+            <Text style={styles.inlineErrorText}>
+              Không tìm thấy thông tin đơn hàng của bạn.
+            </Text>
+          )}
 
           {/* Action Buttons */}
           <TouchableOpacity
@@ -343,24 +490,67 @@ export default function OrderLookupScreen() {
             <Text style={styles.loginButtonText}>Đăng nhập để theo dõi đơn hàng</Text>
           </TouchableOpacity>
 
-          {/* Search Status / Empty State */}
+          {/* Search Status / Compact Order Cards */}
           {isSearching ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={BRAND_RED} />
               <Text style={styles.loadingText}>Đang tra cứu dữ liệu đơn hàng...</Text>
             </View>
-          ) : hasSearched && !selectedOrder ? (
-            <View style={styles.emptyContainer}>
-              <Package size={48} color="#D1D5DB" />
-              <Text style={styles.emptyTitle}>Không tìm thấy đơn hàng</Text>
-              <Text style={styles.emptyDesc}>
-                {`Không tìm thấy đơn hàng nào khớp với "${searchQuery}". Vui lòng kiểm tra lại chính xác số điện thoại hoặc mã đơn hàng (Ví dụ: #6X23DVAGVOO).`}
-              </Text>
+          ) : hasSearched && foundOrders.length > 0 ? (
+            <View style={styles.resultsList}>
+              {foundOrders.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.orderCardBox}
+                  activeOpacity={0.88}
+                  onPress={() => {
+                    triggerHaptic('light');
+                    setSelectedOrder(item);
+                  }}
+                >
+                  {/* Cột trái: Dự kiến giao hàng */}
+                  <View style={styles.cardLeftCol}>
+                    <Text style={styles.cardLeftLabel}>Dự kiến</Text>
+                    <Text style={styles.cardLeftLabel}>giao hàng</Text>
+                    <Text style={styles.cardLeftTime}>
+                      {item.deliveryTime && /^\d{1,2}:\d{2}/.test(item.deliveryTime)
+                        ? item.deliveryTime.slice(0, 5)
+                        : '10:30'}
+                    </Text>
+                  </View>
+
+                  {/* Cột phải: Thông tin đơn hàng */}
+                  <View style={styles.cardRightCol}>
+                    <View style={styles.cardRightTopRow}>
+                      <Text style={styles.cardOrderCode}>
+                        #{item.orderCode || item.id.slice(0, 8).toUpperCase()}
+                      </Text>
+                      <Text style={styles.cardOrderTotal}>
+                        {formatCurrency(item.total || 0)}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.cardOrderStatusText}>
+                      {getStatusText(item.status)}
+                    </Text>
+
+                    <Text style={styles.cardAddressText} numberOfLines={2}>
+                      <Text style={styles.cardBoldPrefix}>Giao đến: </Text>
+                      {item.address || 'Tại quán'}
+                    </Text>
+
+                    <Text style={styles.cardPaymentText} numberOfLines={1}>
+                      <Text style={styles.cardBoldPrefix}>Phương thức thanh toán: </Text>
+                      {item.paymentName || item.paymentMethod || 'Tiền mặt'}{' '}
+                      <Text style={styles.cardDetailLink}>Chi tiết</Text>
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
             </View>
           ) : null}
-        </View>
+        </ScrollView>
       </SafeAreaView>
     </TouchableWithoutFeedback>
   );
 }
-

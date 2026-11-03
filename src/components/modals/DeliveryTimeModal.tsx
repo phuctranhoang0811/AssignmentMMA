@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, ChevronDown } from 'lucide-react-native';
+import { X } from 'lucide-react-native';
+import { getDeliverySlots, isDeliveryTimeAvailable, formatDeliveryTime } from '../../utils/deliveryTime';
 import { colors } from '../../theme/colors';
 import { triggerHaptic } from '../../utils/haptics';
 
@@ -21,25 +22,6 @@ interface DeliveryTimeModalProps {
   onSelectTime: (time: string) => void;
 }
 
-// Danh sách các khung giờ từ 10:30 đến 21:30 cách nhau 15 phút (theo đúng hình mẫu của bạn)
-const DEFAULT_TIME_SLOTS = [
-  '10:30', '10:45', '11:00',
-  '11:15', '11:30', '11:45',
-  '12:00', '12:15', '12:30',
-  '12:45', '13:00', '13:15',
-  '13:30', '13:45', '14:00',
-  '14:15', '14:30', '14:45',
-  '15:00', '15:15', '15:30',
-  '15:45', '16:00', '16:15',
-  '16:30', '16:45', '17:00',
-  '17:15', '17:30', '17:45',
-  '18:00', '18:15', '18:30',
-  '18:45', '19:00', '19:15',
-  '19:30', '19:45', '20:00',
-  '20:15', '20:30', '20:45',
-  '21:00', '21:15', '21:30',
-];
-
 export function DeliveryTimeModal({
   visible,
   onClose,
@@ -47,15 +29,24 @@ export function DeliveryTimeModal({
   onSelectTime,
 }: DeliveryTimeModalProps) {
   const insets = useSafeAreaInsets();
-  const [tempTime, setTempTime] = useState(selectedTime || '10:30');
+  const [tempTime, setTempTime] = useState(selectedTime || 'asap');
+
+  const slots = useMemo(() => visible ? getDeliverySlots() : [], [visible]);
+  const days = [...new Map(slots.map(slot => [slot.day, slot.dayLabel])).entries()];
+  const [selectedDay, setSelectedDay] = useState(slots[0]?.day || '');
 
   useEffect(() => {
     if (visible) {
-      setTempTime(selectedTime || '10:30');
+      setTempTime(isDeliveryTimeAvailable(selectedTime) ? selectedTime : 'asap');
+      setSelectedDay(slots.find(slot => slot.value === selectedTime)?.day || slots[0]?.day || '');
     }
-  }, [visible, selectedTime]);
+  }, [visible, selectedTime, slots]);
 
   const handleApply = () => {
+    if (!isDeliveryTimeAvailable(tempTime)) {
+      setTempTime('asap');
+      return;
+    }
     triggerHaptic('medium');
     onSelectTime(tempTime);
     onClose();
@@ -103,12 +94,23 @@ export function DeliveryTimeModal({
 
           {/* Body */}
           <View style={styles.body}>
-            <Text style={styles.sectionLabel}>Thời gian</Text>
-
-            {/* Selector: Hẹn giờ giao */}
-            <View style={styles.selectorBox}>
-              <Text style={styles.selectorText}>Hẹn giờ giao</Text>
-              <ChevronDown size={20} color="#4B5563" />
+            <TouchableOpacity
+              accessibilityRole="radio"
+              accessibilityState={{ checked: tempTime === 'asap' }}
+              onPress={() => setTempTime('asap')}
+              style={[styles.selectorBox, tempTime === 'asap' && styles.slotItemSelected]}
+            >
+              <Text style={styles.selectorText}>{formatDeliveryTime('asap')}</Text>
+            </TouchableOpacity>
+            <Text style={styles.sectionLabel}>Hoặc hẹn giờ nhận (giờ Việt Nam)</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              {days.map(([day, label]) => (
+                <TouchableOpacity key={day} onPress={() => setSelectedDay(day)}
+                  accessibilityRole="tab" accessibilityState={{ selected: selectedDay === day }}
+                  style={[{ flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB' }, selectedDay === day && styles.slotItemSelected]}>
+                  <Text style={{ fontSize: 13, color: selectedDay === day ? colors.primary : '#374151' }}>{label}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
             {/* Time Slot Grid */}
@@ -117,16 +119,16 @@ export function DeliveryTimeModal({
               contentContainerStyle={styles.slotsGrid}
               showsVerticalScrollIndicator={false}
             >
-              {DEFAULT_TIME_SLOTS.map((slot) => {
-                const isSelected = tempTime === slot;
+              {slots.filter(slot => slot.day === selectedDay).map((slot) => {
+                const isSelected = tempTime === slot.value;
                 return (
                   <TouchableOpacity
-                    key={slot}
+                    key={slot.value}
                     style={[
                       styles.slotItem,
                       isSelected && styles.slotItemSelected,
                     ]}
-                    onPress={() => handleSelectSlot(slot)}
+                    onPress={() => handleSelectSlot(slot.value)}
                     activeOpacity={0.7}
                   >
                     <Text
@@ -135,7 +137,7 @@ export function DeliveryTimeModal({
                         isSelected && styles.slotTextSelected,
                       ]}
                     >
-                      {slot}
+                      {slot.time}
                     </Text>
                   </TouchableOpacity>
                 );

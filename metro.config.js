@@ -1,5 +1,10 @@
 const { getDefaultConfig } = require('expo/metro-config');
-const nodemailer = require('nodemailer');
+let nodemailer;
+try {
+  nodemailer = require('nodemailer');
+} catch {
+  nodemailer = require('./backend/node_modules/nodemailer');
+}
 
 const config = getDefaultConfig(__dirname);
 

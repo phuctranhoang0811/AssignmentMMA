@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,27 +8,22 @@ import {
   RefreshControl,
   Modal,
   Pressable,
-  useWindowDimensions,
-  Alert,
   Linking,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useContentWidth } from '../../utils/layout';
 import {
   Bell,
   MapPin,
   ChevronRight,
   Plus,
-  ChevronUp,
   ChevronDown,
-  ShoppingBag,
-  Check,
 } from 'lucide-react-native';
 import { productService } from '../../services';
-import { Product, CategoryId } from '../../types/product';
-import { mockCategories } from '../../data/mockCategories';
-import { mockProducts } from '../../data/mockProducts';
+import { Product } from '../../types/product';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
@@ -144,30 +139,26 @@ const TermsDocsSvg = () => (
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { addItem, itemCount, subtotal } = useCart();
+  const { fulfillmentType: fulfillmentMode, setFulfillmentType: setFulfillmentMode } = useCart();
   const { showToast } = useToast();
-  const { width: windowWidth } = useWindowDimensions();
-  const bannerWidth = Math.min(windowWidth - 32, 450);
+  // Width of the screen's own column (phone, desktop-web frame or tablet column), minus side padding.
+  const bannerWidth = useContentWidth() - 32;
   const bannerScrollRef = useRef<any>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
   const [refreshing, setRefreshing] = useState(false);
 
   // Store Location / Address Autocomplete Modal
   const [showStoreLocationModal, setShowStoreLocationModal] = useState(false);
   const [currentAddress, setCurrentAddress] = useState('');
-  const [fulfillmentMode, setFulfillmentMode] = useState<'delivery' | 'takeaway'>('delivery');
 
+  // Re-read when the account changes: logging out clears the saved address.
   useEffect(() => {
-    getSavedDeliveryAddress().then((saved) => {
-      if (saved) setCurrentAddress(saved);
-    });
-  }, []);
+    getSavedDeliveryAddress().then((saved) => setCurrentAddress(saved || ''));
+  }, [user?.id]);
 
   // Lunch Combo 3/4 Sheet State
   const [showLunchSheet, setShowLunchSheet] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Carousel banner index
   const [bannerIndex, setBannerIndex] = useState(0);
@@ -204,40 +195,43 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  const loadData = useCallback(async (cat: CategoryId = selectedCategory) => {
+  const loadData = useCallback(async () => {
     try {
-      const list = await productService.list({
-        categoryId: cat === 'all' ? undefined : cat,
-      });
+      const list = await productService.list();
       setProducts(list);
+    } catch {
+      // Keep whatever was shown before; pulling down to refresh tries again.
     } finally {
       setRefreshing(false);
     }
-  }, [selectedCategory]);
+  }, []);
 
   useEffect(() => {
-    loadData(selectedCategory);
-  }, [loadData, selectedCategory]);
+    loadData();
+  }, [loadData]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadData(selectedCategory);
+    loadData();
   };
 
-  const favoritePizzas = products.slice(0, 4);
+  const popularPizzas = useMemo(
+    () => products.filter((p) => p.isPopular && p.isAvailable),
+    [products]
+  );
+  const favoritePizzas = popularPizzas.length > 0 ? popularPizzas.slice(0, 6) : products.slice(0, 4);
 
-  const lunchCombos = mockProducts.filter(
+  const lunchCombos = products.filter(
     (p) => p.tags?.includes('Combo Trưa') || p.id.startsWith('CB')
   );
 
   const handleAddCombo = (combo: Product) => {
-    addItem({
-      productId: combo.id,
-      quantity: 1,
-      addonIds: [],
-    });
+    triggerHaptic('light');
     setShowLunchSheet(false);
-    router.push('/(tabs)/cart');
+    router.push({
+      pathname: '/product/[id]',
+      params: { id: combo.id },
+    });
   };
 
   return (
@@ -270,7 +264,7 @@ export default function HomeScreen() {
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <Bell size={24} color="#1E2024" strokeWidth={1.8} />
-          <View style={styles.bellBadge}>
+          <View style={[styles.bellBadge, (!user || user.isDemo) && { display: 'none' }]}>
             <Text style={styles.bellBadgeText}>1</Text>
           </View>
         </TouchableOpacity>
@@ -347,7 +341,11 @@ export default function HomeScreen() {
         {/* GREETING & LOCATION (Chào mừng bạn trở lại)              */}
         {/* ======================================================== */}
         <View style={styles.greetingSection}>
-          <Text style={styles.greetingTitle}>Chào mừng bạn trở lại</Text>
+          <Text style={styles.greetingTitle} numberOfLines={1}>
+            {user && !user.isDemo && user.fullname
+              ? `Chào ${user.fullname.trim().split(/\s+/).pop()}, mừng bạn trở lại`
+              : 'Chào mừng bạn đến Pizza FPT'}
+          </Text>
           <Text style={styles.greetingSubtitle}>
             Chọn địa chỉ nhận hàng để bắt đầu đặt món
           </Text>
@@ -361,7 +359,7 @@ export default function HomeScreen() {
               <MapPin size={20} color={BRAND_RED} />
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.locationLabel}>Địa chỉ nhận hàng</Text>
+              <Text style={styles.locationLabel}>{fulfillmentMode === 'takeaway' ? 'Nhận tại cửa hàng (Mua mang về)' : 'Địa chỉ nhận hàng'}</Text>
               <Text
                 style={[
                   styles.locationDetail,
@@ -389,7 +387,18 @@ export default function HomeScreen() {
           contentContainerStyle={styles.horizontalPizzaScroll}
         >
           {favoritePizzas.map((item) => (
-            <View key={item.id} style={styles.pizzaCard}>
+            <TouchableOpacity
+              key={item.id}
+              style={styles.pizzaCard}
+              activeOpacity={0.88}
+              onPress={() => {
+                triggerHaptic('light');
+                router.push({
+                  pathname: '/product/[id]',
+                  params: { id: item.id },
+                });
+              }}
+            >
               <Image
                 source={{ uri: item.image }}
                 style={styles.pizzaCardImg}
@@ -406,18 +415,14 @@ export default function HomeScreen() {
                   </View>
                   <TouchableOpacity
                     style={styles.addBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Xem chi tiết ${item.name}`}
                     activeOpacity={0.8}
                     onPress={() => {
-                      addItem({
-                        productId: item.id,
-                        quantity: 1,
-                        addonIds: [],
-                      });
-                      triggerHaptic('success');
-                      showToast({
-                        message: `Đã thêm ${item.name} vào giỏ hàng`,
-                        actionText: 'Xem giỏ',
-                        onAction: () => router.push('/(tabs)/cart'),
+                      triggerHaptic('medium');
+                      router.push({
+                        pathname: '/product/[id]',
+                        params: { id: item.id },
                       });
                     }}
                   >
@@ -425,7 +430,7 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
           ))}
         </ScrollView>
 
@@ -434,7 +439,11 @@ export default function HomeScreen() {
         {/* ======================================================== */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Menu</Text>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/menu')}>
+          <TouchableOpacity
+            onPress={() =>
+              router.push({ pathname: '/(tabs)/menu', params: { category: 'all' } })
+            }
+          >
             <Text style={styles.viewMoreText}>Xem thêm</Text>
           </TouchableOpacity>
         </View>
@@ -444,11 +453,11 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.menuPromoScroll}
         >
-          {/* Card 1: KIDS MENU */}
+          {/* Card 1: TIỆC CHEESE */}
           <TouchableOpacity
             style={styles.menuPromoCard}
             activeOpacity={0.85}
-            onPress={() => router.push('/(tabs)/menu')}
+            onPress={() => router.push({ pathname: '/(tabs)/menu', params: { category: 'cheese_party' } })}
           >
             <Image
               source={{
@@ -459,7 +468,7 @@ export default function HomeScreen() {
             />
             <View style={styles.menuPromoLabelBox}>
               <Text style={styles.menuPromoLabelText} numberOfLines={1}>
-                KIDS MENU
+                TIỆC CHEESE
               </Text>
             </View>
           </TouchableOpacity>
@@ -468,7 +477,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.menuPromoCard}
             activeOpacity={0.85}
-            onPress={() => router.push('/offers')}
+            onPress={() => router.push({ pathname: '/(tabs)/menu', params: { category: 'member_deals' } })}
           >
             <View style={styles.memberDealGraphic}>
               <Text style={styles.memberDealTopText}>
@@ -480,33 +489,33 @@ export default function HomeScreen() {
             </View>
             <View style={styles.menuPromoLabelBox}>
               <Text style={styles.menuPromoLabelText} numberOfLines={1}>
-                GIÁ ƯU ĐÃI THÀN...
+                THÀNH VIÊN
               </Text>
             </View>
           </TouchableOpacity>
 
-          {/* Card 3: MY BOX */}
+          {/* Card 3: DEAL NÓNG 70% */}
           <TouchableOpacity
             style={styles.menuPromoCard}
             activeOpacity={0.85}
-            onPress={() => router.push('/(tabs)/menu')}
+            onPress={() => router.push({ pathname: '/(tabs)/menu', params: { category: 'hot_deals' } })}
           >
             <View style={styles.myBoxGraphic}>
-              <Text style={styles.myBoxTitle}>MY BOX</Text>
-              <Text style={styles.myBoxSub}>COMBO 1 NGƯỜI</Text>
+              <Text style={styles.myBoxTitle}>DEAL HOT</Text>
+              <Text style={styles.myBoxSub}>GIẢM ĐẾN 70%</Text>
             </View>
             <View style={styles.menuPromoLabelBox}>
               <Text style={styles.menuPromoLabelText} numberOfLines={1}>
-                MY BOX
+                DEAL HOT 70%
               </Text>
             </View>
           </TouchableOpacity>
 
-          {/* Card 4: COMBO NHÓM */}
+          {/* Card 4: PIZZA */}
           <TouchableOpacity
             style={styles.menuPromoCard}
             activeOpacity={0.85}
-            onPress={() => router.push('/(tabs)/menu')}
+            onPress={() => router.push({ pathname: '/(tabs)/menu', params: { category: 'pizza' } })}
           >
             <Image
               source={{
@@ -517,7 +526,7 @@ export default function HomeScreen() {
             />
             <View style={styles.menuPromoLabelBox}>
               <Text style={styles.menuPromoLabelText} numberOfLines={1}>
-                COMBO NHÓM
+                PIZZA
               </Text>
             </View>
           </TouchableOpacity>
@@ -532,7 +541,7 @@ export default function HomeScreen() {
             style={styles.actionCard}
             activeOpacity={0.72}
             onPress={() => {
-              if (user) {
+              if (user && !user.isDemo) {
                 router.push('/order/tracking');
               } else {
                 router.push('/order/lookup');
@@ -555,7 +564,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.actionCard}
             activeOpacity={0.72}
-            onPress={() => setShowStoreLocationModal(true)}
+            onPress={() => { setFulfillmentMode('takeaway'); setShowStoreLocationModal(true); }}
           >
             <View style={styles.actionIconBox}>
               <StoreLocationSvg />
@@ -700,6 +709,8 @@ export default function HomeScreen() {
 
                         <TouchableOpacity
                           style={styles.simpleAddBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Thêm ${combo.name} vào giỏ`}
                           activeOpacity={0.8}
                           onPress={() => handleAddCombo(combo)}
                         >
@@ -726,7 +737,7 @@ export default function HomeScreen() {
           saveDeliveryAddress(addr);
           setFulfillmentMode(mode);
           showToast({
-            message: mode === 'delivery' ? `Đã chọn giao tới: ${addr}` : 'Đã chọn mua mang về',
+            message: mode === 'delivery' ? `Đã chọn giao tới: ${addr}` : `Đã chọn mua mang về: ${addr}`,
             type: 'success',
           });
         }}

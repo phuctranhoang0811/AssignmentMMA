@@ -24,7 +24,7 @@ export const QuantityStepper: React.FC<QuantityStepperProps> = ({
   const isMin = value <= min;
   const isMax = value >= max;
 
-  const btnSize = size === 'sm' ? 28 : 34;
+  const btnSize = size === 'sm' ? 36 : 44;
   const iconSize = size === 'sm' ? 14 : 16;
 
   const handleDecrement = () => {
@@ -42,6 +42,9 @@ export const QuantityStepper: React.FC<QuantityStepperProps> = ({
   return (
     <View style={styles.container}>
       <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Giảm số lượng"
+        accessibilityState={{ disabled: isMin }}
         activeOpacity={0.7}
         disabled={isMin}
         onPress={handleDecrement}
@@ -64,6 +67,9 @@ export const QuantityStepper: React.FC<QuantityStepperProps> = ({
       </View>
 
       <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Tăng số lượng"
+        accessibilityState={{ disabled: isMax }}
         activeOpacity={0.7}
         disabled={isMax}
         onPress={handleIncrement}

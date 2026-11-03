@@ -1,9 +1,23 @@
 import { StyleSheet } from 'react-native';
 import { colors } from '../theme/colors';
+import { NATIVE_COLUMN_WIDTH, WEB_FRAME_WIDTH } from '../utils/layout';
 
 export const styles = StyleSheet.create({
   mobileContainer: {
     flex: 1,
+    backgroundColor: colors.background,
+  },
+  mobileContent: {
+    flex: 1,
+  },
+  // Native tablets: keep the phone-designed screens readable in a centered column.
+  tabletCanvas: {
+    alignItems: 'center',
+    backgroundColor: '#EAEAE5',
+  },
+  tabletColumn: {
+    width: '100%',
+    maxWidth: NATIVE_COLUMN_WIDTH,
     backgroundColor: colors.background,
   },
   desktopCanvas: {
@@ -16,7 +30,7 @@ export const styles = StyleSheet.create({
   phoneFrame: {
     flex: 1,
     width: '100%',
-    maxWidth: 450,
+    maxWidth: WEB_FRAME_WIDTH,
     backgroundColor: colors.background,
     overflow: 'hidden',
     height: '100%',

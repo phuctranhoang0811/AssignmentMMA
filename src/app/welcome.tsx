@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -14,29 +14,19 @@ import { styles } from '../styles/welcome.styles';
 export default function WelcomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, isLoading } = useAuth();
+  const { user, logout } = useAuth();
 
-  useEffect(() => {
-    if (!isLoading && user) {
-      const isStaff =
-        user.role === 'EMPLOYEE' ||
-        user.role === 'STORE_MANAGER' ||
-        user.role === 'SUPER_ADMIN' ||
-        user.role === 'ADMIN';
-
-      if (isStaff) {
-        router.replace('/staff/orders');
-      } else {
-        router.replace('/(tabs)/home');
-      }
+  const handleLogin = async () => {
+    if (user) {
+      await logout();
     }
-  }, [user, isLoading, router]);
-
-  const handleLogin = () => {
     router.push('/auth/login');
   };
 
-  const handleGuest = () => {
+  const handleGuest = async () => {
+    if (user) {
+      await logout();
+    }
     router.replace('/(tabs)/home');
   };
 

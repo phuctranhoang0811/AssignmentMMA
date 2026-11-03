@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from './AuthContext';
 
 interface FavoritesContextType {
   favoriteIds: string[];
@@ -12,8 +13,18 @@ const FAVORITES_STORAGE_KEY = '@pizza_time_favorites_v1';
 const FavoritesContext = createContext<FavoritesContextType>({} as FavoritesContextType);
 
 export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [favoriteIds, setFavoriteIds] = useState<string[]>(['PZ001', 'PA001']);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const { user } = useAuth();
+  const account = user && !user.isDemo ? user.id : null;
+  const previousAccount = useRef<string | null | undefined>(undefined);
+
+  // Favorites are stored per device; when a real account signs out or another signs in,
+  // drop the previous person's list. (A guest who signs in keeps what they picked.)
+  useEffect(() => {
+    if (previousAccount.current && previousAccount.current !== account) setFavoriteIds([]);
+    previousAccount.current = account;
+  }, [account]);
 
   useEffect(() => {
     (async () => {

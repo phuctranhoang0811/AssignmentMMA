@@ -94,14 +94,14 @@ export const styles = StyleSheet.create({
   /* Scroll and Content */
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 20,
+    paddingTop: 16,
     paddingBottom: 40,
   },
   stepContent: {
     width: '100%',
   },
   fieldGroup: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   fieldLabel: {
     fontSize: 14.5,
@@ -145,26 +145,28 @@ export const styles = StyleSheet.create({
   },
 
   /* Date Row in Step 2 */
-  dateRow: {
+  dateBox: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  datePickerBtn: {
-    flex: 1,
-    marginHorizontal: 3,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#D1D5DB',
     borderRadius: 8,
     height: 48,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingHorizontal: 14,
     backgroundColor: '#FFFFFF',
   },
-  datePickerBtnText: {
-    fontSize: 14,
+  dateInput: {
+    fontSize: 15,
     color: '#1E2024',
+    padding: 0,
+    textAlign: 'center',
+  },
+  dateInputShort: { width: 32 },
+  dateInputYear: { width: 48 },
+  dateSeparator: {
+    fontSize: 15,
+    color: '#9CA3AF',
+    marginHorizontal: 6,
   },
 
   /* Checkboxes in Step 3 */
@@ -203,11 +205,11 @@ export const styles = StyleSheet.create({
   /* Primary Button */
   primaryBtn: {
     backgroundColor: BRAND_RED,
-    height: 48,
+    height: 44,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 18,
+    marginTop: 6,
   },
   primaryBtnText: {
     color: '#FFFFFF',

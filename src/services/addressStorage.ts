@@ -18,7 +18,7 @@ AsyncStorage.multiRemove([
   '@pizza_has_chosen_address_v3',
   '@pizza_checkout_customer_info',
   '@pizza_checkout_customer_info_v2',
-]).catch(() => {});
+]).catch(() => { });
 
 /**
  * Xóa sạch hoàn toàn dữ liệu địa chỉ trong Local Storage
@@ -87,15 +87,21 @@ export type SavedCustomerInfo = {
 
 const CUSTOMER_INFO_KEY = '@pizza_checkout_guest_info_v3';
 
+let cachedCustomerInfo: SavedCustomerInfo | null = null;
+
 /**
  * Lấy thông tin người đặt hàng đã lưu trong máy
  */
 export async function getSavedCustomerInfo(): Promise<SavedCustomerInfo | null> {
   try {
     const raw = await AsyncStorage.getItem(CUSTOMER_INFO_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed) {
+      cachedCustomerInfo = { ...cachedCustomerInfo, ...parsed };
+    }
+    return cachedCustomerInfo || parsed;
   } catch {
-    return null;
+    return cachedCustomerInfo;
   }
 }
 
@@ -104,19 +110,23 @@ export async function getSavedCustomerInfo(): Promise<SavedCustomerInfo | null> 
  */
 export async function saveCustomerInfo(info: Partial<SavedCustomerInfo>): Promise<void> {
   try {
-    const existing = (await getSavedCustomerInfo()) || {};
-    const updated = { ...existing, ...info };
-    await AsyncStorage.setItem(CUSTOMER_INFO_KEY, JSON.stringify(updated));
+    if (!cachedCustomerInfo) {
+      const raw = await AsyncStorage.getItem(CUSTOMER_INFO_KEY);
+      cachedCustomerInfo = raw ? JSON.parse(raw) : {};
+    }
+    cachedCustomerInfo = { ...cachedCustomerInfo, ...info };
+    await AsyncStorage.setItem(CUSTOMER_INFO_KEY, JSON.stringify(cachedCustomerInfo));
   } catch {
     // Bỏ qua lỗi
   }
 }
 
 /**
- * Xóa sạch thông tin khách hàng đã lưu (gọi khi đăng xuất tài khoản)
+ * Xóa sạch thông tin khách hàng đã lưu
  */
 export async function clearCustomerInfo(): Promise<void> {
   try {
+    cachedCustomerInfo = null;
     await AsyncStorage.multiRemove([
       CUSTOMER_INFO_KEY,
       '@pizza_checkout_customer_info_v2',
@@ -126,5 +136,3 @@ export async function clearCustomerInfo(): Promise<void> {
     // Bỏ qua lỗi
   }
 }
-
-

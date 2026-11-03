@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Switch } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Bell, Globe, RotateCcw, AlertTriangle, ChefHat, Sparkles } from 'lucide-react-native';
@@ -89,6 +90,9 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Demo tools never ship in a release build. */}
+        {__DEV__ && (
+          <>
         {/* Developer Demo Sandbox */}
         <View style={styles.section}>
           <View style={styles.devHeaderRow}>
@@ -119,7 +123,7 @@ export default function SettingsScreen() {
 
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => router.push('/demo/staff-orders')}
+              onPress={() => router.push('/staff/orders')}
               style={[styles.row, { borderBottomWidth: 0 }]}
             >
               <View style={styles.rowLeft}>
@@ -150,6 +154,8 @@ export default function SettingsScreen() {
             Tải lại 4 đơn mẫu ban đầu & xóa bộ nhớ đệm giả lập
           </AppText>
         </View>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

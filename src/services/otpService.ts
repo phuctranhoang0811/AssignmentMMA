@@ -1,17 +1,20 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+type OtpResult = { success: true } | { success: false; error: string };
+
+const pendingOtpByEmail = new Map<string, { code: string; expiresAt: number }>();
+
 /**
- * Lấy danh sách các URL tiềm năng có thể kết nối đến server Metro /api/send-otp
+ * Lấy danh sách các URL tiềm năng có thể kết nối đến server gửi OTP (/api/send-otp)
  */
 export function getCandidateBaseUrls(): string[] {
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
-    return [window.location.origin];
+    return [window.location.origin, 'http://localhost:3002'];
   }
 
   const list: string[] = [];
 
-  // Lấy các thuộc tính host có thể có từ Expo
   const rawSources: any[] = [
     Constants.expoConfig?.hostUri,
     (Constants as any).expoGoConfig?.debuggerHost,
@@ -24,7 +27,6 @@ export function getCandidateBaseUrls(): string[] {
   for (const src of rawSources) {
     if (!src || typeof src !== 'string') continue;
 
-    // Loại bỏ protocol (exp://, exps://, http://, https://) và path đằng sau
     const cleaned = src
       .replace(/^(exp|exps|http|https):\/\//i, '')
       .split('/')[0]
@@ -33,55 +35,43 @@ export function getCandidateBaseUrls(): string[] {
     if (!cleaned) continue;
 
     if (cleaned.includes('exp.direct')) {
-      // ĐÂY LÀ TUNNEL EXPO (ngrok / Cloudflare Tunnel):
-      // Tunnel của Expo chuyển tiếp cổng tiêu chuẩn 443 (HTTPS), KHÔNG dùng cổng :8081 bên ngoài!
       const hostOnly = cleaned.replace(/:\d+$/, '');
       list.push(`https://${hostOnly}`);
       list.push(`http://${hostOnly}`);
     } else {
-      // ĐÂY LÀ MẠNG NỘI BỘ (LAN Wi-Fi) HOẶC EMULATOR:
+      const hostOnly = cleaned.split(':')[0];
       const hostAndPort = cleaned.includes(':') ? cleaned : `${cleaned}:8081`;
+      list.push(`http://${hostOnly}:3002`);
       list.push(`http://${hostAndPort}`);
     }
   }
 
-  // Dự phòng theo IP máy tính hiện tại (Wi-Fi) và localhost
+  list.push('http://192.168.1.174:3002');
   list.push('http://192.168.1.174:8081');
+  list.push('http://localhost:3002');
   list.push('http://localhost:8081');
-  list.push('http://10.0.2.2:8081');
+  if (Platform.OS === 'android') {
+    list.push('http://10.0.2.2:3002');
+    list.push('http://10.0.2.2:8081');
+  }
 
-  // Lọc trùng lặp nhưng giữ nguyên thứ tự ưu tiên
   return Array.from(new Set(list));
 }
 
-/**
- * Tạo mã OTP ngẫu nhiên 4 chữ số (từ 1000 đến 9999)
- */
 export function generateOtpCode(): string {
   return Math.floor(1000 + Math.random() * 9000).toString();
 }
 
-/**
- * Gửi mã OTP đến Gmail người dùng qua endpoint Metro /api/send-otp
- * Tự động thử các URL kết nối phù hợp (Tunnel, LAN, Localhost)
- */
-export async function sendOtpToEmail(
-  email: string,
-  otp: string
-): Promise<{ success: boolean; error?: string }> {
-  const candidateUrls = getCandidateBaseUrls();
+export async function sendOtpToEmail(email: string, customOtp?: string): Promise<OtpResult> {
   const normalizedEmail = email.trim().toLowerCase();
-  let lastError = 'Không thể kết nối đến máy chủ gửi email.';
-
-  console.log('[OTP Service] Bắt đầu gửi OTP đến:', normalizedEmail);
-  console.log('[OTP Service] Danh sách URL thử nghiệm:', candidateUrls);
+  const otp = customOtp || generateOtpCode();
+  const candidateUrls = getCandidateBaseUrls();
+  let lastError = 'Không thể kết nối đến máy chủ gửi email. Hãy tắt và bật lại npx expo start.';
 
   for (const baseUrl of candidateUrls) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
-      console.log(`[OTP Service] Thử gửi qua: ${baseUrl}/api/send-otp`);
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout cho mỗi URL thử
-
       const res = await fetch(`${baseUrl}/api/send-otp`, {
         method: 'POST',
         headers: {
@@ -94,21 +84,25 @@ export async function sendOtpToEmail(
 
       clearTimeout(timeoutId);
 
-      const data = await res.json();
-      if (res.ok && data.success) {
-        console.log(`[OTP Service] Gửi thành công qua: ${baseUrl}`);
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        continue;
+      }
+
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        pendingOtpByEmail.set(normalizedEmail, {
+          code: otp,
+          expiresAt: Date.now() + 5 * 60 * 1000,
+        });
         return { success: true };
       }
 
-      if (data && data.error) {
+      if (data?.error) {
         lastError = data.error;
       }
-    } catch (err: any) {
-      console.warn(`[OTP Service] Thất bại khi gọi ${baseUrl}:`, err.message);
-      lastError =
-        err.name === 'AbortError'
-          ? 'Quá thời gian kết nối'
-          : err.message || 'Lỗi kết nối';
+    } catch {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -116,4 +110,22 @@ export async function sendOtpToEmail(
     success: false,
     error: lastError,
   };
+}
+
+export async function verifyOtp(email: string, code: string): Promise<OtpResult> {
+  const normalizedEmail = email.trim().toLowerCase();
+  const pending = pendingOtpByEmail.get(normalizedEmail);
+
+  if (pending) {
+    if (Date.now() > pending.expiresAt) {
+      pendingOtpByEmail.delete(normalizedEmail);
+      return { success: false, error: 'Mã xác nhận đã hết hạn. Vui lòng gửi lại mã mới.' };
+    }
+    if (pending.code === code.trim()) {
+      return { success: true };
+    }
+    return { success: false, error: 'Mã xác nhận không chính xác. Vui lòng kiểm tra lại.' };
+  }
+
+  return { success: false, error: 'Vui lòng bấm gửi lại mã OTP.' };
 }

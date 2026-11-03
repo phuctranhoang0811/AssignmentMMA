@@ -37,7 +37,7 @@ class MockOrderService implements OrderService {
     await delay(demoConfig.simulatedLatencyMs);
     const orders = await this.loadOrders();
     if (userId) {
-      return orders.filter((o) => !o.userId || o.userId === userId);
+      return orders.filter((o) => o.userId === userId);
     }
     return orders;
   }
@@ -50,6 +50,9 @@ class MockOrderService implements OrderService {
   }
 
   async create(input: CreateOrderInput): Promise<Order> {
+    if (input.paymentMethod === 'PAYOS') {
+      throw new Error('Vui lòng thanh toán payOS qua màn hình QR.');
+    }
     await delay(demoConfig.simulatedLatencyMs);
 
     if (demoConfig.simulatedFailureRate > 0 && Math.random() < demoConfig.simulatedFailureRate) {
@@ -88,11 +91,12 @@ class MockOrderService implements OrderService {
       userId: input.userId,
       customer: input.customer,
       fulfillmentType: input.fulfillmentType,
+      needCutlery: input.needCutlery ?? false,
       address: input.address,
       items: snapshots,
       status: 'PENDING_CONFIRMATION',
       paymentMethod: input.paymentMethod,
-      paymentStatus: input.paymentMethod === 'MOCK_WALLET' ? 'PAID_DEMO' : 'UNPAID',
+      paymentStatus: 'UNPAID',
       subtotal: totals.subtotal,
       discount: totals.discount,
       deliveryFee: totals.deliveryFee,
@@ -183,7 +187,7 @@ class MockOrderService implements OrderService {
     const updatedOrder: Order = {
       ...order,
       status: nextStatus,
-      paymentStatus: nextStatus === 'COMPLETED' ? 'PAID_DEMO' : order.paymentStatus,
+      paymentStatus: nextStatus === 'COMPLETED' && order.paymentMethod === 'COD' ? 'PAID_DEMO' : order.paymentStatus,
       statusHistory: [
         ...order.statusHistory,
         {

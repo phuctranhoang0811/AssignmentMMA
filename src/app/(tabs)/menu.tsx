@@ -18,6 +18,7 @@ import { Search, Plus, X } from 'lucide-react-native';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { triggerHaptic } from '../../utils/haptics';
 import { hasPromptedMemberDiscount, setPromptedMemberDiscount } from '../../utils/sessionFlags';
+import { memberDiscountLabel } from '../../utils/memberDiscount';
 import { productService } from '../../services';
 import { Product, CategoryId } from '../../types/product';
 import { mockCategories } from '../../data/mockCategories';
@@ -143,11 +144,11 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
 
   return (
     <View style={styles.cardOuter}>
-      {/* Red Member Discount Badge */}
-      {!!product.memberDiscountTag && (
+      {/* Red Member Discount Badge — hiển thị % giảm + giá sau giảm */}
+      {!!memberDiscountLabel(product) && (
         <View style={styles.memberTagWrapper}>
           <View style={styles.memberTag}>
-            <Text style={styles.memberTagText}>{product.memberDiscountTag}</Text>
+            <Text style={styles.memberTagText}>{memberDiscountLabel(product)}</Text>
           </View>
         </View>
       )}
@@ -223,7 +224,10 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
 };
 
 export default function MenuScreen() {
-  const { promptMemberDiscount } = useLocalSearchParams<{ promptMemberDiscount?: string }>();
+  const { promptMemberDiscount, category: categoryParam } = useLocalSearchParams<{
+    promptMemberDiscount?: string;
+    category?: string;
+  }>();
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('cheese_party');
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -254,7 +258,6 @@ export default function MenuScreen() {
     setPromptedMemberDiscount(true);
     setShowMemberModal(false);
   };
-
   const mainScrollRef = useRef<any>(null);
   const tabsScrollRef = useRef<any>(null);
   const isManualScrolling = useRef(false);
@@ -279,11 +282,41 @@ export default function MenuScreen() {
     loadMenu();
   }, [loadMenu]);
 
+  // Nhóm đang được lọc từ home ('category' trên URL). null = xem toàn bộ menu.
+  const filterCategory = useMemo<CategoryId | null>(() => {
+    const catId = typeof categoryParam === 'string' && categoryParam !== 'all' ? categoryParam : null;
+    return catId && mockCategories.some((c) => c.id === catId) ? (catId as CategoryId) : null;
+  }, [categoryParam]);
+
+  // Khi bấm card category từ home: chỉ hiện nhóm đó, cuộn tab tương ứng lên đầu
+  useEffect(() => {
+    if (!filterCategory) return;
+    setSelectedCategory(filterCategory);
+    setIsSearchActive(false);
+    setSearchQuery('');
+    mainScrollRef.current?.scrollTo({ y: 0, animated: false });
+    const targetTabX = tabOffsets.current[filterCategory] ?? 0;
+    setTimeout(() => {
+      tabsScrollRef.current?.scrollTo({
+        x: Math.max(0, targetTabX - 60),
+        animated: true,
+      });
+    }, 50);
+  }, [filterCategory]);
+
+  // Nhóm promo = nhãn dán lên món, KHÔNG phải danh mục gốc:
+  // món vẫn ở Pizza/Khai vị/Nước uống đồng thời hiện thêm trong Tiệc Cheese / Thành Viên / Deal Hot.
+
+  const inPromoGroup = (p: Product, g: string) =>
+    (p.promoGroups || []).includes(g) || p.categoryId === g; // categoryId === group: dữ liệu kiểu cũ
+
   // Group products by category
   const productsByCategory = useMemo(() => {
     const map: Record<string, Product[]> = {};
     for (const cat of mockCategories) {
-      map[cat.id] = allProducts.filter((p) => p.categoryId === cat.id);
+      map[cat.id] = ['cheese_party', 'member_deals', 'hot_deals'].includes(cat.id)
+        ? allProducts.filter((p) => inPromoGroup(p, cat.id))
+        : allProducts.filter((p) => p.categoryId === cat.id);
     }
     return map;
   }, [allProducts]);
@@ -327,16 +360,25 @@ export default function MenuScreen() {
     setSearchQuery('');
     setSelectedCategory(catId);
 
+    const targetTabX = tabOffsets.current[catId] ?? 0;
+    tabsScrollRef.current?.scrollTo({
+      x: Math.max(0, targetTabX - 60),
+      animated: true,
+    });
+
+    // Chế độ chỉ xem 1 nhóm (bấm từ home): bấm tab sẽ đổi sang nhóm đó
+    if (filterCategory) {
+      mainScrollRef.current?.scrollTo({ y: 0, animated: false });
+      if (catId !== filterCategory) {
+        router.setParams({ category: String(catId) });
+      }
+      return;
+    }
+
     isManualScrolling.current = true;
     const targetY = sectionOffsets.current[catId] ?? 0;
     mainScrollRef.current?.scrollTo({
       y: Math.max(0, targetY - 4),
-      animated: true,
-    });
-
-    const targetTabX = tabOffsets.current[catId] ?? 0;
-    tabsScrollRef.current?.scrollTo({
-      x: Math.max(0, targetTabX - 60),
       animated: true,
     });
 
@@ -347,7 +389,7 @@ export default function MenuScreen() {
 
   // Handle user scrolling to update active tab
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (isManualScrolling.current || isSearchActive) return;
+    if (isManualScrolling.current || isSearchActive || filterCategory) return;
     const scrollY = event.nativeEvent.contentOffset.y;
 
     let activeCat = mockCategories[0].id;
@@ -436,6 +478,9 @@ export default function MenuScreen() {
             return (
               <TouchableOpacity
                 key={cat.id}
+                accessibilityLabel={cat.name}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isActive }}
                 activeOpacity={0.7}
                 onLayout={(e) => {
                   tabOffsets.current[cat.id] = e.nativeEvent.layout.x;
@@ -453,7 +498,7 @@ export default function MenuScreen() {
                   ]}
                   numberOfLines={1}
                 >
-                  {cat.name.toUpperCase()}
+                  {({ member_deals: 'Thành viên', hot_deals: 'Deal hot', starters: 'Khai vị', drinks: 'Đồ uống' } as Record<string, string>)[cat.id] || cat.name}
                 </Text>
                 {isActive && <View style={styles.activeTabUnderline} />}
               </TouchableOpacity>
@@ -511,7 +556,7 @@ export default function MenuScreen() {
           )}
         </ScrollView>
       ) : (
-        /* ALL 6 SECTIONS CONNECTED CONTINUOUSLY (NỐI TIẾP NHAU) */
+        /* Danh sách: chỉ hiện 1 nhóm khi bấm từ home, ngược lại nối tiếp 6 nhóm */
         <ScrollView
           ref={mainScrollRef}
           showsVerticalScrollIndicator={false}
@@ -519,7 +564,10 @@ export default function MenuScreen() {
           onScroll={handleScroll}
           contentContainerStyle={styles.listContent}
         >
-          {mockCategories.map((cat) => {
+          {(filterCategory
+            ? mockCategories.filter((cat) => cat.id === filterCategory)
+            : mockCategories
+          ).map((cat) => {
             const items = productsByCategory[cat.id] || [];
             const banner = CATEGORY_BANNERS[cat.id] || CATEGORY_BANNERS.cheese_party;
             const categoryTitle = cat.name.toUpperCase();

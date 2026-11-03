@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, ScrollView, TouchableOpacity } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Plus, Trash2, Home, Briefcase } from 'lucide-react-native';
@@ -94,6 +95,8 @@ export default function AddressesScreen() {
           <TouchableOpacity
             onPress={() => setShowAddModal(!showAddModal)}
             style={styles.addIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Thêm địa chỉ mới"
           >
             <Plus size={20} color={colors.primary} />
           </TouchableOpacity>
@@ -156,7 +159,8 @@ export default function AddressesScreen() {
                 )}
               </View>
 
-              <TouchableOpacity onPress={() => handleDelete(item.id)} style={{ padding: 4 }}>
+              <TouchableOpacity onPress={() => handleDelete(item.id)} style={{ padding: 4 }}
+                accessibilityRole="button" accessibilityLabel={`Xóa địa chỉ ${item.label}`}>
                 <Trash2 size={16} color={colors.textDisabled} />
               </TouchableOpacity>
             </View>

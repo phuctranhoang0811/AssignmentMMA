@@ -1,0 +1,54 @@
+{
+  "info": {
+    "name": "Pizza payOS backend",
+    "description": "Local API contract. Supply your Firebase ID token and catalog product ID. Reuse checkoutKey and the unchanged payload for retries. Ordinary delivery and pickup add no delivery fee or tax surcharge; Ahamove quotes are separate. Optional deliveryTime and deliveryNote are retained after payment. No live credentials are included.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001" },
+    { "key": "firebaseIdToken", "value": "" },
+    { "key": "productId", "value": "" },
+    { "key": "variantId", "value": "small" },
+    { "key": "checkoutKey", "value": "pizza-checkout-example-001" },
+    { "key": "orderId", "value": "" }
+  ],
+  "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{firebaseIdToken}}", "type": "string" }] },
+  "item": [
+    {
+      "name": "Health",
+      "request": { "method": "GET", "auth": { "type": "noauth" }, "url": "{{baseUrl}}/health" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP process is healthy', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().ok).to.eql(true); });"] } }]
+    },
+    {
+      "name": "Create or retry payOS checkout",
+      "request": {
+        "method": "POST", "url": "{{baseUrl}}/api/payments/payos",
+        "description": "Use an existing Firestore product/variant. Omit variantId for products with no variants. Optional needCutlery (boolean), deliveryTime (trimmed display text, 1–100 characters) and deliveryNote (up to 500 characters) are saved to the fulfillment order after payment. Old payloads can omit them. Kitchen snapshots retain addons, pizza customization and cooking notes. Keep the key and payload unchanged when retrying; a new schedule or note needs a new checkoutKey. Ahamove remains immediate delivery with the exact quoted checkout.",
+        "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{checkoutKey}}" }],
+        "body": { "mode": "raw", "options": { "raw": { "language": "json" } }, "raw": "{\n  \"customer\": {\n    \"fullname\": \"Nguyen Van A\",\n    \"phone\": \"0901234567\"\n  },\n  \"fulfillmentType\": \"PICKUP\",\n  \"items\": [\n    {\n      \"lineId\": \"line-1\",\n      \"productId\": \"{{productId}}\",\n      \"variantId\": \"{{variantId}}\",\n      \"addonIds\": [],\n      \"quantity\": 1\n    }\n  ],\n  \"deliveryTime\": \"19:30 • 28/10/2026\",\n  \"deliveryNote\": \"Gọi trước khi đến\"\n}" }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Checkout is persisted with a server total', () => { pm.response.to.have.status(200); const order = pm.response.json(); pm.expect(order.id).to.match(/^[a-f0-9]{64}$/); pm.expect(order.total).to.be.above(0); pm.expect(order.pricing.tax).to.eql(0); pm.expect(order.pricing.deliveryFee).to.eql(0); pm.expect(order.total).to.eql(order.pricing.subtotal); pm.expect(['PENDING', 'PAID']).to.include(order.paymentStatus); pm.collectionVariables.set('orderId', order.id); });"
+      ] } }]
+    },
+    {
+      "name": "Recover order snapshot",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/orders/{{orderId}}" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Reads the authenticated owner snapshot', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('orderId')); });"] } }]
+    },
+    {
+      "name": "Reconcile with payOS",
+      "request": { "method": "POST", "url": "{{baseUrl}}/api/orders/{{orderId}}/reconcile", "description": "Calls the payOS API; use when the webhook or socket event has been missed." },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Provider reconciliation returns a snapshot', () => { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.have.property('providerStatus'); });"] } }]
+    },
+    {
+      "name": "Reject unsigned webhook",
+      "request": {
+        "method": "POST", "auth": { "type": "noauth" }, "url": "{{baseUrl}}/api/webhooks/payos",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\"code\":\"00\",\"desc\":\"success\",\"success\":true,\"signature\":\"invalid\",\"data\":{\"orderCode\":123,\"amount\":110000,\"paymentLinkId\":\"invalid\",\"reference\":\"test\",\"code\":\"00\",\"currency\":\"VND\"}}" }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Unsigned payment cannot be accepted', () => pm.response.to.have.status(401));"] } }]
+    }
+  ]
+}

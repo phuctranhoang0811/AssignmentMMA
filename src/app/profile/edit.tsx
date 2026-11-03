@@ -6,10 +6,10 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
-  Alert,
   Modal,
   Pressable,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, ChevronDown, Check } from 'lucide-react-native';
@@ -21,11 +21,11 @@ export default function EditProfileScreen() {
   const { user, updateProfile } = useAuth();
 
   const [isEditing, setIsEditing] = useState(false);
-  const [fullname, setFullname] = useState(user?.fullname || 'Huỳnh Ngọc Công Luân');
+  const [fullname, setFullname] = useState(user?.fullname || '');
   const [birthday, setBirthday] = useState(user?.birthday || '01/01/2000');
   const [gender, setGender] = useState(user?.gender || 'Nam');
-  const [phone, setPhone] = useState(user?.phone || '84934860591');
-  const [email, setEmail] = useState(user?.email || 'luanhuynh296@gmail.com');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [email, setEmail] = useState(user?.email || '');
   const [showGenderModal, setShowGenderModal] = useState(false);
 
   const handleToggleEdit = async () => {

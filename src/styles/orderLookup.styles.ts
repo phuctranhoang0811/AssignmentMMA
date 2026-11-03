@@ -8,13 +8,11 @@ export const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   header: {
-    height: 50,
+    height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
   },
   backButton: {
     padding: 4,
@@ -26,18 +24,37 @@ export const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 20,
   },
-  input: {
+  inputWrapper: {
     height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 10,
     paddingHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 16,
+  },
+  inputWrapperError: {
+    borderColor: BRAND_RED,
+    marginBottom: 10,
+  },
+  input: {
+    flex: 1,
     fontSize: 15,
     color: '#111827',
-    backgroundColor: '#FFFFFF',
+    paddingVertical: 0,
+  },
+  clearBtn: {
+    marginLeft: 8,
+    padding: 4,
+  },
+  inlineErrorText: {
+    fontSize: 14,
+    color: BRAND_RED,
     marginBottom: 16,
   },
   searchButton: {
@@ -46,7 +63,7 @@ export const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   searchButtonText: {
     color: '#FFFFFF',
@@ -56,7 +73,7 @@ export const styles = StyleSheet.create({
   loginButton: {
     height: 50,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1.2,
+    borderWidth: 1,
     borderColor: BRAND_RED,
     borderRadius: 10,
     justifyContent: 'center',
@@ -70,30 +87,101 @@ export const styles = StyleSheet.create({
   },
   loadingContainer: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 32,
   },
   loadingText: {
     marginTop: 12,
     fontSize: 14,
     color: '#6B7280',
   },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 50,
-    paddingHorizontal: 20,
+
+  /* COMPACT ORDER CARD (MATCHING USER ORDER TRACKING CARD) */
+  resultsList: {
+    paddingTop: 4,
+    paddingBottom: 32,
   },
-  emptyTitle: {
+  orderCardBox: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  cardLeftCol: {
+    width: 82,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingRight: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#F3F4F6',
+  },
+  cardLeftLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    lineHeight: 17,
+    textAlign: 'center',
+  },
+  cardLeftTime: {
     fontSize: 16,
+    fontWeight: '800',
+    color: BRAND_RED,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  cardRightCol: {
+    flex: 1,
+    paddingLeft: 14,
+  },
+  cardRightTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+  cardOrderCode: {
+    fontSize: 15,
     fontWeight: '700',
-    color: '#1F2937',
-    marginTop: 12,
+    color: '#111827',
+  },
+  cardOrderTotal: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  cardOrderStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
     marginBottom: 6,
   },
-  emptyDesc: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 20,
+  cardAddressText: {
+    fontSize: 13.5,
+    color: '#374151',
+    lineHeight: 19,
+    marginBottom: 4,
+  },
+  cardPaymentText: {
+    fontSize: 13.5,
+    color: '#374151',
+    lineHeight: 19,
+  },
+  cardBoldPrefix: {
+    fontWeight: '700',
+    color: '#111827',
+  },
+  cardDetailLink: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: BRAND_RED,
   },
 
   /* DETAIL VIEW STYLES (MATCHING CHECKOUT SUCCESS EXACTLY) */
