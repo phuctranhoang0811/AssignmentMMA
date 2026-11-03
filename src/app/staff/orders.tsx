@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Linking,
   RefreshControl,
+  Platform,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -24,6 +26,12 @@ import {
   ChefHat,
   CheckCircle2,
   LogOut,
+  Bike,
+  User as UserIcon,
+  Mail,
+  BadgeCheck,
+  Banknote,
+  AlertCircle,
 } from 'lucide-react-native';
 import { db } from '../../services/firebase';
 import {
@@ -40,6 +48,9 @@ import { formatCurrency } from '../../utils/formatCurrency';
 import { triggerHaptic } from '../../utils/haptics';
 import { colors } from '../../theme/colors';
 import { styles } from '../../styles/staffPortal.styles';
+import { Chip } from '../../components/ui/Chip';
+import { StatusBadge } from '../../components/ui/StatusBadge';
+import { AppButton } from '../../components/ui/AppButton';
 
 // Các lý do từ chối mẫu theo chuẩn F&B
 const REJECT_REASONS = [
@@ -59,6 +70,21 @@ const PREP_TIME_OPTIONS = [
   { label: '45 phút', value: '45 phút' },
 ];
 
+// Các nhóm đơn trong Tab 2 (Bếp & Giao nhận)
+const KITCHEN_SECTIONS: { status: string; title: string; hint: string; color: string }[] = [
+  { status: 'CONFIRMED', title: 'Chờ nấu', hint: 'Đã xác nhận, chờ bếp nhận đơn', color: colors.primary },
+  { status: 'PREPARING', title: 'Đang nấu', hint: 'Nướng bánh & kiểm tra chất lượng', color: colors.warning },
+  { status: 'READY', title: 'Sẵn sàng', hint: 'Đóng hộp, chờ giao shipper / khách', color: colors.success },
+  { status: 'OUT_FOR_DELIVERY', title: 'Đang giao', hint: 'Shipper đang trên đường', color: colors.primary },
+];
+
+// Nhãn hiển thị vai trò trong hồ sơ nhân viên
+const STAFF_ROLE_LABELS: Record<string, string> = {
+  EMPLOYEE: 'Nhân viên cửa hàng',
+  STORE_MANAGER: 'Quản lý cửa hàng',
+  SUPER_ADMIN: 'Quản trị viên',
+};
+
 export default function StaffOrdersScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
@@ -66,6 +92,13 @@ export default function StaffOrdersScreen() {
 
   // Active Segment Tab: 1 = Chờ duyệt, 2 = Bếp & Giao, 3 = Đã xong (Lịch sử)
   const [activeTab, setActiveTab] = useState<'pending' | 'kitchen' | 'completed'>('pending');
+
+  // Hồ sơ nhân viên
+  const [profileVisible, setProfileVisible] = useState(false);
+
+  // Modal Đăng xuất
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   // Trạng thái ca trực của quán: Đang nhận đơn hay Tạm dừng
   const [isAcceptingOrders, setIsAcceptingOrders] = useState(true);
@@ -310,18 +343,196 @@ export default function StaffOrdersScreen() {
     }
   };
 
+  // ==========================================================
+  // TAB 2: BẾP & GIAO NHẬN
+  // ==========================================================
+  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
+  const [kitchenFilter, setKitchenFilter] = useState<string>('ALL');
+
+  const visibleKitchenOrders = kitchenOrders.filter(
+    (o) => kitchenFilter === 'ALL' || o.status === kitchenFilter
+  );
+
+  // Vị trí của đơn trên thanh tiến trình (đơn lấy tại quầy không có bước "Đang giao")
+  const getKitchenStepIndex = (order: any): number => {
+    const isPickup = order.fulfillmentType === 'PICKUP';
+    const order_ = isPickup
+      ? ['CONFIRMED', 'PREPARING', 'READY', 'COMPLETED']
+      : ['CONFIRMED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'COMPLETED'];
+    return Math.max(0, order_.indexOf(order.status));
+  };
+
+  // Số phút đơn đã nằm ở bước hiện tại (tính từ mốc statusHistory gần nhất)
+  const getMinutesInStage = (order: any): number => {
+    const history = Array.isArray(order.statusHistory) ? order.statusHistory : [];
+    const last = history[history.length - 1]?.at;
+    const t = last ? new Date(last).getTime() : (order.createdAt?.seconds || 0) * 1000;
+    if (!t) return 0;
+    return Math.max(0, Math.floor((Date.now() - t) / 60000));
+  };
+
+
+  // Nút hành động tiếp theo cho từng trạng thái trong vòng đời bếp
+  const getKitchenAction = (order: any): { label: string; next: string; note: string; hint: string } | null => {
+    switch (order.status) {
+      case 'CONFIRMED':
+        return { label: 'Bắt đầu nấu', next: 'PREPARING', note: 'Bếp đã nhận đơn và bắt đầu chế biến.', hint: 'Nhận đơn và bắt đầu làm bánh' };
+      case 'PREPARING':
+        return {
+          label: 'Món đã sẵn sàng',
+          next: 'READY',
+          hint: 'Nướng xong, đóng hộp kèm dụng cụ',
+          note:
+            order.fulfillmentType === 'PICKUP'
+              ? 'Món đã làm xong, sẵn sàng tại quầy nhận.'
+              : 'Món đã làm xong và được đóng gói kèm dụng cụ.',
+        };
+      case 'READY':
+        return order.fulfillmentType === 'PICKUP'
+          ? { label: 'Giao khách tại quầy', next: 'COMPLETED', note: 'Khách đã nhận món tại quầy.', hint: 'Gọi khách nhận món tại quầy' }
+          : { label: 'Tài xế nhận giao', next: 'OUT_FOR_DELIVERY', note: 'Tài xế đã nhận đơn và đang đi giao.', hint: 'Bàn giao hộp bánh cho tài xế' };
+      case 'OUT_FOR_DELIVERY':
+        return { label: 'Giao thành công', next: 'COMPLETED', note: 'Đơn đã được giao thành công cho khách.', hint: 'Xác nhận khách đã nhận hàng' };
+      default:
+        return null;
+    }
+  };
+
+  const confirmDialog = (title: string, message: string, confirmText: string): Promise<boolean> => {
+    if (Platform.OS === 'web') {
+      // Alert.alert không hiển thị trên web nên dùng window.confirm
+      return Promise.resolve(window.confirm(`${title}\n${message}`));
+    }
+    return new Promise((resolve) => {
+      Alert.alert(title, message, [
+        { text: 'Quay lại', style: 'cancel', onPress: () => resolve(false) },
+        { text: confirmText, onPress: () => resolve(true) },
+      ]);
+    });
+  };
+
+  const showError = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}: ${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
+  // Chuyển đơn sang bước kế tiếp trong Bếp & Giao
+  const handleKitchenAdvance = async (order: any) => {
+    if (busyOrderId) return;
+    const action = getKitchenAction(order);
+    if (!action) return;
+
+    const isPaid = order.paymentStatus === 'PAID_DEMO' || order.paymentStatus === 'PAID';
+    // Bước hoàn tất đơn COD: nhắc thu tiền mặt trước
+    if (action.next === 'COMPLETED' && !isPaid && order.paymentMethod === 'COD') {
+      const ok = await confirmDialog(
+        'Thu tiền mặt (COD)',
+        `Vui lòng thu ${formatCurrency(order.total || 0)} từ khách trước khi hoàn tất đơn.`,
+        'Đã thu & hoàn tất'
+      );
+      if (!ok) return;
+    }
+
+    setBusyOrderId(order.id);
+    try {
+      const staffName = user?.fullname || 'Nhân viên';
+      const update: Record<string, any> = {
+        status: action.next,
+        updatedAt: serverTimestamp(),
+        statusHistory: arrayUnion({
+          status: action.next,
+          at: new Date().toISOString(),
+          note: `${action.note} (Nhân viên: ${staffName})`,
+        }),
+      };
+      if (action.next === 'PREPARING') update.preparingAt = serverTimestamp();
+      if (action.next === 'READY') update.readyAt = serverTimestamp();
+      if (action.next === 'OUT_FOR_DELIVERY') update.deliveringAt = serverTimestamp();
+      if (action.next === 'COMPLETED') {
+        update.completedAt = serverTimestamp();
+        update.completedBy = staffName;
+        if (!isPaid) update.paymentStatus = 'PAID_DEMO'; // đã thu tiền mặt
+      }
+
+      await updateDoc(doc(db, 'orders', order.id), update);
+      triggerHaptic('success');
+      showToast({
+        message: `Đơn #${order.orderCode || ''}: ${action.label} ✓`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      console.error('Lỗi cập nhật trạng thái đơn:', err);
+      showError('Lỗi cập nhật đơn', err.message || 'Không thể cập nhật trạng thái đơn.');
+    } finally {
+      setBusyOrderId(null);
+    }
+  };
+
+  // Hủy đơn đã xác nhận nhưng bếp chưa nấu (CONFIRMED)
+  const handleKitchenCancel = async (order: any) => {
+    if (busyOrderId) return;
+    const ok = await confirmDialog(
+      'Hủy đơn hàng',
+      `Hủy đơn #${order.orderCode || ''}? Khách sẽ được thông báo.`,
+      'Hủy đơn'
+    );
+    if (!ok) return;
+
+    setBusyOrderId(order.id);
+    try {
+      const staffName = user?.fullname || 'Nhân viên';
+      const isPaid = order.paymentStatus === 'PAID_DEMO' || order.paymentStatus === 'PAID';
+      const reason = 'Bếp không thể thực hiện đơn sau khi xác nhận';
+      await updateDoc(doc(db, 'orders', order.id), {
+        status: 'CANCELLED',
+        cancelledAt: serverTimestamp(),
+        cancelledBy: staffName,
+        cancelReason: reason,
+        ...(isPaid ? { paymentStatus: 'REFUND_PENDING' } : {}),
+        statusHistory: arrayUnion({
+          status: 'CANCELLED',
+          at: new Date().toISOString(),
+          note: `Đơn bị hủy bởi ${staffName}. Lý do: ${reason}.`,
+        }),
+      });
+      triggerHaptic('warning');
+      showToast({ message: `Đã hủy đơn #${order.orderCode || ''}.`, type: 'info' });
+    } catch (err: any) {
+      console.error('Lỗi khi hủy đơn:', err);
+      showError('Lỗi hủy đơn', err.message || 'Không thể hủy đơn.');
+    } finally {
+      setBusyOrderId(null);
+    }
+  };
+
+  // Thống kê công việc của chính nhân viên đang đăng nhập
+  const myStats = useMemo(() => {
+    const me = user?.fullname;
+    return {
+      confirmed: me ? allOrders.filter((o) => o.confirmedBy === me).length : 0,
+      completed: me ? allOrders.filter((o) => o.completedBy === me).length : 0,
+    };
+  }, [allOrders, user?.fullname]);
+
   const handleLogout = () => {
-    Alert.alert('Đăng xuất ca làm', 'Bạn có chắc chắn muốn đăng xuất khỏi ca làm việc?', [
-      { text: 'Hủy', style: 'cancel' },
-      {
-        text: 'Đăng xuất',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          router.replace('/(tabs)/home');
-        },
-      },
-    ]);
+    triggerHaptic('light');
+    setLogoutModalVisible(true);
+  };
+
+  const executeLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      setLogoutModalVisible(false);
+      router.replace('/(tabs)/home');
+    } catch (err) {
+      console.error('Lỗi khi đăng xuất:', err);
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   return (
@@ -375,7 +586,19 @@ export default function StaffOrdersScreen() {
               </Text>
             </TouchableOpacity>
 
-            <View style={styles.topBarRightIcons}>
+            <View style={[styles.topBarRightIcons, { flexDirection: 'row', gap: 8 }]}>
+              {/* Nút Hồ sơ nhân viên */}
+              <TouchableOpacity
+                style={styles.iconBtn}
+                activeOpacity={0.7}
+                onPress={() => {
+                  triggerHaptic('light');
+                  setProfileVisible(true);
+                }}
+              >
+                <UserIcon size={18} color={colors.primary} />
+              </TouchableOpacity>
+
               {/* Nút Đăng xuất */}
               <TouchableOpacity
                 style={styles.iconBtn}
@@ -401,7 +624,7 @@ export default function StaffOrdersScreen() {
               setActiveTab('pending');
             }}
           >
-            <Clock size={15} color={activeTab === 'pending' ? colors.white : colors.textSecondary} />
+            <Clock size={15} color={activeTab === 'pending' ? colors.primary : colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === 'pending' && styles.activeTabText]}>
               Chờ duyệt
             </Text>
@@ -423,7 +646,7 @@ export default function StaffOrdersScreen() {
               setActiveTab('kitchen');
             }}
           >
-            <ChefHat size={15} color={activeTab === 'kitchen' ? colors.white : colors.textSecondary} />
+            <ChefHat size={15} color={activeTab === 'kitchen' ? colors.primary : colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === 'kitchen' && styles.activeTabText]}>
               Bếp & Giao
             </Text>
@@ -445,7 +668,7 @@ export default function StaffOrdersScreen() {
               setActiveTab('completed');
             }}
           >
-            <CheckCircle2 size={15} color={activeTab === 'completed' ? colors.white : colors.textSecondary} />
+            <CheckCircle2 size={15} color={activeTab === 'completed' ? colors.primary : colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === 'completed' && styles.activeTabText]}>
               Đã xong
             </Text>
@@ -582,7 +805,7 @@ export default function StaffOrdersScreen() {
                                   ? colors.error
                                   : elapsedMinutes >= 3
                                     ? colors.warning
-                                    : '#0284C7'
+                                    : colors.primary
                               }
                             />
                             <Text
@@ -593,7 +816,7 @@ export default function StaffOrdersScreen() {
                                     ? colors.error
                                     : elapsedMinutes >= 3
                                       ? colors.warning
-                                      : '#0284C7',
+                                      : colors.primary,
                                 },
                               ]}
                             >
@@ -775,50 +998,298 @@ export default function StaffOrdersScreen() {
           </View>
         )}
 
-        {/* --- TAB 2: BẾP & GIAO NHẬN (TẠO SẴN CHO THÀNH VIÊN ĐƯỢC PHÂN CÔNG) --- */}
+        {/* --- TAB 2: BẾP & GIAO NHẬN (CONFIRMED → PREPARING → READY → OUT_FOR_DELIVERY) --- */}
         {activeTab === 'kitchen' && (
-          <ScrollView contentContainerStyle={styles.scrollContent}>
-            <View style={styles.placeholderContainer}>
-              <ChefHat size={48} color={colors.warning} />
-              <Text style={styles.placeholderTitle}>
-                Tab 2: Khu Vực Bếp & Giao Nhận
-              </Text>
-              <Text style={styles.placeholderDesc}>
-                (Phần khung này đã được khởi tạo sẵn để thành viên phụ trách Bếp và Giao hàng dễ dàng tích hợp).
-              </Text>
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: '700',
-                  color: colors.primary,
-                  marginTop: 12,
-                }}
+          <View style={{ flex: 1 }}>
+            {/* Bộ lọc nhanh theo giai đoạn (dùng Chip chung của app) */}
+            <View style={{ backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 10 }}
               >
-                Hiện có {kitchenOrders.length} đơn hàng trong quy trình Bếp & Giao
-              </Text>
+                <Chip
+                  label={`Tất cả (${kitchenOrders.length})`}
+                  selected={kitchenFilter === 'ALL'}
+                  onPress={() => setKitchenFilter('ALL')}
+                />
+                {KITCHEN_SECTIONS.map((s) => (
+                  <Chip
+                    key={s.status}
+                    label={`${s.title} (${kitchenOrders.filter((o) => o.status === s.status).length})`}
+                    selected={kitchenFilter === s.status}
+                    onPress={() => setKitchenFilter(s.status)}
+                  />
+                ))}
+              </ScrollView>
             </View>
 
-            {kitchenOrders.map((order) => (
-              <View key={order.id} style={styles.orderCard}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.orderCodeText}>
-                    #{order.orderCode || order.id.slice(0, 8)}
-                  </Text>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.warning }}>
-                    Trạng thái: {order.status}
+            <ScrollView
+              contentContainerStyle={styles.scrollContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={() => setRefreshing(true)}
+                  tintColor={colors.primary}
+                />
+              }
+            >
+              {isLoading ? (
+                <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                </View>
+              ) : visibleKitchenOrders.length === 0 ? (
+                <View style={styles.emptyTabContainer}>
+                  <View style={[styles.emptyIconBox, { backgroundColor: colors.primarySoft }]}>
+                    <ChefHat size={32} color={colors.primary} strokeWidth={2.5} />
+                  </View>
+                  <Text style={styles.emptyTitle}>Không có đơn nào ở mục này</Text>
+                  <Text style={styles.emptyDesc}>
+                    Đơn sẽ xuất hiện ở đây sau khi được duyệt ở tab Chờ duyệt.
                   </Text>
                 </View>
-                <View style={{ padding: 12 }}>
-                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                    Khách: {order.customer?.fullname} • {order.customer?.phone}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4 }}>
-                    Món: {order.items?.map((it: any) => `${it.quantity}x ${it.productName}`).join(', ')}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </ScrollView>
+              ) : (
+                KITCHEN_SECTIONS.map((section) => {
+                  const list = visibleKitchenOrders.filter((o) => o.status === section.status);
+                  if (list.length === 0) return null;
+                  return (
+                    <View key={section.status} style={{ gap: 12 }}>
+                      {/* Tiêu đề nhóm */}
+                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+                        <Text style={{ fontSize: 17, fontWeight: '600', color: colors.textPrimary }}>
+                          {section.title}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
+                          {list.length} đơn • {section.hint}
+                        </Text>
+                      </View>
+
+                      {list.map((order) => {
+                        const action = getKitchenAction(order);
+                        const isBusy = busyOrderId === order.id;
+                        const isPaid =
+                          order.paymentStatus === 'PAID_DEMO' || order.paymentStatus === 'PAID';
+                        const showCod = !isPaid && order.paymentMethod === 'COD';
+                        const isPickup = order.fulfillmentType === 'PICKUP';
+                        const steps = isPickup
+                          ? ['Chờ nấu', 'Đang nấu', 'Sẵn sàng', 'Xong']
+                          : ['Chờ nấu', 'Đang nấu', 'Sẵn sàng', 'Đang giao', 'Xong'];
+                        const currentStep = getKitchenStepIndex(order);
+                        const minutes = getMinutesInStage(order);
+
+                        return (
+                          <View key={order.id} style={styles.orderCard}>
+                            {/* Hàng 1: Mã đơn + trạng thái */}
+                            <View style={styles.cardHeader}>
+                              <View style={styles.orderCodeCol}>
+                                <Text style={styles.orderCodeText}>#{order.orderCode || order.id.slice(0, 8)}</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                  {isPickup ? (
+                                    <Store size={13} color={colors.textSecondary} />
+                                  ) : (
+                                    <Bike size={13} color={colors.textSecondary} />
+                                  )}
+                                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                                    {isPickup ? 'Lấy tại quầy' : 'Giao tận nơi'} •{' '}
+                                    {minutes === 0 ? 'Vừa chuyển bước' : `${minutes} phút ở bước này`}
+                                  </Text>
+                                </View>
+                              </View>
+                              <StatusBadge status={order.status} />
+                            </View>
+
+                            {/* Hàng 2: Thanh tiến trình */}
+                            <View style={{ flexDirection: 'row', paddingHorizontal: 12, paddingTop: 14 }}>
+                              {steps.map((label, i) => {
+                                const done = i < currentStep;
+                                const current = i === currentStep;
+                                const lit = done || current;
+                                return (
+                                  <View key={label} style={{ flex: 1, alignItems: 'center' }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
+                                      <View
+                                        style={{
+                                          flex: 1,
+                                          height: 3,
+                                          backgroundColor: i === 0 ? 'transparent' : lit ? section.color : colors.border,
+                                        }}
+                                      />
+                                      <View
+                                        style={{
+                                          width: 18,
+                                          height: 18,
+                                          borderRadius: 9,
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          backgroundColor: lit ? section.color : colors.surface,
+                                          borderWidth: 2,
+                                          borderColor: lit ? section.color : colors.border,
+                                        }}
+                                      >
+                                        {done ? <Check size={10} color={colors.white} strokeWidth={3.5} /> : null}
+                                      </View>
+                                      <View
+                                        style={{
+                                          flex: 1,
+                                          height: 3,
+                                          backgroundColor: i === steps.length - 1 ? 'transparent' : done ? section.color : colors.border,
+                                        }}
+                                      />
+                                    </View>
+                                    <Text
+                                      style={{
+                                        fontSize: 10,
+                                        marginTop: 4,
+                                        fontWeight: current ? '700' : '500',
+                                        color: current ? section.color : colors.textSecondary,
+                                      }}
+                                      numberOfLines={1}
+                                    >
+                                      {label}
+                                    </Text>
+                                  </View>
+                                );
+                              })}
+                            </View>
+
+                            {/* Hàng 3: Danh sách món */}
+                            <View style={styles.itemsContainer}>
+                              {Array.isArray(order.items) &&
+                                order.items.map((it: any, idx: number) => (
+                                  <View key={idx} style={{ flexDirection: 'row' }}>
+                                    <Text style={{ fontSize: 15, fontWeight: '700', color: colors.primary, width: 32 }}>
+                                      {it.quantity}x
+                                    </Text>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.itemName}>{it.productName}</Text>
+                                      {(it.variantName || it.customizationSummary) && (
+                                        <Text style={styles.itemSubDetails}>
+                                          {[
+                                            it.variantName,
+                                            Array.isArray(it.customizationSummary)
+                                              ? it.customizationSummary.join(', ')
+                                              : it.customizationSummary,
+                                          ]
+                                            .filter(Boolean)
+                                            .join(' • ')}
+                                        </Text>
+                                      )}
+                                      {it.note ? (
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                                          <AlertCircle size={12} color={colors.warning} />
+                                          <Text style={{ fontSize: 12, color: colors.warning, fontWeight: '600', flex: 1 }}>
+                                            {it.note}
+                                          </Text>
+                                        </View>
+                                      ) : null}
+                                    </View>
+                                  </View>
+                                ))}
+                            </View>
+
+                            {/* Hàng 4: Khách hàng & nơi nhận */}
+                            <View style={styles.customerBox}>
+                              <View style={styles.customerRow}>
+                                <Text style={[styles.customerName, { flex: 1 }]} numberOfLines={1}>
+                                  {order.customer?.fullname || 'Khách vãng lai'}
+                                </Text>
+                                {order.customer?.phone ? (
+                                  <TouchableOpacity
+                                    style={styles.callBtn}
+                                    activeOpacity={0.8}
+                                    onPress={() => handleCallCustomer(order.customer?.phone)}
+                                  >
+                                    <Phone size={12} color={colors.success} />
+                                    <Text style={styles.callBtnText}>{order.customer?.phone}</Text>
+                                  </TouchableOpacity>
+                                ) : null}
+                              </View>
+                              {!isPickup && (
+                                <View style={styles.fulfillmentRow}>
+                                  <MapPin size={14} color={colors.error} />
+                                  <Text style={styles.fulfillmentText}>{order.address || 'Không rõ địa chỉ'}</Text>
+                                </View>
+                              )}
+                              {order.deliveryNote ? (
+                                <View style={styles.noteHighlightBox}>
+                                  <Text style={styles.noteHighlightText}>Ghi chú giao: {order.deliveryNote}</Text>
+                                </View>
+                              ) : null}
+                            </View>
+
+                            {/* Hàng 5: Thanh toán + hành động */}
+                            <View style={styles.cardFooter}>
+                              <View
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  backgroundColor: showCod ? colors.warningSoft : colors.successSoft,
+                                  borderRadius: 12,
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 10,
+                                }}
+                              >
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                                  {showCod ? (
+                                    <Banknote size={16} color={colors.warning} />
+                                  ) : (
+                                    <CheckCircle2 size={16} color={colors.success} />
+                                  )}
+                                  <Text
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: '700',
+                                      color: showCod ? colors.warning : colors.success,
+                                      flex: 1,
+                                    }}
+                                  >
+                                    {showCod ? 'Thu tiền mặt khi giao' : 'Đã thanh toán, không thu tiền'}
+                                  </Text>
+                                </View>
+                                <Text style={styles.totalAmountText}>{formatCurrency(order.total || 0)}</Text>
+                              </View>
+
+                              {action && (
+                                <View style={{ gap: 8 }}>
+                                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                                    Tiếp theo: <Text style={{ fontWeight: '600', color: colors.textPrimary }}>{action.hint}</Text>
+                                  </Text>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    {order.status === 'CONFIRMED' && (
+                                      <View style={{ flex: 1 }}>
+                                        <AppButton
+                                          title="Hủy đơn"
+                                          variant="outline"
+                                          onPress={() => handleKitchenCancel(order)}
+                                          disabled={isBusy}
+                                          icon={<X size={16} color={colors.error} />}
+                                          textStyle={{ color: colors.error }}
+                                        />
+                                      </View>
+                                    )}
+                                    <View style={{ flex: 2 }}>
+                                      <AppButton
+                                        title={action.label}
+                                        onPress={() => handleKitchenAdvance(order)}
+                                        isLoading={isBusy}
+                                        disabled={isBusy}
+                                        icon={<Check size={16} color={colors.white} strokeWidth={2.5} />}
+                                      />
+                                    </View>
+                                  </View>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
         )}
 
         {/* --- TAB 3: ĐÃ XONG (LỊCH SỬ CA TRỰC: COMPLETED & CANCELLED) --- */}
@@ -872,6 +1343,149 @@ export default function StaffOrdersScreen() {
             ))}
           </ScrollView>
         )}
+
+        {/* ==================================================== */}
+        {/* MODAL HỒ SƠ NHÂN VIÊN                                */}
+        {/* ==================================================== */}
+        <Modal
+          visible={profileVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setProfileVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Hồ sơ nhân viên</Text>
+                <TouchableOpacity onPress={() => setProfileVisible(false)}>
+                  <X size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {/* Ảnh đại diện + tên + vai trò */}
+                <View style={{ alignItems: 'center', marginBottom: 16 }}>
+                  {user?.avatar ? (
+                    <Image
+                      source={{ uri: user.avatar }}
+                      style={{ width: 84, height: 84, borderRadius: 42, marginBottom: 10 }}
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        width: 84,
+                        height: 84,
+                        borderRadius: 42,
+                        backgroundColor: colors.primary,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: 10,
+                      }}
+                    >
+                      <Text style={{ fontSize: 34, fontWeight: '800', color: colors.white }}>
+                        {(user?.fullname || 'N').trim().charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: colors.textPrimary }}>
+                    {user?.fullname || 'Nhân viên cửa hàng'}
+                  </Text>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: colors.successSoft,
+                      borderRadius: 14,
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      marginTop: 6,
+                    }}
+                  >
+                    <BadgeCheck size={14} color={colors.success} />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.success, marginLeft: 5 }}>
+                      {STAFF_ROLE_LABELS[user?.role || 'EMPLOYEE'] || user?.role || 'Nhân viên'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Thống kê ca làm */}
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+                  {[
+                    { label: 'Đã duyệt', value: myStats.confirmed, color: colors.primary },
+                    { label: 'Đã hoàn tất', value: myStats.completed, color: colors.success },
+                    { label: 'Đang xử lý', value: kitchenOrders.length, color: colors.warning },
+                  ].map((st) => (
+                    <View
+                      key={st.label}
+                      style={{
+                        flex: 1,
+                        alignItems: 'center',
+                        backgroundColor: colors.surfaceAlt,
+                        borderRadius: 12,
+                        paddingVertical: 12,
+                      }}
+                    >
+                      <Text style={{ fontSize: 22, fontWeight: '900', color: st.color }}>{st.value}</Text>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>{st.label}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Thông tin liên hệ */}
+                <View style={{ backgroundColor: colors.surfaceAlt, borderRadius: 12, paddingHorizontal: 14 }}>
+                  {[
+                    { icon: <Mail size={16} color={colors.textSecondary} />, label: 'Email', value: user?.email },
+                    { icon: <Phone size={16} color={colors.textSecondary} />, label: 'Số điện thoại', value: user?.phone },
+                    { icon: <Store size={16} color={colors.textSecondary} />, label: 'Chi nhánh', value: 'Pizza FPT • CN Khu Công Nghệ Cao' },
+                    { icon: <UserIcon size={16} color={colors.textSecondary} />, label: 'Mã nhân viên', value: user?.id },
+                  ].map((row, i) => (
+                    <View
+                      key={row.label}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingVertical: 12,
+                        borderTopWidth: i === 0 ? 0 : 1,
+                        borderTopColor: colors.border,
+                      }}
+                    >
+                      {row.icon}
+                      <View style={{ marginLeft: 10, flex: 1 }}>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>{row.label}</Text>
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }} numberOfLines={1}>
+                          {row.value || 'Chưa cập nhật'}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Đăng xuất */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    setProfileVisible(false);
+                    handleLogout();
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginTop: 16,
+                    paddingVertical: 13,
+                    borderRadius: 12,
+                    backgroundColor: colors.errorSoft,
+                  }}
+                >
+                  <LogOut size={16} color={colors.error} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.error, marginLeft: 8 }}>
+                    Đăng xuất ca làm
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
 
         {/* ==================================================== */}
         {/* 4. MODAL XÁC NHẬN ĐƠN & CHỌN THỜI GIAN DỰ KIẾN       */}
@@ -1039,6 +1653,67 @@ export default function StaffOrdersScreen() {
             </View>
           </View>
         </Modal>
+
+        {/* ==================================================== */}
+        {/* MODAL XÁC NHẬN ĐĂNG XUẤT                              */}
+        {/* ==================================================== */}
+        <Modal
+          visible={logoutModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setLogoutModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { paddingBottom: 24 }]}>
+              <View style={styles.modalHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.errorSoft, alignItems: 'center', justifyContent: 'center' }}>
+                    <LogOut size={18} color={colors.error} />
+                  </View>
+                  <Text style={[styles.modalTitle, { color: colors.error }]}>Đăng Xuất Ca Làm</Text>
+                </View>
+                <TouchableOpacity onPress={() => setLogoutModalVisible(false)}>
+                  <X size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20, marginVertical: 12 }}>
+                Bạn có chắc chắn muốn đăng xuất khỏi ca làm việc hiện tại? Mọi trạng thái đơn hàng của cửa hàng đã được lưu trữ an toàn trên hệ thống.
+              </Text>
+
+              <View style={[styles.modalBtnRow, { marginTop: 8 }]}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  activeOpacity={0.7}
+                  disabled={isLoggingOut}
+                  onPress={() => setLogoutModalVisible(false)}
+                >
+                  <Text style={styles.modalCancelBtnText}>Hủy</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.modalConfirmRejectBtn,
+                    { backgroundColor: colors.error },
+                    isLoggingOut && { opacity: 0.7 },
+                  ]}
+                  activeOpacity={0.88}
+                  disabled={isLoggingOut}
+                  onPress={executeLogout}
+                >
+                  {isLoggingOut ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <Text style={styles.modalConfirmRejectBtnText}>
+                      Đăng Xuất
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
       </View>
     </SafeAreaView>
   );

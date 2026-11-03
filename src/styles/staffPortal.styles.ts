@@ -1,6 +1,7 @@
 import { StyleSheet, Platform } from 'react-native';
 import { colors } from '../theme/colors';
 import { spacing, radius, shadows } from '../theme/spacing';
+import { fontFamilies } from '../theme/typography';
 
 export const styles = StyleSheet.create({
   safeArea: {
@@ -19,7 +20,6 @@ export const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    ...shadows.sm,
   },
   topBarRow: {
     flexDirection: 'row',
@@ -42,7 +42,8 @@ export const styles = StyleSheet.create({
     color: colors.primary,
   },
   staffNameText: {
-    fontSize: 17,
+    fontSize: 20,
+    letterSpacing: -0.3,
     fontWeight: '700',
     color: colors.textPrimary,
   },
@@ -104,49 +105,52 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // --- Segment Tabs ---
+  // --- Segment Tabs (cùng kiểu với màn Đơn hàng của khách) ---
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    gap: 6,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    marginHorizontal: spacing.lg,
+    marginVertical: spacing.md,
+    padding: 3,
   },
   tabBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceAlt,
+    paddingVertical: spacing.sm + 1,
+    borderRadius: radius.sm,
     gap: 6,
   },
   activeTabBtn: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.surface,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   tabText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '500',
     color: colors.textSecondary,
   },
   activeTabText: {
-    color: colors.white,
-    fontWeight: '700',
+    color: colors.primary,
+    fontWeight: '600',
   },
   badgePill: {
     backgroundColor: colors.border,
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 1,
     borderRadius: radius.pill,
     minWidth: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   activeBadgePill: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: colors.primarySoft,
   },
   badgeText: {
     fontSize: 10,
@@ -154,7 +158,7 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   activeBadgeText: {
-    color: colors.white,
+    color: colors.primary,
   },
 
   // --- Search & Filter Bar ---
@@ -180,6 +184,7 @@ export const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     marginLeft: spacing.sm,
+    fontFamily: fontFamilies.regular,
     fontSize: 13,
     color: colors.textPrimary,
     paddingVertical: 0,
@@ -229,8 +234,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    padding: spacing.md,
-    backgroundColor: colors.surfaceAlt,
+    padding: spacing.base,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -262,7 +266,7 @@ export const styles = StyleSheet.create({
     gap: 4,
   },
   timerBadgeNormal: {
-    backgroundColor: '#EBF5FF',
+    backgroundColor: colors.primarySoft,
   },
   timerBadgeWarning: {
     backgroundColor: colors.warningSoft,
@@ -319,16 +323,16 @@ export const styles = StyleSheet.create({
     lineHeight: 18,
   },
   noteHighlightBox: {
-    backgroundColor: '#FFF9E6',
+    backgroundColor: colors.warningSoft,
     borderLeftWidth: 3,
-    borderLeftColor: '#F59E0B',
+    borderLeftColor: colors.warning,
     padding: 8,
     borderRadius: 4,
     marginTop: 4,
   },
   noteHighlightText: {
     fontSize: 12,
-    color: '#92400E',
+    color: colors.warning,
     fontWeight: '600',
   },
 
@@ -365,8 +369,7 @@ export const styles = StyleSheet.create({
   // Card Footer & Actions
   cardFooter: {
     flexDirection: 'column',
-    padding: spacing.md,
-    backgroundColor: colors.surfaceAlt,
+    padding: spacing.base,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     gap: 12,
@@ -428,7 +431,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 12,
     borderRadius: radius.md,
-    backgroundColor: colors.success,
+    backgroundColor: colors.primary,
     gap: 6,
   },
   acceptBtnText: {
@@ -536,6 +539,7 @@ export const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.md,
     padding: spacing.sm,
+    fontFamily: fontFamilies.regular,
     fontSize: 13,
     minHeight: 64,
     textAlignVertical: 'top',
@@ -589,8 +593,8 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
   },
   activeTimeOption: {
-    borderColor: colors.success,
-    backgroundColor: colors.successSoft,
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
   },
   timeOptionText: {
     fontSize: 15,
@@ -598,12 +602,12 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   activeTimeOptionText: {
-    color: colors.success,
+    color: colors.primary,
   },
   modalConfirmAcceptBtn: {
     paddingVertical: 14,
     borderRadius: radius.md,
-    backgroundColor: colors.success,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     marginTop: spacing.sm,
   },
