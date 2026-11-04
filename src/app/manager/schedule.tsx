@@ -75,27 +75,27 @@ const WORK_SHIFTS: {
     title: 'Ca Sáng',
     time: '08:00 - 14:00',
     endHour: 14,
-    color: '#1D4ED8',
-    bg: '#EFF6FF',
-    border: '#BFDBFE',
+    color: colors.primary,
+    bg: colors.primarySoft,
+    border: '#FECACA',
   },
   {
     key: 'EVENING',
     title: 'Ca Chiều / Tối',
     time: '14:00 - 22:00',
     endHour: 22,
-    color: '#B45309',
-    bg: '#FFFBEB',
-    border: '#FDE68A',
+    color: colors.primary,
+    bg: colors.primarySoft,
+    border: '#FECACA',
   },
   {
     key: 'FULL',
     title: 'Full ca (Cả ngày)',
     time: '08:00 - 22:00',
     endHour: 22,
-    color: '#15803D',
-    bg: '#F0FDF4',
-    border: '#BBF7D0',
+    color: colors.primary,
+    bg: colors.primarySoft,
+    border: '#FECACA',
   },
 ];
 
@@ -130,6 +130,15 @@ export default function ManagerScheduleScreen() {
   const [addingShiftKey, setAddingShiftKey] = useState<Exclude<ShiftType, 'OFF'> | null>(null);
   const [pickedStaffIds, setPickedStaffIds] = useState<string[]>([]);
   const [savingShift, setSavingShift] = useState(false);
+
+  // Modal xác nhận gỡ nhân viên khỏi ca
+  const [removingTarget, setRemovingTarget] = useState<{
+    staffId: string;
+    fullname: string;
+    days: Record<string, ShiftType>;
+    shiftKey: Exclude<ShiftType, 'OFF'>;
+  } | null>(null);
+  const [removingInProgress, setRemovingInProgress] = useState(false);
 
   // Cuộn đưa ngày mục tiêu ra chính giữa thanh ngang
   const centerDayInStrip = useCallback(
@@ -218,17 +227,13 @@ export default function ManagerScheduleScreen() {
   const todayMidnight = new Date(todayYear, todayMonth, todayDateNum, 0, 0, 0, 0);
   const selectedMidnight = new Date(viewYear, viewMonth, safeSelectedDayNum, 0, 0, 0, 0);
   const isPastDate = selectedMidnight.getTime() < todayMidnight.getTime();
-  const nowMinutes = today.getHours() * 60 + today.getMinutes();
 
-  const getShiftLockInfo = (shiftKey: Exclude<ShiftType, 'OFF'>) => {
+  const getShiftLockInfo = (_shiftKey: Exclude<ShiftType, 'OFF'>) => {
     if (isPastDate) {
       return { locked: true, label: 'Đã qua ngày' };
     }
     if (isSelectedToday) {
-      const meta = WORK_SHIFTS.find((w) => w.key === shiftKey);
-      if (meta && nowMinutes >= meta.endHour * 60) {
-        return { locked: true, label: 'Đã qua ca' };
-      }
+      return { locked: true, label: 'Đã chốt hôm nay' };
     }
     return { locked: false, label: '' };
   };
@@ -247,15 +252,37 @@ export default function ManagerScheduleScreen() {
     };
   });
 
-  const branchStaff = rawUsers
+  const combinedUsers = (() => {
+    const byId = new Map<string, Record<string, any>>();
+    rawUsers.forEach((u) => byId.set(String(u.id), u));
+    Object.entries(staffMap).forEach(([uid, m]) => {
+      if (!m || m.deleted || byId.has(uid)) return;
+      byId.set(uid, {
+        id: uid,
+        fullName: m.fullName || 'Nhân viên',
+        email: m.email || '',
+        phone: m.phone || '',
+        role: m.role || 'EMPLOYEE',
+        storeId: m.storeId || undefined,
+        storeName: m.storeName || undefined,
+      });
+    });
+    return Array.from(byId.values());
+  })();
+
+  const branchStaff = combinedUsers
     .filter((u) => {
       const custom = staffMap[u.id];
-      if (custom?.deleted || u.role === 'BLACKLISTED' || u.role === 'ROLE_RIDER') return false;
-      const isStaff = u.role === 'EMPLOYEE' || u.role === 'ROLE_KITCHEN';
+      const effRole = custom?.role || u.role;
+      if (custom?.deleted || effRole === 'BLACKLISTED' || effRole === 'ROLE_RIDER') return false;
+      const isStaff = effRole === 'EMPLOYEE' || effRole === 'ROLE_KITCHEN';
       if (!isStaff) return false;
       const uStoreId = custom?.storeId !== undefined ? custom.storeId : u.storeId;
-      if (uStoreId && currentStore) {
-        return uStoreId === currentStore.id;
+      const uStoreName = custom?.storeName || u.storeName || '';
+      if (currentStore) {
+        if (uStoreId && uStoreId === currentStore.id) return true;
+        if (uStoreName && uStoreName === currentStore.name) return true;
+        if (uStoreId || uStoreName) return false;
       }
       return true;
     })
@@ -268,7 +295,7 @@ export default function ManagerScheduleScreen() {
       };
       return {
         id: u.id,
-        fullname: String(u.fullName || u.fullname || u.name || 'Nhân viên'),
+        fullname: String(custom?.fullName || u.fullName || u.fullname || u.name || 'Nhân viên'),
         phone: String(custom?.phone || u.phone || ''),
         days,
         schedRecord,
@@ -363,7 +390,7 @@ export default function ManagerScheduleScreen() {
     }
   };
 
-  const handleRemoveStaffFromDay = async (
+  const handleRemoveStaffFromDay = (
     staff: (typeof branchStaff)[number],
     shiftKey: Exclude<ShiftType, 'OFF'>
   ) => {
@@ -375,18 +402,33 @@ export default function ManagerScheduleScreen() {
       });
       return;
     }
-    const nextDays = {
-      ...staff.days,
-      [selectedDateKey]: 'OFF' as ShiftType,
-    };
-    await saveStaffSchedule(staff.id, nextDays);
-    showToast({
-      message: `Đã gỡ ${staff.fullname} khỏi lịch ngày ${String(safeSelectedDayNum).padStart(
-        2,
-        '0'
-      )}/${String(viewMonth + 1).padStart(2, '0')}`,
-      type: 'info',
+    setRemovingTarget({
+      staffId: staff.id,
+      fullname: staff.fullname,
+      days: staff.days,
+      shiftKey,
     });
+  };
+
+  const handleConfirmRemoveStaffFromDay = async () => {
+    if (!removingTarget) return;
+    setRemovingInProgress(true);
+    try {
+      const nextDays = {
+        ...removingTarget.days,
+        [selectedDateKey]: 'OFF' as ShiftType,
+      };
+      await saveStaffSchedule(removingTarget.staffId, nextDays);
+      showToast({
+        message: `Đã gỡ ${removingTarget.fullname} khỏi lịch ngày ${String(
+          safeSelectedDayNum
+        ).padStart(2, '0')}/${String(viewMonth + 1).padStart(2, '0')}`,
+        type: 'info',
+      });
+      setRemovingTarget(null);
+    } finally {
+      setRemovingInProgress(false);
+    }
   };
 
   const totalScheduledOnSelectedDate = branchStaff.filter((s) => {
@@ -415,12 +457,12 @@ export default function ManagerScheduleScreen() {
         }}
         onLayout={handleStripLayout}
       >
-        {/* Hàng trên: Chọn Tháng / Năm + Nút Về Hôm nay */}
+        {/* Hàng trên: Chọn Tháng / Năm */}
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent: 'center',
             paddingHorizontal: 14,
             marginBottom: 10,
           }}
@@ -484,27 +526,6 @@ export default function ManagerScheduleScreen() {
               <ChevronRight size={18} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={handleJumpToToday}
-            style={{
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: 999,
-              backgroundColor: isSelectedToday ? colors.primary : colors.surfaceAlt,
-              borderWidth: 1,
-              borderColor: isSelectedToday ? colors.primary : colors.border,
-            }}
-          >
-            <AppText
-              variant="small"
-              color={isSelectedToday ? '#FFFFFF' : colors.primary}
-              style={{ fontWeight: '700' }}
-            >
-              Hôm nay ({String(todayDateNum).padStart(2, '0')}/{String(todayMonth + 1).padStart(2, '0')})
-            </AppText>
-          </TouchableOpacity>
         </View>
 
         {/* Bảng xổ xuống chọn nhanh Tháng 1 -> Tháng 12 */}
@@ -666,7 +687,7 @@ export default function ManagerScheduleScreen() {
                     isSelected
                       ? '#FFFFFF'
                       : countOnDay > 0
-                        ? '#15803D'
+                        ? colors.primary
                         : isToday
                           ? colors.primary
                           : colors.textSecondary
@@ -690,34 +711,6 @@ export default function ManagerScheduleScreen() {
           contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Tiêu đề Ngày đang chọn */}
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              backgroundColor: '#FFFFFF',
-              borderRadius: 14,
-              paddingHorizontal: 14,
-              paddingVertical: 12,
-              marginBottom: 14,
-              borderWidth: 1,
-              borderColor: isSelectedToday ? colors.primary : colors.border,
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Calendar size={18} color={colors.primary} />
-              <AppText variant="cardTitle" color={colors.textPrimary}>
-                {selectedDowName}, {String(safeSelectedDayNum).padStart(2, '0')}/
-                {String(viewMonth + 1).padStart(2, '0')}/{viewYear}
-                {isSelectedToday ? ' (Hôm nay)' : ''}
-              </AppText>
-            </View>
-            <AppText variant="captionSemiBold" color={colors.primary}>
-              Đã xếp: {totalScheduledOnSelectedDate} NV
-            </AppText>
-          </View>
-
           {/* 3 Khung Ca làm việc của ngày đang chọn */}
           {WORK_SHIFTS.map((shift) => {
             const staffInThisShift = branchStaff.filter(
@@ -951,6 +944,9 @@ export default function ManagerScheduleScreen() {
         >
           <View
             style={{
+              width: '100%',
+              maxWidth: 420,
+              alignSelf: 'center',
               backgroundColor: '#FFFFFF',
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
@@ -1127,6 +1123,120 @@ export default function ManagerScheduleScreen() {
                   color={availableStaffForDate.length === 0 ? colors.textSecondary : '#FFFFFF'}
                 >
                   {savingShift ? 'Đang lưu...' : `Thêm vào ca (${pickedStaffIds.length})`}
+                </AppText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL XÁC NHẬN GỠ NHÂN VIÊN KHỎI CA */}
+      <Modal
+        visible={!!removingTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRemovingTarget(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.45)',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: 24,
+          }}
+        >
+          <View
+            style={{
+              width: '100%',
+              maxWidth: 380,
+              backgroundColor: '#FFFFFF',
+              borderRadius: 20,
+              padding: 20,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                marginBottom: 10,
+              }}
+            >
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: '#FEF2F2',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Trash2 size={18} color="#DC2626" />
+              </View>
+              <AppText variant="h3" color={colors.textPrimary}>
+                Xác nhận gỡ nhân viên
+              </AppText>
+            </View>
+
+            <AppText
+              variant="body"
+              color={colors.textSecondary}
+              style={{ lineHeight: 21, marginBottom: 18 }}
+            >
+              Bạn có chắc chắn muốn gỡ nhân viên{' '}
+              <AppText variant="bodySemiBold" color={colors.textPrimary}>
+                {removingTarget?.fullname}
+              </AppText>{' '}
+              khỏi{' '}
+              <AppText variant="bodySemiBold" color={colors.primary}>
+                {WORK_SHIFTS.find((w) => w.key === removingTarget?.shiftKey)?.title}
+              </AppText>{' '}
+              ngày{' '}
+              <AppText variant="bodySemiBold" color={colors.textPrimary}>
+                {String(safeSelectedDayNum).padStart(2, '0')}/
+                {String(viewMonth + 1).padStart(2, '0')}/{viewYear}
+              </AppText>{' '}
+              không?
+            </AppText>
+
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                activeOpacity={0.75}
+                disabled={removingInProgress}
+                onPress={() => setRemovingTarget(null)}
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surface,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <AppText variant="bodySemiBold" color={colors.textPrimary}>
+                  Hủy
+                </AppText>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                disabled={removingInProgress}
+                onPress={handleConfirmRemoveStaffFromDay}
+                style={{
+                  flex: 1.2,
+                  height: 44,
+                  borderRadius: 12,
+                  backgroundColor: '#DC2626',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <AppText variant="bodySemiBold" color="#FFFFFF">
+                  {removingInProgress ? 'Đang gỡ...' : 'Xác nhận gỡ'}
                 </AppText>
               </TouchableOpacity>
             </View>

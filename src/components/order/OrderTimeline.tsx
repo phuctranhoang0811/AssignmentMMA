@@ -67,13 +67,13 @@ export const OrderTimeline: React.FC<OrderTimelineProps> = ({
   const steps: StepDefinition[] = isPickup
     ? [
         { statuses: ['PENDING_CONFIRMATION', 'CONFIRMED'], title: 'Đã xác nhận', icon: Check },
-        { statuses: ['PREPARING', 'READY'], title: 'Đang chuẩn bị', icon: ChefHat },
-        { statuses: ['COMPLETED'], title: 'Hoàn thành', icon: CheckCircle },
+        { statuses: ['PREPARING'], title: 'Đang chuẩn bị', icon: ChefHat },
+        { statuses: ['READY', 'COMPLETED'], title: 'Hoàn thành', icon: CheckCircle },
       ]
     : [
         { statuses: ['PENDING_CONFIRMATION', 'CONFIRMED'], title: 'Đã xác nhận', icon: Check },
-        { statuses: ['PREPARING', 'READY'], title: 'Đang chuẩn bị', icon: ChefHat },
-        { statuses: ['OUT_FOR_DELIVERY'], title: 'Đang giao hàng', icon: Truck },
+        { statuses: ['PREPARING'], title: 'Đang chuẩn bị', icon: ChefHat },
+        { statuses: ['READY', 'OUT_FOR_DELIVERY'], title: 'Đang giao hàng', icon: Truck },
         { statuses: ['COMPLETED'], title: 'Hoàn thành', icon: CheckCircle },
       ];
 
@@ -103,6 +103,7 @@ export const OrderTimeline: React.FC<OrderTimelineProps> = ({
       {steps.map((step, index) => {
         const isPassed = index < currentStepIndex;
         const isCurrent = index === currentStepIndex;
+        const isStepDone = isPassed || (isCurrent && status === 'COMPLETED');
         const IconComponent = step.icon;
 
         const historyItem = [...history].reverse().find((h) => step.statuses.includes(h.status));
@@ -111,16 +112,16 @@ export const OrderTimeline: React.FC<OrderTimelineProps> = ({
           <View key={step.title} style={styles.stepRow}>
             <View style={styles.leftColumn}>
               {/* Animated pulse ring for current active node */}
-              {isCurrent && <PulsingRing />}
+              {isCurrent && !isStepDone && <PulsingRing />}
 
               <View
                 style={[
                   styles.nodeCircle,
-                  isPassed && styles.passedCircle,
-                  isCurrent && styles.currentCircle,
+                  isStepDone && styles.passedCircle,
+                  isCurrent && !isStepDone && styles.currentCircle,
                 ]}
               >
-                {isPassed ? (
+                {isStepDone ? (
                   <Check size={14} color={colors.white} />
                 ) : (
                   <IconComponent
@@ -146,20 +147,24 @@ export const OrderTimeline: React.FC<OrderTimelineProps> = ({
                   <AppText
                     variant={isCurrent ? 'cardTitle' : 'bodyMedium'}
                     color={
-                      isCurrent
+                      isStepDone
+                        ? colors.success
+                        : isCurrent
                         ? colors.primary
-                        : isPassed
-                        ? colors.textPrimary
                         : colors.textDisabled
                     }
                   >
                     {step.title}
                   </AppText>
-                  {isCurrent && (
+                  {isCurrent && !isStepDone && (
                     <View style={styles.currentLiveBadge}>
                       <View style={styles.liveDot} />
                       <AppText variant="captionMedium" color={colors.primary}>
-                        Đang xử lý
+                        {status === 'READY'
+                          ? isPickup
+                            ? 'Chờ nhận tại quầy'
+                            : 'Chờ phân công giao'
+                          : 'Đang xử lý'}
                       </AppText>
                     </View>
                   )}
@@ -181,7 +186,11 @@ export const OrderTimeline: React.FC<OrderTimelineProps> = ({
                 </AppText>
               ) : isCurrent ? (
                 <AppText variant="caption" color={colors.textSecondary} style={styles.note}>
-                  Hệ thống đang tiến hành bước này...
+                  {status === 'READY'
+                    ? isPickup
+                      ? 'Bếp đã làm xong món, mời bạn nhận tại quầy!'
+                      : 'Bếp đã làm xong món, chuẩn bị bàn giao người đi giao!'
+                    : 'Hệ thống đang tiến hành bước này...'}
                 </AppText>
               ) : null}
             </View>

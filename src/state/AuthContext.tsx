@@ -4,16 +4,22 @@ import { DemoUser } from '../types/user';
 import { authService } from '../services';
 import { auth, db } from '../services/firebase';
 import { createUserWithEmailAndPassword, deleteUser, signInWithCustomToken, signInWithEmailAndPassword, signOut, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { doc, getDoc, updateDoc, serverTimestamp, onSnapshot, runTransaction, collection, query, where, getDocs, type Transaction } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot, runTransaction, collection, query, where, getDocs, type Transaction } from 'firebase/firestore';
 import { clearCustomerInfo, clearDeliveryAddress } from '../services/addressStorage';
-import { resetMemberDiscountPrompt } from '../utils/sessionFlags';
+import { resetMemberDiscountPrompt, resetFreeShipPrompt } from '../utils/sessionFlags';
 import { phoneLoginToken, verifyAccountEmail } from '../services/orderApi';
 import { isValidEmail } from '../utils/validators';
 import { normalizePhone } from '../utils/phone';
 import { signInWithGoogle } from '../services/googleSignIn';
 import { googleAccountProfile, googleLoginError } from '../utils/googleAccount';
 import type { GoogleLoginOptions } from '../types/googleLogin';
-import { findStaffEmailByPhone, subscribeStaffStoresMap, subscribeStoresConfig } from '../services/storeSync';
+import { Alert } from '../utils/alert';
+import {
+  findStaffEmailByPhone,
+  getStaffCustomizationEntry,
+  subscribeStaffStoresMap,
+  subscribeStoresConfig,
+} from '../services/storeSync';
 
 interface AuthContextType {
   user: DemoUser | null;
@@ -64,9 +70,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!snapshot.exists()) return;
       // Points and role change on the server (orders, admin portal); keep the session and its saved copy current.
       const data = snapshot.data();
+      if (data.role === 'BLACKLISTED' || data.deleted === true) {
+        void signOut(auth).catch(() => {});
+        void AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ isLoggedOut: true })).catch(() => {});
+        setUser(null);
+        Alert.alert(
+          'Tài khoản đã bị khóa',
+          'Tài khoản của bạn đã bị Quản trị viên khóa hoặc thu hồi quyền truy cập.'
+        );
+        return;
+      }
       setUser(previous => {
         if (previous?.id !== accountId) return previous;
-        const next = { ...previous, rewardPoints: data.rewardPoints ?? 0, role: data.role || 'USER', storeId: data.storeId || data.branchId || previous?.storeId, storeName: data.storeName || previous?.storeName, emailVerified: data.emailVerified !== false };
+        const resolvedRole =
+          data.role && data.role !== 'USER'
+            ? data.role
+            : previous.role && previous.role !== 'USER' && data.role !== 'BLACKLISTED'
+              ? previous.role
+              : data.role || 'USER';
+        const next = {
+          ...previous,
+          rewardPoints: data.rewardPoints ?? 0,
+          role: resolvedRole,
+          storeId: data.storeId || data.branchId || previous?.storeId,
+          storeName: data.storeName || previous?.storeName,
+          emailVerified: data.emailVerified !== false,
+        };
         void AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next)).catch(() => {});
         return next;
       });
@@ -90,6 +119,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubStaff = subscribeStaffStoresMap((map) => {
       const entry = map[accountId];
       if (!entry) return;
+      if (entry.deleted || entry.role === 'BLACKLISTED') {
+        void signOut(auth).catch(() => {});
+        void AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ isLoggedOut: true })).catch(() => {});
+        setUser(null);
+        Alert.alert(
+          'Tài khoản đã bị khóa',
+          'Tài khoản của bạn đã bị Quản trị viên khóa hoặc xóa khỏi hệ thống.'
+        );
+        return;
+      }
       setUser((previous) => {
         if (previous?.id !== accountId) return previous;
         const resolvedStoreId = entry.storeId || previous.storeId;
@@ -98,6 +137,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           : undefined;
         const next = {
           ...previous,
+          fullname: entry.fullName || previous.fullname,
+          role: entry.role || previous.role,
           storeId: resolvedStoreId,
           storeName: liveName || entry.storeName || previous.storeName,
           phone: entry.phone || previous.phone || '',
@@ -207,16 +248,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     }
                   }
                 }
+                const staffEntry = await getStaffCustomizationEntry(docSnap.id);
+                const effRole1 = staffEntry?.role || docData.role || 'USER';
+                if (staffEntry?.deleted || docData.deleted || effRole1 === 'BLACKLISTED') {
+                  throw new Error('Tài khoản này đã bị khóa. Vui lòng liên hệ Quản trị viên để được hỗ trợ.');
+                }
                 const u: DemoUser = {
                   id: docSnap.id,
-                  fullname: docData.fullName || 'Khách hàng',
+                  fullname: staffEntry?.fullName || docData.fullName || 'Khách hàng',
                   email: docData.email || targetEmail,
-                  phone: docData.phone || (trimmed.includes('@') ? '' : trimmed),
+                  phone: staffEntry?.phone || docData.phone || (trimmed.includes('@') ? '' : trimmed),
                   gender: docData.gender,
                   birthday: docData.birthday,
-                  role: docData.role || 'USER',
-                  storeId: docData.storeId || docData.branchId,
-                  storeName: docData.storeName,
+                  role: effRole1,
+                  storeId: staffEntry?.storeId || docData.storeId || docData.branchId,
+                  storeName: staffEntry?.storeName || docData.storeName,
                   rewardPoints: docData.rewardPoints || 0,
                   hasPassword: true,
                   isDemo: false,
@@ -227,7 +273,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
             }
           } catch (firestoreAuthErr: any) {
-            if (firestoreAuthErr?.message === 'Mật khẩu không chính xác.') {
+            if (
+              firestoreAuthErr?.message === 'Mật khẩu không chính xác.' ||
+              firestoreAuthErr?.message?.includes('đã bị khóa')
+            ) {
               throw firestoreAuthErr;
             }
           }
@@ -250,16 +299,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (!res) {
                 if (matchedPhoneDoc?.data?.password && matchedPhoneDoc.data.password === password) {
                   const data = matchedPhoneDoc.data;
+                  const staffEntry = await getStaffCustomizationEntry(matchedPhoneDoc.id);
+                  const effRole2 = staffEntry?.role || data.role || 'USER';
+                  if (staffEntry?.deleted || data.deleted || effRole2 === 'BLACKLISTED') {
+                    throw new Error('Tài khoản này đã bị khóa. Vui lòng liên hệ Quản trị viên để được hỗ trợ.');
+                  }
                   const u: DemoUser = {
                     id: matchedPhoneDoc.id,
-                    fullname: data.fullName || 'Khách hàng',
+                    fullname: staffEntry?.fullName || data.fullName || 'Khách hàng',
                     email: data.email || targetEmail,
-                    phone: data.phone || trimmed,
+                    phone: staffEntry?.phone || data.phone || trimmed,
                     gender: data.gender,
                     birthday: data.birthday,
-                    role: data.role || 'USER',
-                    storeId: data.storeId || data.branchId,
-                    storeName: data.storeName,
+                    role: effRole2,
+                    storeId: staffEntry?.storeId || data.storeId || data.branchId,
+                    storeName: staffEntry?.storeName || data.storeName,
                     rewardPoints: data.rewardPoints || 0,
                     hasPassword: true,
                     isDemo: false,
@@ -275,18 +329,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             res = await signInWithCustomToken(auth, await phoneLoginToken(trimmed, password));
           }
           const userDoc = await getDoc(doc(db, 'users', res.user.uid));
-          if (userDoc.exists()) {
-            const data = userDoc.data();
+          const staffEntry = await getStaffCustomizationEntry(res.user.uid);
+          if (userDoc.exists() || staffEntry) {
+            const data = userDoc.exists() ? userDoc.data() : {};
+            const effRole3 =
+              data.role && data.role !== 'USER'
+                ? data.role
+                : staffEntry?.role || data.role || 'USER';
+            if (staffEntry?.deleted || data.deleted || effRole3 === 'BLACKLISTED') {
+              throw new Error('Tài khoản này đã bị khóa. Vui lòng liên hệ Quản trị viên để được hỗ trợ.');
+            }
             const u: DemoUser = {
               id: res.user.uid,
-              fullname: data.fullName || 'Khách hàng',
-              email: data.email || targetEmail,
-              phone: data.phone || (trimmed.includes('@') ? '' : trimmed),
+              fullname: staffEntry?.fullName || data.fullName || 'Khách hàng',
+              email: data.email || staffEntry?.email || targetEmail,
+              phone: staffEntry?.phone || data.phone || (trimmed.includes('@') ? '' : trimmed),
               gender: data.gender,
               birthday: data.birthday,
-              role: data.role || 'USER',
-              storeId: data.storeId || data.branchId,
-              storeName: data.storeName,
+              role: effRole3,
+              storeId: staffEntry?.storeId || data.storeId || data.branchId,
+              storeName: staffEntry?.storeName || data.storeName,
               rewardPoints: data.rewardPoints || 0,
               hasPassword: res.user.providerData.some(provider => provider.providerId === 'password'),
               isDemo: false,
@@ -330,6 +392,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const profile = await runTransaction(db, async transaction => {
         const ref = doc(db, 'users', identity.uid);
         const existing = await transaction.get(ref);
+        if (existing.exists() && (existing.data()?.role === 'BLACKLISTED' || existing.data()?.deleted)) {
+          throw new Error('Tài khoản này đã bị khóa. Vui lòng liên hệ Quản trị viên để được hỗ trợ.');
+        }
         const profile = googleAccountProfile(identity, existing.exists() ? existing.data() : undefined);
         if (!existing.exists()) transaction.set(ref, {
           uid: profile.id, email: profile.email, fullName: profile.fullname,
@@ -528,7 +593,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {}
     setUser(null);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ isLoggedOut: true }));
+    await clearCustomerInfo();
+    await clearDeliveryAddress();
     resetMemberDiscountPrompt();
+    resetFreeShipPrompt();
   };
 
   const updateProfile = async (name: string, phone: string, birthday?: string, gender?: string, email?: string) => {
@@ -542,29 +610,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: email !== undefined ? email : user.email,
     };
 
-    // Save to Firestore first; on failure keep the old data so the screen does not report a save that did not happen.
+    // Save to Firestore first; when phone is unchanged, only update profile fields (fullName, birthday, gender).
     if (user.id && !user.isDemo) {
       const uid = user.id;
-      const changedPhone = phone !== user.phone;
-      const nextPhone = changedPhone ? normalizePhone(phone) : phone;
+      const changedPhone = Boolean(phone && phone !== user.phone);
+      const nextPhone = changedPhone ? normalizePhone(phone) : (user.phone || phone);
       if (changedPhone && !nextPhone) throw new Error('Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0.');
       updated.phone = nextPhone;
-      const previous = normalizePhone(user.phone ?? '');
-      // Release the old number only if this account holds it (older profiles may never have claimed theirs).
-      const releaseOld = changedPhone && previous && previous !== nextPhone
-        && await getDoc(doc(db, 'phone_numbers', previous)).then(d => d.exists() && d.data().uid === uid, () => false);
-      await runTransaction(db, async transaction => {
-        const savePhone = changedPhone ? await claimPhone(transaction, nextPhone, uid) : () => {};
-        savePhone();
-        if (releaseOld) transaction.delete(doc(db, 'phone_numbers', previous));
-        transaction.set(doc(db, 'users', uid), {
+
+      if (changedPhone) {
+        const previous = normalizePhone(user.phone ?? '');
+        const releaseOld = previous && previous !== nextPhone
+          && await getDoc(doc(db, 'phone_numbers', previous)).then(d => d.exists() && d.data().uid === uid, () => false);
+        await runTransaction(db, async transaction => {
+          const savePhone = await claimPhone(transaction, nextPhone, uid);
+          savePhone();
+          if (releaseOld) transaction.delete(doc(db, 'phone_numbers', previous));
+          transaction.set(doc(db, 'users', uid), {
+            fullName: name,
+            phone: nextPhone,
+            ...(birthday !== undefined ? { birthday } : {}),
+            ...(gender !== undefined ? { gender } : {}),
+          }, { merge: true });
+        });
+      } else {
+        const profilePatch = {
           fullName: name,
-          phone: nextPhone,
           ...(birthday !== undefined ? { birthday } : {}),
           ...(gender !== undefined ? { gender } : {}),
-          ...(email !== undefined ? { email } : {}),
-        }, { merge: true });
-      });
+        };
+        await updateDoc(doc(db, 'users', uid), profilePatch).catch(async () => {
+          await setDoc(doc(db, 'users', uid), profilePatch, { merge: true }).catch(() => {});
+        });
+      }
     }
 
     setUser(updated);

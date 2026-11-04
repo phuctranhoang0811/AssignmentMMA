@@ -181,7 +181,7 @@ export const styles = StyleSheet.create({
     paddingBottom: 14,
   },
   recCard: {
-    width: 290,
+    width: 248,
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -194,7 +194,7 @@ export const styles = StyleSheet.create({
     width: 78,
     height: 78,
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
   },
   recContent: {
     flex: 1,
@@ -260,9 +260,9 @@ export const styles = StyleSheet.create({
     lineHeight: 16,
   },
   recAddBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: BRAND_RED,
     justifyContent: 'center',
     alignItems: 'center',
@@ -518,7 +518,7 @@ export const styles = StyleSheet.create({
     gap: 8,
   },
   chipBtn: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 6,
@@ -680,7 +680,7 @@ export const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -724,7 +724,7 @@ export const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 340,
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
+    borderRadius: 16,
     paddingTop: 24,
     paddingBottom: 22,
     paddingHorizontal: 20,
@@ -742,9 +742,9 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
   },
   deleteModalRedLine: {
-    width: 44,
+    width: 32,
     height: 3,
-    backgroundColor: '#C62828',
+    backgroundColor: BRAND_RED,
     borderRadius: 2,
     marginTop: 8,
     marginBottom: 16,
@@ -780,7 +780,7 @@ export const styles = StyleSheet.create({
     color: '#1F2937',
   },
   deleteModalConfirmBtn: {
-    backgroundColor: '#C62828',
+    backgroundColor: BRAND_RED,
   },
   deleteModalConfirmText: {
     fontSize: 15,

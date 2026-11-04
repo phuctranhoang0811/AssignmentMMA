@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -22,8 +22,11 @@ import {
   AddressSuggestion,
   getCurrentPhoneLocation,
 } from '../../services/addressService';
+import { saveDeliveryAddress } from '../../services/addressStorage';
 
-const BRAND_RED = '#C8102E';
+import { colors } from '../../theme/colors';
+
+const BRAND_RED = colors.primary;
 
 export interface MockStoreItem {
   id: string;
@@ -76,6 +79,7 @@ export function StoreLocationModal({
   const [manualAddressInput, setManualAddressInput] = useState(currentAddress);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [isLocating, setIsLocating] = useState(false);
+  const shouldSearchRef = useRef(false);
   const [pickupStores, setPickupStores] = useState<MockStoreItem[]>(MOCK_PICKUP_STORES);
   const [selectedStoreId, setSelectedStoreId] = useState<string>(MOCK_PICKUP_STORES[0].id);
 
@@ -108,6 +112,7 @@ export function StoreLocationModal({
 
   useEffect(() => {
     if (visible) {
+      shouldSearchRef.current = false;
       setFulfillmentType(initialFulfillment);
       setAddressSuggestions([]);
       const matchedStore = pickupStores.find(
@@ -124,10 +129,9 @@ export function StoreLocationModal({
     }
   }, [visible, currentAddress, initialFulfillment, pickupStores]);
 
-  // Debounced search for Vietnamese address autocomplete
+  // Debounced search for Vietnamese address autocomplete (chỉ tìm khi người dùng đang gõ, không tìm lại khi đã bấm chọn gợi ý)
   useEffect(() => {
-    if (!visible || fulfillmentType !== 'delivery') {
-      setAddressSuggestions([]);
+    if (!visible || fulfillmentType !== 'delivery' || !shouldSearchRef.current) {
       return;
     }
     const query = manualAddressInput.trim();
@@ -137,9 +141,12 @@ export function StoreLocationModal({
     }
 
     const timer = setTimeout(async () => {
+      if (!shouldSearchRef.current) return;
       try {
         const results = await searchVietnamAddresses(query);
-        setAddressSuggestions(results);
+        if (shouldSearchRef.current) {
+          setAddressSuggestions(results);
+        }
       } catch {
         setAddressSuggestions([]);
       }
@@ -150,8 +157,9 @@ export function StoreLocationModal({
 
   const handleSelectSuggestion = (item: AddressSuggestion) => {
     triggerHaptic('light');
-    setManualAddressInput(item.fullAddress);
+    shouldSearchRef.current = false;
     setAddressSuggestions([]);
+    setManualAddressInput(item.fullAddress);
   };
 
   const handleGetCurrentLocation = async () => {
@@ -160,8 +168,9 @@ export function StoreLocationModal({
     try {
       const result = await getCurrentPhoneLocation();
       if (result && result.address) {
-        setManualAddressInput(result.address);
+        shouldSearchRef.current = false;
         setAddressSuggestions([]);
+        setManualAddressInput(result.address);
         triggerHaptic('success');
       } else {
         Alert.alert(
@@ -190,6 +199,7 @@ export function StoreLocationModal({
         ? `${selectedStore.name} - ${selectedStore.address}`
         : manualAddressInput.trim() || currentAddress;
     triggerHaptic('success');
+    void saveDeliveryAddress(finalAddress);
     onConfirmAddress(finalAddress, fulfillmentType);
     onClose();
     if (redirectToMenuOnConfirm) {
@@ -342,7 +352,10 @@ export function StoreLocationModal({
                 <TextInput
                   style={styles.addressSearchInput}
                   value={manualAddressInput}
-                  onChangeText={setManualAddressInput}
+                  onChangeText={(text) => {
+                    shouldSearchRef.current = true;
+                    setManualAddressInput(text);
+                  }}
                   placeholder="Nhập địa chỉ của bạn"
                   placeholderTextColor="#9CA3AF"
                   returnKeyType="search"
@@ -352,6 +365,7 @@ export function StoreLocationModal({
                 {manualAddressInput.length > 0 && (
                   <TouchableOpacity
                     onPress={() => {
+                      shouldSearchRef.current = false;
                       setManualAddressInput('');
                       setAddressSuggestions([]);
                     }}
@@ -511,7 +525,7 @@ const styles = StyleSheet.create({
   storeCardSelected: {
     borderColor: BRAND_RED,
     borderWidth: 1.5,
-    backgroundColor: '#FFFDFD',
+    backgroundColor: colors.primarySoft,
   },
   storeNameText: {
     fontSize: 15,

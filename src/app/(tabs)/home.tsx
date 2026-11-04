@@ -13,7 +13,16 @@ import {
 import { Alert } from '../../utils/alert';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { collection, doc, onSnapshot, query, where, getDocs, getDoc } from 'firebase/firestore';
+import { db } from '../../services/firebase';
+import {
+  isProductDiscounted,
+  sortPopularProducts,
+  selectDefaultPopularIds,
+  ensureDefaultPopularRecommendations,
+} from '../../utils/popularRecommendations';
 import { useContentWidth } from '../../utils/layout';
 import {
   Bell,
@@ -31,31 +40,24 @@ import { triggerHaptic } from '../../utils/haptics';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
 import { getSavedDeliveryAddress, saveDeliveryAddress } from '../../services/addressStorage';
+import { subscribeOrderOverrides, type OrderDispatchOverride } from '../../services/storeSync';
+import {
+  fetchUserMemberStats,
+  loadOrSeedMemberGiftRules,
+  getEligibleMemberGifts,
+} from '../../utils/memberTier';
+import {
+  PromoBannerContent,
+  PROMO_BANNER_DOC_ID,
+  PROMO_BANNER_STORAGE_KEY,
+} from '../../components/banners/PromoBannerSlides';
 
 import { styles, BRAND_RED } from '../../styles/home.styles';
 
 const PROMO_BANNERS = [
-  {
-    id: 'b1',
-    tag: 'COMBO PIZZA KÉO',
-    price: 'MỚI CHỈ TỪ 389.000đ',
-    discount: 'GIẢM TỚI 40.000đ Cho Thành Viên',
-    image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1000&q=80',
-  },
-  {
-    id: 'b2',
-    tag: 'MUA 1 TẶNG 1',
-    price: 'THỨ 3 SIÊU HỘI',
-    discount: 'ÁP DỤNG PIZZA SIZE LỚN',
-    image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=1000&q=80',
-  },
-  {
-    id: 'b3',
-    tag: 'COMBO GIA ĐÌNH',
-    price: 'TRỌN VỊ CHỈ 499.000đ',
-    discount: 'TẶNG NGAY 02 NƯỚC NGỌT LỚN',
-    image: 'https://images.unsplash.com/photo-1590947132387-155cc02f3212?auto=format&fit=crop&w=1000&q=80',
-  },
+  { id: 'cheese_party', categoryId: 'cheese_party' },
+  { id: 'member_deals', categoryId: 'member_deals' },
+  { id: 'hot_deals', categoryId: 'hot_deals' },
 ];
 
 /* SVG Icons for Bottom Section replicating reference design */
@@ -139,23 +141,191 @@ const TermsDocsSvg = () => (
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { fulfillmentType: fulfillmentMode, setFulfillmentType: setFulfillmentMode } = useCart();
   const { showToast } = useToast();
+  const {
+    fulfillmentType: fulfillmentMode,
+    setFulfillmentType: setFulfillmentMode,
+  } = useCart();
   // Width of the screen's own column (phone, desktop-web frame or tablet column), minus side padding.
   const bannerWidth = useContentWidth() - 32;
   const bannerScrollRef = useRef<any>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [customBanners, setCustomBanners] = useState<Record<string, string>>({});
 
   // Store Location / Address Autocomplete Modal
   const [showStoreLocationModal, setShowStoreLocationModal] = useState(false);
   const [currentAddress, setCurrentAddress] = useState('');
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [orderOverrides, setOrderOverrides] = useState<Record<string, OrderDispatchOverride>>({});
+
+  useEffect(() => {
+    const unsub = subscribeOrderOverrides((map) => {
+      setOrderOverrides(map);
+    });
+    return () => unsub();
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const uid = user?.id;
+      if (!uid || user?.isDemo) {
+        setUnreadNotifCount(0);
+        return;
+      }
+
+      const delKey = `@pizza_fpt_deleted_notifs_${uid}`;
+      const readKey = `@pizza_fpt_read_notifs_${uid}`;
+      const syncDel: string[] = (() => {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            const raw = window.localStorage.getItem(delKey);
+            if (raw) return JSON.parse(raw);
+          }
+        } catch {}
+        return [];
+      })();
+      const syncRead: string[] = (() => {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            const raw = window.localStorage.getItem(readKey);
+            if (raw) return JSON.parse(raw);
+          }
+        } catch {}
+        return [];
+      })();
+
+      Promise.all([
+        AsyncStorage.getItem(delKey).catch(() => null),
+        AsyncStorage.getItem(readKey).catch(() => null),
+        getDoc(doc(db, 'users', uid)).catch(() => null),
+        getDocs(query(collection(db, 'orders'), where('userId', '==', uid))).catch(() => null),
+        fetchUserMemberStats(uid).catch(() => null),
+        loadOrSeedMemberGiftRules().catch(() => []),
+      ])
+        .then(([delRaw, readRaw, userSnap, ordersSnap, memberStats, giftRules]) => {
+          if (!active) return;
+          const userData = userSnap?.exists?.() ? userSnap.data() : undefined;
+          const deletedSet = new Set<string>([
+            ...syncDel,
+            ...(delRaw ? JSON.parse(delRaw) : []),
+            ...(Array.isArray(userData?.deletedNotifIds) ? userData.deletedNotifIds : []),
+          ]);
+          const readSet = new Set<string>([
+            ...syncRead,
+            ...(readRaw ? JSON.parse(readRaw) : []),
+            ...(Array.isArray(userData?.readNotifIds) ? userData.readNotifIds : []),
+          ]);
+          let count = 0;
+          ordersSnap?.forEach((d) => {
+            const raw = d.data();
+            const override = orderOverrides[d.id];
+            const effectiveStatus = String(
+              override?.status || raw.status || 'PENDING_CONFIRMATION'
+            );
+            const hasAssignedStaff = Boolean(
+              override?.assignedStaffId || raw.assignedStaffId
+            );
+            const statusKey =
+              effectiveStatus === 'READY' && hasAssignedStaff
+                ? 'READY_ASSIGNED'
+                : effectiveStatus;
+            const nid = `order-${d.id}-${statusKey}`;
+            const legacyId = `order-${d.id}`;
+            const isTerminal =
+              effectiveStatus === 'COMPLETED' ||
+              effectiveStatus === 'DELIVERED' ||
+              effectiveStatus === 'CANCELLED' ||
+              effectiveStatus === 'REJECTED';
+            const isDeleted =
+              deletedSet.has(nid) || (isTerminal && deletedSet.has(legacyId));
+            const isRead =
+              readSet.has(nid) || (isTerminal && readSet.has(legacyId));
+            if (!isDeleted && !isRead) {
+              count += 1;
+            }
+          });
+
+          // Cộng thêm số thông báo Quà Tặng Đặc Quyền Thành Viên chưa đọc
+          const syncUsedGifts: string[] = (() => {
+            try {
+              if (typeof window !== 'undefined' && window.localStorage) {
+                const raw = window.localStorage.getItem(`fpt_used_member_gifts_${uid}`);
+                if (raw) return JSON.parse(raw);
+              }
+            } catch {}
+            return [];
+          })();
+          const usedSet = new Set<string>([
+            ...syncUsedGifts,
+            ...(Array.isArray(userData?.usedMemberGiftIds) ? userData.usedMemberGiftIds : []),
+          ]);
+          const eligibleGifts = memberStats
+            ? getEligibleMemberGifts(
+                giftRules,
+                memberStats.id,
+                userData?.birthday || (user as any)?.birthday
+              )
+            : [];
+          eligibleGifts.forEach((rule) => {
+            if (usedSet.has(rule.id)) return;
+            const nid = `member-gift-${rule.id}`;
+            if (!deletedSet.has(nid) && !readSet.has(nid)) {
+              count += 1;
+            }
+          });
+
+          setUnreadNotifCount(count);
+        })
+        .catch(() => {});
+
+      return () => {
+        active = false;
+      };
+    }, [user?.id, user?.isDemo, orderOverrides])
+  );
 
   // Re-read when the account changes: logging out clears the saved address.
   useEffect(() => {
     getSavedDeliveryAddress().then((saved) => setCurrentAddress(saved || ''));
   }, [user?.id]);
+
+  // Lắng nghe realtime banner quảng cáo do Admin cập nhật tại /admin/menu-groups
+  useEffect(() => {
+    AsyncStorage.getItem(PROMO_BANNER_STORAGE_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          setCustomBanners((prev) => ({ ...parsed, ...prev }));
+        }
+      })
+      .catch(() => {});
+
+    const unsub = onSnapshot(
+      doc(db, 'products', PROMO_BANNER_DOC_ID),
+      (snap) => {
+        if (!snap.exists()) {
+          return;
+        }
+        const data = snap.data() || {};
+        const next: Record<string, string> = {};
+        PROMO_BANNERS.forEach((b) => {
+          if (typeof data[b.id] === 'string' && data[b.id].trim().length > 0) {
+            next[b.id] = data[b.id].trim();
+          }
+        });
+        setCustomBanners(next);
+        AsyncStorage.setItem(PROMO_BANNER_STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      },
+      () => {
+        // Ignore snapshot errors gracefully
+      }
+    );
+    return () => unsub();
+  }, []);
 
   // Lunch Combo 3/4 Sheet State
   const [showLunchSheet, setShowLunchSheet] = useState(false);
@@ -208,6 +378,40 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadData();
+    const unsub = onSnapshot(
+      collection(db, 'products'),
+      (snap) => {
+        const list: (Product & { sortOrder?: number })[] = [];
+        snap.forEach((d) => {
+          if (d.id.startsWith('__')) return;
+          const data = d.data();
+          list.push({
+            id: d.id,
+            name: data.name || '',
+            categoryId: data.categoryId || data.category || 'pizza',
+            description: data.description || '',
+            image: data.image || data.imageUrl || '',
+            basePrice: Number(data.basePrice || data.price || 0),
+            originalPrice: data.originalPrice ? Number(data.originalPrice) : undefined,
+            isAvailable: data.isAvailable !== false,
+            isPopular: Boolean(data.isPopular),
+            isNew: Boolean(data.isNew),
+            isSpicy: Boolean(data.isSpicy),
+            discountPercent: data.discountPercent ? Number(data.discountPercent) : undefined,
+            memberDiscountTag: data.memberDiscountTag || undefined,
+            promoGroups: Array.isArray(data.promoGroups) ? data.promoGroups : undefined,
+            variants: Array.isArray(data.variants) ? data.variants : [],
+            addons: Array.isArray(data.addons) ? data.addons : [],
+            sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 999,
+          } as Product & { sortOrder?: number });
+        });
+        list.sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
+        setProducts(list);
+        void ensureDefaultPopularRecommendations(list);
+      },
+      () => {}
+    );
+    return () => unsub();
   }, [loadData]);
 
   const onRefresh = () => {
@@ -215,11 +419,18 @@ export default function HomeScreen() {
     loadData();
   };
 
-  const popularPizzas = useMemo(
-    () => products.filter((p) => p.isPopular && p.isAvailable),
-    [products]
-  );
-  const favoritePizzas = popularPizzas.length > 0 ? popularPizzas.slice(0, 6) : products.slice(0, 4);
+  const favoritePizzas = (() => {
+    const popular = products.filter(
+      (p) =>
+        p.isPopular &&
+        (p.categoryId !== 'pizza' || !isProductDiscounted(p))
+    );
+    if (popular.length > 0) {
+      return sortPopularProducts(popular);
+    }
+    const fallbackIds = selectDefaultPopularIds(products);
+    return sortPopularProducts(products.filter((p) => fallbackIds.has(p.id)));
+  })();
 
   const lunchCombos = products.filter(
     (p) => p.tags?.includes('Combo Trưa') || p.id.startsWith('CB')
@@ -264,9 +475,11 @@ export default function HomeScreen() {
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <Bell size={24} color="#1E2024" strokeWidth={1.8} />
-          <View style={[styles.bellBadge, (!user || user.isDemo) && { display: 'none' }]}>
-            <Text style={styles.bellBadgeText}>1</Text>
-          </View>
+          {unreadNotifCount > 0 && (
+            <View style={styles.bellBadge}>
+              <Text style={styles.bellBadgeText}>{unreadNotifCount}</Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -299,22 +512,23 @@ export default function HomeScreen() {
             }}
           >
             {PROMO_BANNERS.map((banner) => (
-              <View key={banner.id} style={[styles.bannerCard, { width: bannerWidth }]}>
-                <Image
-                  source={{ uri: banner.image }}
-                  style={styles.bannerImage}
-                  resizeMode="cover"
+              <TouchableOpacity
+                key={banner.id}
+                activeOpacity={0.92}
+                style={[styles.bannerCard, { width: bannerWidth }]}
+                onPress={() => {
+                  triggerHaptic('light');
+                  router.push({
+                    pathname: '/(tabs)/menu',
+                    params: { category: banner.categoryId },
+                  });
+                }}
+              >
+                <PromoBannerContent
+                  groupId={banner.id}
+                  customImageUrl={customBanners[banner.id]}
                 />
-                <View style={styles.bannerOverlay}>
-                  <View style={styles.bannerTagBox}>
-                    <Text style={styles.bannerTagText}>{banner.tag}</Text>
-                  </View>
-                  <Text style={styles.bannerPriceTag}>{banner.price}</Text>
-                  <View style={styles.memberDiscountPill}>
-                    <Text style={styles.memberDiscountText}>{banner.discount}</Text>
-                  </View>
-                </View>
-              </View>
+              </TouchableOpacity>
             ))}
           </ScrollView>
 
@@ -386,52 +600,111 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.horizontalPizzaScroll}
         >
-          {favoritePizzas.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={styles.pizzaCard}
-              activeOpacity={0.88}
-              onPress={() => {
-                triggerHaptic('light');
-                router.push({
-                  pathname: '/product/[id]',
-                  params: { id: item.id },
-                });
-              }}
-            >
-              <Image
-                source={{ uri: item.image }}
-                style={styles.pizzaCardImg}
-                resizeMode="cover"
-              />
-              <View style={styles.pizzaCardInfo}>
-                <Text style={styles.pizzaCardName} numberOfLines={2}>
-                  {item.name}
-                </Text>
-                <View style={styles.pizzaCardPriceRow}>
-                  <View>
-                    <Text style={styles.fromText}>Chỉ từ</Text>
-                    <Text style={styles.priceText}>{formatCurrency(item.basePrice)}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.addBtn}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Xem chi tiết ${item.name}`}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      triggerHaptic('medium');
-                      router.push({
-                        pathname: '/product/[id]',
-                        params: { id: item.id },
-                      });
-                    }}
-                  >
-                    <Plus size={18} color="#FFFFFF" strokeWidth={2.5} />
-                  </TouchableOpacity>
+          {favoritePizzas.map((item) => {
+            const isSoldOut = item.isAvailable === false;
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.pizzaCard}
+                activeOpacity={isSoldOut ? 1 : 0.88}
+                disabled={isSoldOut}
+                onPress={() => {
+                  if (isSoldOut) return;
+                  triggerHaptic('light');
+                  router.push({
+                    pathname: '/product/[id]',
+                    params: { id: item.id },
+                  });
+                }}
+              >
+                <View style={{ width: 88, height: 88, borderRadius: 10, overflow: 'hidden', position: 'relative' }}>
+                  <Image
+                    source={{ uri: item.image }}
+                    style={[styles.pizzaCardImg, isSoldOut && { opacity: 0.85 }]}
+                    resizeMode="contain"
+                  />
+                  {isSoldOut && (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: 'rgba(17, 24, 39, 0.16)',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        borderRadius: 10,
+                      }}
+                    >
+                      <View
+                        style={{
+                          backgroundColor: 'rgba(31, 41, 55, 0.88)',
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: 'rgba(255, 255, 255, 0.6)',
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: '#FFFFFF',
+                            fontSize: 10,
+                            fontWeight: '800',
+                            letterSpacing: 0.4,
+                          }}
+                        >
+                          HẾT MÓN
+                        </Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
-              </View>
-            </TouchableOpacity>
-          ))}
+                <View style={styles.pizzaCardInfo}>
+                  <Text
+                    style={[styles.pizzaCardName, isSoldOut && { color: '#4B5563' }]}
+                    numberOfLines={2}
+                  >
+                    {item.name}
+                  </Text>
+                  <View style={styles.pizzaCardPriceRow}>
+                    <View>
+                      <Text style={[styles.fromText, isSoldOut && { color: '#6B7280' }]}>
+                        {item.categoryId === 'drinks' || item.categoryId === 'starters'
+                          ? 'Giá bán'
+                          : 'Chỉ từ'}
+                      </Text>
+                      <Text style={[styles.priceText, isSoldOut && { color: '#6B7280' }]}>
+                        {formatCurrency(item.basePrice)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.addBtn,
+                        isSoldOut && { backgroundColor: '#D1D5DB' },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Xem chi tiết ${item.name}`}
+                      activeOpacity={isSoldOut ? 1 : 0.8}
+                      disabled={isSoldOut}
+                      onPress={(e: any) => {
+                        e?.stopPropagation?.();
+                        if (isSoldOut) return;
+                        triggerHaptic('medium');
+                        router.push({
+                          pathname: '/product/[id]',
+                          params: { id: item.id },
+                        });
+                      }}
+                    >
+                      <Plus size={18} color="#FFFFFF" strokeWidth={2.5} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
 
         {/* ======================================================== */}

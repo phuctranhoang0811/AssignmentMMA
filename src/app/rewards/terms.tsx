@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import Svg, { Path, Rect, G, Text as SvgText } from 'react-native-svg';
 import { triggerHaptic } from '../../utils/haptics';
+import { useAuth } from '../../state/AuthContext';
+import { fetchUserMemberStats, getMemberTierFromSpent } from '../../utils/memberTier';
 import { styles, BRAND_RED } from '../../styles/rewardTerms.styles';
 
 const DARK_SLATE = '#28364A';
@@ -247,7 +249,25 @@ const DiscountScallopBadge = ({ percent }: { percent: number }) => (
 export default function RewardTermsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [selectedTier, setSelectedTier] = useState<'basic' | 'gold' | 'vip'>('basic');
+  const { user } = useAuth();
+  const [selectedTier, setSelectedTier] = useState<'basic' | 'gold' | 'vip'>(() =>
+    getMemberTierFromSpent((user?.rewardPoints ?? 0) * 10000, user?.rewardPoints ?? 0).id
+  );
+
+  useEffect(() => {
+    let active = true;
+    if (!user?.id || user?.isDemo) return;
+    fetchUserMemberStats(user.id)
+      .then((stats) => {
+        if (active && stats?.id) {
+          setSelectedTier(stats.id);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user?.id, user?.isDemo]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>

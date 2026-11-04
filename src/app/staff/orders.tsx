@@ -1,57 +1,117 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { collection, doc, onSnapshot, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
-import { db } from '../../services/firebase';
-import { ActivityIndicator, AppState, FlatList, Linking, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Linking,
+  Modal,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { ArrowLeft, CheckCircle2, ChefHat, Clock, LogOut, Phone, Search, Store, X } from 'lucide-react-native';
-import { AppButton } from '../../components/ui/AppButton';
+import {
+  Camera,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Image as ImageIcon,
+  MapPin,
+  Phone,
+  Search,
+  Truck,
+  X,
+} from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import {
+  arrayUnion,
+  collection,
+  doc,
+  increment,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc,
+} from 'firebase/firestore';
+import { db } from '../../services/firebase';
 import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
-import { advanceStaffOrder, listStaffOrders, rejectStaffOrder, unassignRiderOrder, type StaffOrder } from '../../services/orderApi';
-import { Alert } from '../../utils/alert';
-import { watchStaffOrders } from '../../services/payosService';
-import { triggerHaptic } from '../../utils/haptics';
-import { updateDeliveryOrder } from '../../services/deliveryService';
-import { deliveryStatusLabels } from '../../types/delivery';
-import { canRejectStaffOrder, filterStaffOrders, isAdminRole, staffDeliveryTime, staffOrderAction, staffOrderTime, type StaffTab } from '../../utils/staff';
-import { formatCurrency } from '../../utils/formatCurrency';
+import { ScreenHeader } from '../../components/ui/ScreenHeader';
+import { AppText } from '../../components/ui/AppText';
+import { AppButton } from '../../components/ui/AppButton';
 import { colors } from '../../theme/colors';
-import { styles } from '../../styles/staffPortal.styles';
+import { formatCurrency } from '../../utils/formatCurrency';
+import { staffOrderTime } from '../../utils/staff';
+import {
+  subscribeOrderOverrides,
+  saveOrderOverride,
+  compressImageForSync,
+  subscribeStaffStoresMap,
+  subscribeStaffSchedules,
+  subscribeStoresConfig,
+  getStaffShiftOnDate,
+  DEFAULT_STORE_BRANCHES,
+  type OrderDispatchOverride,
+  type StaffCustomizationEntry,
+  type StaffScheduleRecord,
+  type SyncedStoreBranch,
+  type ShiftType,
+} from '../../services/storeSync';
 
-const TABS = [
-  { key: 'pending', title: 'Chờ duyệt', Icon: Clock },
-  { key: 'kitchen', title: 'Bếp & Giao', Icon: ChefHat },
-  { key: 'completed', title: 'Đã xong', Icon: CheckCircle2 },
-] as const;
-const STATUS_LABEL: Record<string, string> = {
-  PENDING_CONFIRMATION: 'Chờ xác nhận', CONFIRMED: 'Đã xác nhận', PREPARING: 'Đang làm',
-  READY: 'Sẵn sàng', OUT_FOR_DELIVERY: 'Đang giao', COMPLETED: 'Hoàn thành', CANCELLED: 'Đã hủy',
+const SHIFT_INFO: Record<ShiftType, { label: string; color: string; bg: string }> = {
+  MORNING: { label: 'Ca Sáng (08:00 - 14:00)', color: colors.primary, bg: colors.primarySoft },
+  EVENING: { label: 'Ca Tối (14:00 - 22:00)', color: colors.primary, bg: colors.primarySoft },
+  FULL: { label: 'Full ca (08:00 - 22:00)', color: colors.primary, bg: colors.primarySoft },
+  OFF: { label: 'Hôm nay nghỉ (OFF)', color: colors.textSecondary, bg: colors.surfaceAlt },
 };
-const REJECT_REASONS = ['Hết nguyên liệu làm bánh', 'Ngoài vùng giao hàng', 'Cửa hàng quá tải', 'Không liên lạc được khách', 'Khách yêu cầu hủy', 'Lý do khác'];
+
+const STAFF_FAIL_REASONS = [
+  'Gọi điện khách hàng không nghe máy',
+  'Sai địa chỉ giao hàng',
+];
 
 export default function StaffOrdersScreen() {
-  const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { showToast } = useToast();
   const uid = user?.id;
-  const [activeTab, setActiveTab] = useState<StaffTab>('pending');
-  const [fulfillment, setFulfillment] = useState('ALL');
-  const [search, setSearch] = useState('');
-  const [result, setResult] = useState<{ uid?: string; orders: StaffOrder[] }>({ orders: [] });
+
+  const [activeTab, setActiveTab] = useState<'delivering' | 'completed'>('delivering');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [rawOrders, setRawOrders] = useState<Record<string, any>[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [confirmation, setConfirmation] = useState<{ order: StaffOrder; kind: 'accept' | 'reject' } | null>(null);
-  const [reason, setReason] = useState(REJECT_REASONS[0]);
-  const [customReason, setCustomReason] = useState('');
-  const [logoutVisible, setLogoutVisible] = useState(false);
-  const currentUid = useRef(uid);
-  currentUid.current = uid;
-  const requestNumber = useRef(0);
-  const pendingLoads = useRef(0);
-  const actionInFlight = useRef(false);
-  const allOrders = result.uid === uid ? result.orders : [];
+
+  const [orderOverrides, setOrderOverrides] = useState<Record<string, OrderDispatchOverride>>({});
+  const [staffMap, setStaffMap] = useState<Record<string, StaffCustomizationEntry>>({});
+  const [schedulesMap, setSchedulesMap] = useState<Record<string, StaffScheduleRecord>>({});
+  const [storesList, setStoresList] = useState<SyncedStoreBranch[]>(DEFAULT_STORE_BRANCHES);
+
+  // Modal xem chi tiết đơn hàng khi bấm vào card
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+
+  // Modal chụp ảnh xác nhận giao hàng
+  const [completingOrder, setCompletingOrder] = useState<Record<string, any> | null>(null);
+  const [proofImage, setProofImage] = useState<string>('');
+  const [proofError, setProofError] = useState<string>('');
+  const [submittingProof, setSubmittingProof] = useState(false);
+
+  // Modal báo giao thất bại / khách không nhận
+  const [failingOrder, setFailingOrder] = useState<Record<string, any> | null>(null);
+  const [failReason, setFailReason] = useState<string>(STAFF_FAIL_REASONS[0]);
+  const [submittingFail, setSubmittingFail] = useState(false);
+
+  useEffect(() => {
+    const unsubOverrides = subscribeOrderOverrides((map) => setOrderOverrides(map));
+    const unsubStaff = subscribeStaffStoresMap((map) => setStaffMap(map));
+    const unsubSchedules = subscribeStaffSchedules((map) => setSchedulesMap(map));
+    const unsubStores = subscribeStoresConfig((state) => {
+      if (state.stores?.length > 0) setStoresList(state.stores);
+    });
+    return () => {
+      unsubOverrides();
+      unsubStaff();
+      unsubSchedules();
+      unsubStores();
+    };
+  }, []);
 
   useEffect(() => {
     if (!uid) return;
@@ -59,55 +119,11 @@ export default function StaffOrdersScreen() {
     const unsub = onSnapshot(
       collection(db, 'orders'),
       (snap) => {
-        const list: StaffOrder[] = [];
+        const list: Record<string, any>[] = [];
         snap.forEach((docSnap) => {
-          const d = docSnap.data();
-          const orderStoreId = d.storeId ? String(d.storeId) : undefined;
-          const orderStoreName = d.storeName ? String(d.storeName) : undefined;
-          const orderAddr = String(d.address || d.deliveryAddress || '');
-
-          // Nếu tài khoản có gắn quán (Nhân viên / Manager của quán), chỉ hiển thị đơn của quán đó
-          if (user?.storeId || user?.storeName) {
-            const matchesId = user.storeId && orderStoreId && user.storeId === orderStoreId;
-            const matchesName =
-              user.storeName &&
-              ((orderStoreName && orderStoreName === user.storeName) ||
-                (!orderStoreId && orderAddr.includes(user.storeName)));
-            if (!matchesId && !matchesName) {
-              return;
-            }
-          }
-
-          list.push({
-            id: docSnap.id,
-            orderCode: String(d.orderCode || docSnap.id.slice(-6).toUpperCase()),
-            status: String(d.status || 'PENDING_CONFIRMATION'),
-            fulfillmentType:
-              d.fulfillmentType === 'takeaway' || d.fulfillmentType === 'PICKUP'
-                ? 'takeaway'
-                : 'delivery',
-            address: orderAddr,
-            storeId: orderStoreId,
-            storeName: orderStoreName,
-            customer: {
-              fullname: String(d.customer?.fullname || d.customerName || 'Khách hàng'),
-              phone: String(d.customer?.phone || d.customerPhone || ''),
-            },
-            total: Number(d.total || d.totalAmount || 0),
-            paymentName: d.paymentName || (d.paymentMethod === 'payos' ? 'payOS' : 'Tiền mặt'),
-            paymentStatus: d.paymentStatus || 'UNPAID',
-            createdAt: d.createdAt,
-            deliveryNote: d.deliveryNote || '',
-            paymentMethod: d.paymentMethod || 'cash',
-            deliveryTime: d.deliveryTime || 'asap',
-            items: Array.isArray(d.items) ? d.items : [],
-            delivery: d.delivery,
-            rider: d.rider,
-          });
+          list.push({ id: docSnap.id, ...docSnap.data() });
         });
-        list.sort((a, b) => (staffOrderTime(b.createdAt) ?? 0) - (staffOrderTime(a.createdAt) ?? 0));
-        setResult({ uid, orders: list });
-        setError('');
+        setRawOrders(list);
         setLoading(false);
       },
       () => {
@@ -115,299 +131,1368 @@ export default function StaffOrdersScreen() {
       }
     );
     return () => unsub();
-  }, [uid, user?.storeId, user?.storeName]);
-
-  const advanceStaffOrderLocal = async (order: StaffOrder) => {
-    const isPickup = order.fulfillmentType === 'takeaway' || order.fulfillmentType === 'PICKUP';
-    const nextMap: Record<string, string> = {
-      PENDING_CONFIRMATION: 'CONFIRMED',
-      CONFIRMED: 'PREPARING',
-      PREPARING: isPickup ? 'COMPLETED' : 'READY',
-      READY: isPickup ? 'COMPLETED' : 'OUT_FOR_DELIVERY',
-      OUT_FOR_DELIVERY: 'COMPLETED',
-    };
-    const nextStatus = nextMap[order.status] || 'COMPLETED';
-    await updateDoc(doc(db, 'orders', order.id), {
-      status: nextStatus,
-      ...(nextStatus === 'COMPLETED' ? { paymentStatus: 'PAID' } : {}),
-      statusHistory: arrayUnion({
-        status: nextStatus,
-        at: new Date().toISOString(),
-        note: `Nhân viên ${user?.fullname || ''} cập nhật trạng thái`.trim(),
-      }),
-      updatedAt: serverTimestamp(),
-    });
-  };
-
-  const rejectStaffOrderLocal = async (order: StaffOrder, rejectReason: string) => {
-    await updateDoc(doc(db, 'orders', order.id), {
-      status: 'CANCELLED',
-      cancelReason: rejectReason,
-      statusHistory: arrayUnion({
-        status: 'CANCELLED',
-        at: new Date().toISOString(),
-        note: `Từ chối đơn: ${rejectReason}`,
-      }),
-      updatedAt: serverTimestamp(),
-    });
-  };
-
-  const load = useCallback(async () => {
-    void listStaffOrders;
-    void advanceStaffOrder;
-    void rejectStaffOrder;
-    if (Boolean(true)) return;
-    const number = ++requestNumber.current;
-    if (!uid) return;
-    pendingLoads.current++;
-    setLoading(true);
-    try {
-      const orders = await listStaffOrders();
-      if (currentUid.current !== uid || number !== requestNumber.current) return;
-      setResult({ uid, orders });
-      setError('');
-    } catch (failure) {
-      if (currentUid.current === uid && number === requestNumber.current) {
-        setError(failure instanceof Error ? failure.message : 'Chưa thể tải đơn hàng.');
-      }
-    } finally {
-      pendingLoads.current--;
-      if (currentUid.current === uid && number === requestNumber.current) setLoading(false);
-    }
   }, [uid]);
 
-  useFocusEffect(useCallback(() => {
-    void load();
-    // Use the authenticated backend; Firestore clients cannot read or modify every customer's orders.
-    // The socket delivers changes at once; the slow poll only covers a dropped connection.
-    let stopSocket = () => {};
-    try {
-      stopSocket = watchStaffOrders(event => {
-        if (event.kind === 'new') {
-          triggerHaptic('success');
-          showToast({ message: `Có đơn mới #${event.orderCode ?? ''}`.trim(), type: 'info' });
-        }
-        void load();
-      }, () => { void load(); }, alert => {
-        triggerHaptic('warning');
-        const text = alert.kind === 'RIDER_NO_PICKUP' ? `Tài xế nhận đơn #${alert.orderCode} ${alert.waitedMinutes} phút vẫn chưa tới lấy món!`
-          : alert.kind === 'RIDER_OVERDUE' ? `Đơn #${alert.orderCode} đã giao ${alert.waitedMinutes} phút chưa xong. Hãy liên hệ tài xế!`
-          : `Đơn #${alert.orderCode} đã chờ ${alert.waitedMinutes} phút chưa được xác nhận!`;
-        showToast({ message: text, type: 'error' });
-      });
-    } catch { /* No backend address configured: the poll below still works. */ }
-    const timer = setInterval(() => {
-      if (AppState.currentState === 'active' && pendingLoads.current === 0) void load();
-    }, 60000);
-    const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active') void load();
+  const myStaffEntry = uid ? staffMap[uid] : undefined;
+  const effectiveStoreId = myStaffEntry?.storeId || user?.storeId;
+  const matchedStore = storesList.find((s) => s.id === effectiveStoreId);
+  const effectiveStoreName =
+    myStaffEntry?.storeName || matchedStore?.name || user?.storeName || 'Pizza FPT';
+
+  const todayShift: ShiftType = uid
+    ? getStaffShiftOnDate(schedulesMap[uid], new Date())
+    : 'MORNING';
+  const shiftBadge = SHIFT_INFO[todayShift];
+
+  // Chỉ lấy những đơn được Quản lý phân công cho nhân viên đang đăng nhập
+  const myAssignedOrders = rawOrders
+    .filter((raw) => String(raw.orderCode || '').toUpperCase() !== 'PF-X469QK')
+    .map((raw) => {
+      const ov = orderOverrides[raw.id];
+      const status = String(ov?.status || raw.status || 'PENDING_CONFIRMATION');
+      const assignedStaffId = String(
+        ov?.assignedStaffId || raw.assignedStaffId || raw.rider?.uid || ''
+      );
+      const assignedStaffName = String(
+        ov?.assignedStaffName || raw.assignedStaffName || raw.rider?.name || ''
+      );
+      const assignedStaffPhone = String(
+        ov?.assignedStaffPhone || raw.assignedStaffPhone || raw.rider?.phone || ''
+      );
+      const deliveryProofImage = String(
+        ov?.deliveryProofImage || raw.deliveryProofImage || ''
+      );
+      const cancelReason = String(ov?.cancelReason || raw.cancelReason || '');
+      const deliveredAt = String(ov?.deliveredAt || raw.deliveredAt || '');
+      const orderCode = String(raw.orderCode || String(raw.id).slice(-6).toUpperCase());
+      const customerName = String(
+        raw.customer?.fullname || raw.customerName || 'Khách hàng'
+      );
+      const customerPhone = String(raw.customer?.phone || raw.customerPhone || '');
+      const address = String(raw.address || raw.deliveryAddress || '');
+      const deliveryNote = String(raw.deliveryNote || raw.note || '').trim();
+      const total = Number(raw.total || raw.totalAmount || 0);
+      const paymentStatus = String(ov?.paymentStatus || raw.paymentStatus || 'UNPAID');
+      const paymentMethod = String(raw.paymentMethod || 'cash');
+      const items = Array.isArray(raw.items) ? raw.items : [];
+      const createdAtMs = staffOrderTime(raw.createdAt) ?? 0;
+
+      return {
+        ...(raw as any),
+        id: String(raw.id),
+        orderCode,
+        status,
+        assignedStaffId,
+        assignedStaffName,
+        assignedStaffPhone,
+        deliveryProofImage,
+        cancelReason,
+        deliveredAt,
+        customerName,
+        customerPhone,
+        address,
+        deliveryNote,
+        total,
+        paymentStatus,
+        paymentMethod,
+        items,
+        createdAtMs,
+      };
+    })
+    .filter((o) => {
+      if (!uid) return false;
+      const myPhone = String(myStaffEntry?.phone || user?.phone || '').trim();
+      const matchedById = o.assignedStaffId && o.assignedStaffId === uid;
+      const matchedByPhone =
+        !o.assignedStaffId && myPhone && o.assignedStaffPhone === myPhone;
+      return Boolean(matchedById || matchedByPhone);
+    })
+    .sort((a, b) => b.createdAtMs - a.createdAtMs);
+
+  const now = new Date();
+  const startOfTodayMs = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  ).getTime();
+  const isOrderToday = (o: { createdAtMs: number; deliveredAt?: string }) => {
+    const deliveredMs = o.deliveredAt ? Date.parse(o.deliveredAt) : 0;
+    const refMs = deliveredMs > 0 ? deliveredMs : o.createdAtMs;
+    return !refMs || refMs >= startOfTodayMs;
+  };
+
+  const deliveringCount = myAssignedOrders.filter(
+    (o) => o.status === 'READY' || o.status === 'OUT_FOR_DELIVERY'
+  ).length;
+  const completedCount = myAssignedOrders.filter(
+    (o) =>
+      (o.status === 'COMPLETED' ||
+        o.status === 'DELIVERED' ||
+        o.status === 'CANCELLED' ||
+        o.status === 'REJECTED') &&
+      isOrderToday(o)
+  ).length;
+
+  const filteredOrders = myAssignedOrders.filter((o) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      const match =
+        o.orderCode.toLowerCase().includes(q) ||
+        o.customerName.toLowerCase().includes(q) ||
+        o.customerPhone.toLowerCase().includes(q) ||
+        o.address.toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    if (activeTab === 'delivering') {
+      return o.status === 'READY' || o.status === 'OUT_FOR_DELIVERY';
+    }
+    return (
+      (o.status === 'COMPLETED' ||
+        o.status === 'DELIVERED' ||
+        o.status === 'CANCELLED' ||
+        o.status === 'REJECTED') &&
+      isOrderToday(o)
+    );
+  });
+
+  const handleStartDelivery = async (order: Record<string, any>) => {
+    setSelectedOrderId(null);
+    const nowIso = new Date().toISOString();
+    await saveOrderOverride(order.id, {
+      status: 'OUT_FOR_DELIVERY',
     });
-    return () => {
-      stopSocket();
-      clearInterval(timer);
-      subscription.remove();
-      requestNumber.current++;
-    };
-  }, [load, showToast]));
+    await updateDoc(doc(db, 'orders', order.id), {
+      status: 'OUT_FOR_DELIVERY',
+      statusHistory: arrayUnion({
+        status: 'OUT_FOR_DELIVERY',
+        at: nowIso,
+        note: `Nhân viên ${user?.fullname || ''} đã nhận bánh và bắt đầu đi giao`.trim(),
+      }),
+      updatedAt: serverTimestamp(),
+    }).catch(() => {});
 
-  const run = async (order: StaffOrder, action: () => Promise<unknown>) => {
-    if (actionInFlight.current) return;
-    actionInFlight.current = true;
-    setBusy(order.id);
+    showToast({
+      message: `Đã bắt đầu đi giao đơn #${order.orderCode} — Khách hàng đã thấy trạng thái Đang giao hàng!`,
+      type: 'success',
+    });
+  };
+
+  const handleOpenCompleteModal = (order: Record<string, any>) => {
+    setCompletingOrder(order);
+    setProofImage('');
+    setProofError('');
+  };
+
+  const pickImageFromCamera = async () => {
+    setProofError('');
     try {
-      await action();
-      if (currentUid.current !== uid) return;
-      setConfirmation(null);
-      showToast({ message: `Đã cập nhật đơn #${order.orderCode}.`, type: 'success' });
-      await load();
-    } catch (failure) {
-      if (currentUid.current === uid) {
-        showToast({ message: failure instanceof Error ? failure.message : 'Thao tác chưa hoàn tất.', type: 'error' });
-        await load();
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        setProofError('Vui lòng cấp quyền truy cập Camera hoặc chọn ảnh từ thiết bị.');
+        return;
       }
-    } finally {
-      actionInFlight.current = false;
-      setBusy(null);
-    }
-  };
-  const openReject = (order: StaffOrder) => {
-    setReason(REJECT_REASONS[0]);
-    setCustomReason('');
-    setConfirmation({ order, kind: 'reject' });
-  };
-  const closeConfirmation = () => { if (!actionInFlight.current) setConfirmation(null); };
-  const finalReason = reason === 'Lý do khác' ? customReason.trim() : reason;
-  const confirm = () => {
-    if (!confirmation || (confirmation.kind === 'reject' && !finalReason)) return;
-    const { order, kind } = confirmation;
-    void run(order, () => kind === 'accept' ? advanceStaffOrderLocal(order) : rejectStaffOrderLocal(order, finalReason));
-  };
-  const signOut = async () => {
-    if (actionInFlight.current) return;
-    actionInFlight.current = true;
-    setBusy('logout');
-    try {
-      await logout();
-      router.replace('/(tabs)/home');
+      const res = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.35,
+        base64: true,
+      });
+      if (!res.canceled && res.assets?.[0]) {
+        const asset = res.assets[0];
+        const dataUri = asset.base64
+          ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
+          : asset.uri;
+        const compressed = await compressImageForSync(dataUri);
+        setProofImage(compressed);
+      }
     } catch {
-      showToast({ message: 'Chưa thể đăng xuất. Vui lòng thử lại.', type: 'error' });
-    } finally {
-      actionInFlight.current = false;
-      setBusy(null);
-      setLogoutVisible(false);
+      setProofError('Thiết bị không mở được Camera, vui lòng bấm "Chọn ảnh từ máy".');
     }
   };
 
-  const renderOrder = ({ item: order }: { item: StaffOrder }) => {
-    const action = staffOrderAction(order);
-    const createdAt = staffOrderTime(order.createdAt);
-    const elapsed = createdAt === undefined ? undefined : Math.max(0, Math.floor((Date.now() - createdAt) / 60000));
-    const urgent = order.status === 'PENDING_CONFIRMATION' && elapsed !== undefined && elapsed >= 5;
-    const paid = order.paymentStatus === 'PAID' || order.paymentStatus === 'PAID_DEMO';
-    return <View style={[styles.orderCard, urgent && styles.orderCardUrgent]}>
-      <View style={styles.cardHeader}>
-        <View style={styles.orderCodeCol}>
-          <Text style={styles.orderCodeText}>#{order.orderCode}</Text>
-          <Text style={styles.orderTimestampText}>{createdAt === undefined ? '' : new Date(createdAt).toLocaleString('vi-VN')}</Text>
-        </View>
-        <View>
-          <Text style={styles.itemSubDetails}>{STATUS_LABEL[order.status] ?? order.status}</Text>
-          {order.status === 'PENDING_CONFIRMATION' && elapsed !== undefined &&
-            <Text style={[styles.timerText, { color: urgent ? colors.error : colors.textSecondary }]}>Chờ {elapsed} phút</Text>}
-        </View>
-      </View>
-      <View style={styles.customerBox}>
-        <View style={styles.customerRow}>
-          <Text style={[styles.customerName, { flex: 1 }]}>{order.customer?.fullname || 'Khách hàng'}</Text>
-          {!!order.customer?.phone && <TouchableOpacity style={styles.callBtn} accessibilityRole="button"
-            accessibilityLabel={`Gọi khách ${order.customer.phone}`} onPress={() => {
-              void Linking.openURL(`tel:${order.customer.phone.replace(/[^\d+]/g, '')}`).catch(() => {
-                showToast({ message: 'Thiết bị chưa hỗ trợ gọi điện.', type: 'error' });
-              });
-            }}>
-            <Phone size={12} color={colors.success} /><Text style={styles.callBtnText}>{order.customer.phone}</Text>
-          </TouchableOpacity>}
-        </View>
-        <Text style={styles.fulfillmentText}>{order.fulfillmentType === 'delivery' ? `Giao đến: ${order.address}` : 'Nhận tại cửa hàng'}</Text>
-        {!!order.deliveryTime && <Text style={styles.itemSubDetails}>Hẹn: {staffDeliveryTime(order.deliveryTime)}</Text>}
-        {!!order.deliveryNote && <Text style={styles.noteHighlightText}>Ghi chú giao: {order.deliveryNote}</Text>}
-      </View>
-      <View style={styles.itemsContainer}>
-        {order.items?.map((item, index) => <View key={index} style={styles.itemRow}>
-          <View style={styles.itemMain}>
-            <Text style={styles.itemName}>{item.quantity} × {item.productName}</Text>
-            <Text style={styles.itemSubDetails}>{[item.variantName, ...(item.addonNames ?? []),
-              ...(Array.isArray(item.customizationSummary) ? item.customizationSummary : [item.customizationSummary])].filter(Boolean).join(' • ')}</Text>
-            {!!item.note && <Text style={styles.noteHighlightText}>Ghi chú bếp: {item.note}</Text>}
-          </View>
-          {item.lineTotal !== undefined && <Text style={styles.itemPrice}>{formatCurrency(item.lineTotal)}</Text>}
-        </View>)}
-      </View>
-      <View style={styles.cardFooter}>
-        <View style={styles.priceRow}>
-          <Text style={[styles.paymentStatusText, { flex: 1, color: paid ? colors.success : colors.textSecondary }]}>
-            {order.paymentName || order.paymentMethod || 'Tiền mặt'} • {order.paymentStatus === 'REFUND_PENDING'
-              ? 'CHỜ HOÀN TIỀN' : paid ? 'ĐÃ THANH TOÁN' : 'CHƯA THANH TOÁN'}
-          </Text>
-          <Text style={styles.totalAmountText}>{formatCurrency(order.total)}</Text>
-        </View>
-        {!!order.delivery && <Text style={styles.fulfillmentText}>Ahamove: {deliveryStatusLabels[order.delivery.status]}</Text>}
-        {!!order.rider && <Text style={styles.fulfillmentText}>Tài xế: {order.rider.name}{order.rider.phone ? ` • ${order.rider.phone}` : ''}</Text>}
-        {!!action && <AppButton title={action} disabled={busy !== null} isLoading={busy === order.id}
-          onPress={() => order.status === 'PENDING_CONFIRMATION' ? setConfirmation({ order, kind: 'accept' })
-            : void run(order, () => advanceStaffOrderLocal(order))} />}
-        {order.delivery?.provider === 'AHAMOVE' && order.status === 'READY' && order.delivery.status === 'NOT_REQUESTED' &&
-          <AppButton title="Gọi tài xế Ahamove" disabled={busy !== null} isLoading={busy === order.id}
-            onPress={() => void run(order, () => updateDeliveryOrder(order.id, 'dispatch'))} />}
-        {!!order.delivery?.providerOrderId && <AppButton title="Kiểm tra chuyến" variant="outline" disabled={busy !== null}
-          onPress={() => void run(order, () => updateDeliveryOrder(order.id, 'refresh'))} />}
-        {!!order.rider && (order.status === 'READY' || (order.status === 'OUT_FOR_DELIVERY' && isAdminRole(user?.role))) &&
-          <AppButton title={order.status === 'READY' ? 'Gỡ tài xế' : 'Hủy chuyến giao'} variant="outline" disabled={busy !== null}
-            onPress={() => order.status === 'READY' ? void run(order, () => unassignRiderOrder(order.id))
-              : Alert.alert('Hủy chuyến giao?', `Đơn #${order.orderCode} sẽ bị hủy${order.paymentStatus === 'PAID' ? ' và chuyển vào hàng chờ hoàn tiền' : ''}. Tài xế vẫn được trả công chuyến này.`, [
-                { text: 'Không', style: 'cancel' },
-                { text: 'Hủy chuyến', style: 'destructive', onPress: () => { void run(order, () => unassignRiderOrder(order.id)); } },
-              ])} />}
-        {canRejectStaffOrder(order) && <AppButton title="Từ chối đơn" variant="ghost" disabled={busy !== null} onPress={() => openReject(order)} />}
-      </View>
-    </View>;
+  const pickImageFromGallery = async () => {
+    setProofError('');
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.35,
+        base64: true,
+      });
+      if (!res.canceled && res.assets?.[0]) {
+        const asset = res.assets[0];
+        const dataUri = asset.base64
+          ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
+          : asset.uri;
+        const compressed = await compressImageForSync(dataUri);
+        setProofImage(compressed);
+      }
+    } catch {
+      setProofError('Không thể chọn ảnh, vui lòng thử lại.');
+    }
   };
 
-  return <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-    <View style={styles.container}>
-      <View style={styles.topBar}>
-        <View style={styles.storeBranchRow}><Store size={14} color={colors.primary} /><Text style={styles.storeBranchText}>{user?.storeName ? `${user.storeName} • Khu vực nhân viên` : 'Pizza FPT • Khu vực nhân viên'}</Text></View>
-        <View style={styles.topBarRow}>
-          <View style={styles.staffInfoCol}>
-            <Text style={styles.staffNameText}>{user?.fullname}</Text>
-            <View style={styles.roleBadge}><Text style={styles.roleBadgeText}>VẬN HÀNH CA TRỰC</Text></View>
-          </View>
-          <View style={styles.topBarRightIcons}>
-            <TouchableOpacity style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Về trang khách hàng" disabled={busy !== null} onPress={() => router.replace('/(tabs)/home')}>
-              <ArrowLeft size={18} color={colors.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Đăng xuất" disabled={busy !== null} onPress={() => setLogoutVisible(true)}>
-              <LogOut size={18} color={colors.error} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-      <View style={styles.tabContainer}>
-        {TABS.map(({ key, title, Icon }) => <TouchableOpacity key={key} accessibilityRole="tab"
-          accessibilityState={{ selected: activeTab === key }} style={[styles.tabBtn, activeTab === key && styles.activeTabBtn]}
-          onPress={() => setActiveTab(key)}>
-          <Icon size={14} color={activeTab === key ? colors.white : colors.textSecondary} />
-          <Text style={[styles.tabText, activeTab === key && styles.activeTabText]}>{title}</Text>
-          <Text style={[styles.badgeText, activeTab === key && styles.activeBadgeText]}>{filterStaffOrders(allOrders, key).length}</Text>
-        </TouchableOpacity>)}
-      </View>
-      <View style={styles.filterBar}>
-        <View style={styles.searchBox}><Search size={16} color={colors.textSecondary} />
-          <TextInput style={styles.searchInput} accessibilityLabel="Tìm đơn theo mã, tên hoặc số điện thoại" placeholder="Mã, tên, SĐT..." value={search} onChangeText={setSearch} />
-        </View>
-        {[['delivery', 'Giao'], ['takeaway', 'Tại quầy']].map(([value, label]) => <TouchableOpacity key={value} accessibilityRole="button"
-          accessibilityState={{ selected: fulfillment === value }} style={[styles.filterChip, fulfillment === value && styles.activeFilterChip]}
-          onPress={() => setFulfillment(fulfillment === value ? 'ALL' : value)}>
-          <Text style={[styles.filterChipText, fulfillment === value && styles.activeFilterChipText]}>{label}</Text>
-        </TouchableOpacity>)}
-      </View>
-      {!!error && <View style={{ padding: 12, gap: 8 }}>
-        <Text style={{ color: colors.error }} accessibilityLiveRegion="polite">{error}</Text>
-        <AppButton title="Thử tải lại" size="sm" variant="outline" onPress={() => void load()} />
-      </View>}
-      <FlatList data={filterStaffOrders(allOrders, activeTab, fulfillment, search)} keyExtractor={order => order.id}
-        contentContainerStyle={styles.scrollContent} renderItem={renderOrder} refreshing={loading} onRefresh={() => void load()}
-        ListEmptyComponent={<View style={styles.emptyTabContainer}>
-          {loading ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.emptyTitle}>Không có đơn phù hợp.</Text>}
-          <Text style={styles.emptyDesc}>Kéo xuống để tải lại. Danh sách tự cập nhật mỗi 15 giây khi mở màn hình.</Text>
-        </View>} />
-    </View>
+  const handleConfirmDeliveryComplete = async () => {
+    if (!completingOrder) return;
+    if (!proofImage) {
+      const msg =
+        'Bắt buộc phải chụp hoặc tải ảnh khách hàng lúc nhận bánh trước khi hoàn tất đơn!';
+      setProofError(msg);
+      showToast({ message: msg, type: 'error' });
+      return;
+    }
 
-    <Modal visible={confirmation !== null} transparent animationType="slide" onRequestClose={closeConfirmation}>
-      <View style={styles.modalOverlay}><View style={styles.modalContent}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>{confirmation?.kind === 'reject' ? 'Từ chối' : 'Xác nhận'} đơn #{confirmation?.order.orderCode}</Text>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Đóng xác nhận" disabled={busy !== null} onPress={closeConfirmation}><X size={20} color={colors.textSecondary} /></TouchableOpacity>
+    setSubmittingProof(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const compactProof = await compressImageForSync(proofImage);
+      await saveOrderOverride(completingOrder.id, {
+        status: 'COMPLETED',
+        paymentStatus: 'PAID',
+        deliveryProofImage: compactProof,
+        deliveredAt: nowIso,
+      });
+      await updateDoc(doc(db, 'orders', completingOrder.id), {
+        status: 'COMPLETED',
+        paymentStatus: 'PAID',
+        ...(compactProof.length <= 250000 ? { deliveryProofImage: compactProof } : {}),
+        deliveredAt: nowIso,
+        statusHistory: arrayUnion({
+          status: 'COMPLETED',
+          at: nowIso,
+          note: `Nhân viên ${user?.fullname || ''} đã giao hàng thành công (có ảnh xác nhận)`.trim(),
+        }),
+        updatedAt: serverTimestamp(),
+      }).catch(() => {});
+
+      // Cộng điểm tích lũy cho khách hàng khi đơn giao hoàn tất
+      const customerUid = String(completingOrder.userId || '');
+      const pts =
+        typeof completingOrder.earnedPoints === 'number'
+          ? completingOrder.earnedPoints
+          : Math.floor(Number(completingOrder.total || 0) / 10000);
+      if (customerUid && pts > 0) {
+        await updateDoc(doc(db, 'users', customerUid), {
+          rewardPoints: increment(pts),
+        }).catch(() => {});
+      }
+
+      showToast({
+        message: `Đã xác nhận giao thành công đơn #${completingOrder.orderCode}!`,
+        type: 'success',
+      });
+      setCompletingOrder(null);
+      setSelectedOrderId(null);
+      setProofImage('');
+      setActiveTab('completed');
+    } finally {
+      setSubmittingProof(false);
+    }
+  };
+
+  const handleConfirmFailDelivery = async () => {
+    if (!failingOrder) return;
+    setSubmittingFail(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const targetOrder = failingOrder;
+      await saveOrderOverride(targetOrder.id, {
+        status: 'CANCELLED',
+        cancelReason: failReason,
+        incidentResolved: false,
+        incidentReportedBy: `Nhân viên ${user?.fullname || ''}`.trim(),
+        deliveredAt: nowIso,
+      });
+      await updateDoc(doc(db, 'orders', targetOrder.id), {
+        status: 'CANCELLED',
+        cancelReason: failReason,
+        statusHistory: arrayUnion({
+          status: 'CANCELLED',
+          at: nowIso,
+          note: `${failReason} (Báo bởi nhân viên ${user?.fullname || ''})`.trim(),
+        }),
+        updatedAt: serverTimestamp(),
+      }).catch(() => {});
+
+      showToast({
+        message: `Đã báo sự cố giao hàng đơn #${targetOrder.orderCode} về Quản lý & Admin!`,
+        type: 'info',
+      });
+      setFailingOrder(null);
+      setSelectedOrderId(null);
+      setActiveTab('completed');
+    } finally {
+      setSubmittingFail(false);
+    }
+  };
+
+  const selectedDetailOrder = selectedOrderId
+    ? myAssignedOrders.find((o) => o.id === selectedOrderId) || null
+    : null;
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      <ScreenHeader
+        title="Đơn hàng giao của tôi"
+        subtitle={`${effectiveStoreName} • ${shiftBadge.label}`}
+      />
+
+      <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
+        {/* Ô tìm kiếm đơn */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: '#FFFFFF',
+            borderRadius: 12,
+            paddingHorizontal: 12,
+            height: 42,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <Search size={17} color={colors.textSecondary} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Tìm mã đơn, tên khách, SĐT, địa chỉ..."
+            placeholderTextColor={colors.textDisabled}
+            style={{
+              flex: 1,
+              marginLeft: 8,
+              fontSize: 13.5,
+              color: colors.textPrimary,
+            }}
+          />
+          {!!searchQuery && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <X size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
         </View>
-        {confirmation?.kind === 'reject' ? <ScrollView keyboardShouldPersistTaps="handled">
-          <Text style={styles.itemSubDetails}>Đơn đã thanh toán sẽ được đánh dấu chờ hoàn tiền.</Text>
-          {REJECT_REASONS.map(option => <TouchableOpacity key={option} accessibilityRole="radio" accessibilityState={{ checked: reason === option }}
-            disabled={busy !== null} style={[styles.reasonOption, reason === option && styles.activeReasonOption]} onPress={() => setReason(option)}>
-            <Text style={[styles.reasonText, reason === option && styles.activeReasonText]}>{option}</Text>
-          </TouchableOpacity>)}
-          {reason === 'Lý do khác' && <TextInput style={styles.customReasonInput} accessibilityLabel="Lý do từ chối" placeholder="Nhập lý do từ chối..." multiline maxLength={300} editable={busy === null} value={customReason} onChangeText={setCustomReason} />}
-        </ScrollView> : <Text style={styles.fulfillmentText}>Đơn hàng sẽ được xác nhận và chuyển vào khu vực bếp.</Text>}
-        <AppButton title={confirmation?.kind === 'reject' ? 'Xác nhận từ chối' : 'Xác nhận đơn'} variant={confirmation?.kind === 'reject' ? 'danger' : 'primary'}
-          isLoading={busy !== null} disabled={busy !== null || (confirmation?.kind === 'reject' && !finalReason)} onPress={confirm} />
-        <AppButton title="Quay lại" variant="ghost" disabled={busy !== null} onPress={closeConfirmation} />
-      </View></View>
-    </Modal>
-    <Modal visible={logoutVisible} transparent animationType="fade" onRequestClose={() => { if (busy === null) setLogoutVisible(false); }}>
-      <View style={styles.modalOverlay}><View style={styles.modalContent}>
-        <Text style={styles.modalTitle}>Đăng xuất ca làm?</Text>
-        <AppButton title="Đăng xuất" variant="danger" isLoading={busy === 'logout'} disabled={busy !== null} onPress={() => void signOut()} />
-        <AppButton title="Quay lại" variant="ghost" disabled={busy !== null} onPress={() => setLogoutVisible(false)} />
-      </View></View>
-    </Modal>
-  </SafeAreaView>;
+
+        {/* 2 Tab: Cần giao / Đã giao xong */}
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 10, marginBottom: 6 }}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => setActiveTab('delivering')}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              paddingVertical: 10,
+              borderRadius: 999,
+              backgroundColor: activeTab === 'delivering' ? colors.primary : '#FFFFFF',
+              borderWidth: 1,
+              borderColor: activeTab === 'delivering' ? colors.primary : colors.border,
+            }}
+          >
+            <Truck
+              size={15}
+              color={activeTab === 'delivering' ? '#FFFFFF' : colors.textSecondary}
+            />
+            <AppText
+              variant="captionSemiBold"
+              color={activeTab === 'delivering' ? '#FFFFFF' : colors.textSecondary}
+            >
+              Cần giao ({deliveringCount})
+            </AppText>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => setActiveTab('completed')}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              paddingVertical: 10,
+              borderRadius: 999,
+              backgroundColor: activeTab === 'completed' ? colors.primary : '#FFFFFF',
+              borderWidth: 1,
+              borderColor: activeTab === 'completed' ? colors.primary : colors.border,
+            }}
+          >
+            <CheckCircle2
+              size={15}
+              color={activeTab === 'completed' ? '#FFFFFF' : colors.textSecondary}
+            />
+            <AppText
+              variant="captionSemiBold"
+              color={activeTab === 'completed' ? '#FFFFFF' : colors.textSecondary}
+            >
+              Đã giao xong ({completedCount})
+            </AppText>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {loading ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={{ padding: 16, paddingBottom: 36 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {filteredOrders.length === 0 ? (
+            <View
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderRadius: 16,
+                padding: 28,
+                alignItems: 'center',
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <AppText variant="bodySemiBold" color={colors.textPrimary}>
+                {activeTab === 'delivering'
+                  ? 'Chưa có đơn hàng nào cần giao'
+                  : 'Chưa có đơn hàng nào đã giao xong'}
+              </AppText>
+              <AppText
+                variant="small"
+                color={colors.textSecondary}
+                style={{ marginTop: 4, textAlign: 'center' }}
+              >
+                {activeTab === 'delivering'
+                  ? 'Khi Quản lý chi nhánh phát đơn cho bạn, đơn hàng sẽ hiển thị ngay tại đây.'
+                  : 'Các đơn bạn đã chụp ảnh giao thành công sẽ lưu tại đây.'}
+              </AppText>
+            </View>
+          ) : (
+            filteredOrders.map((order) => {
+              const isCompleted =
+                order.status === 'COMPLETED' || order.status === 'DELIVERED';
+              const isFailed =
+                order.status === 'CANCELLED' || order.status === 'REJECTED';
+
+              return (
+                <TouchableOpacity
+                  key={order.id}
+                  activeOpacity={0.82}
+                  onPress={() => setSelectedOrderId(order.id)}
+                  style={{
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 14,
+                    padding: 14,
+                    marginBottom: 10,
+                    borderWidth: 1,
+                    borderColor: isFailed ? '#FECACA' : colors.border,
+                  }}
+                >
+                  {/* Dòng 1: Mã đơn + Trạng thái */}
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: 6,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <AppText variant="cardTitle" color={colors.textPrimary}>
+                        Đơn #{order.orderCode}
+                      </AppText>
+                      {!!order.createdAtMs && (
+                        <AppText variant="small" color={colors.textSecondary}>
+                          •{' '}
+                          {new Date(order.createdAtMs).toLocaleTimeString('vi-VN', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </AppText>
+                      )}
+                    </View>
+
+                    <View
+                      style={{
+                        backgroundColor: isCompleted
+                          ? colors.surfaceAlt
+                          : isFailed
+                            ? colors.surfaceAlt
+                            : colors.primarySoft,
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: 999,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <AppText
+                        variant="small"
+                        color={
+                          isCompleted
+                            ? colors.textPrimary
+                            : isFailed
+                              ? colors.textSecondary
+                              : colors.primary
+                        }
+                        style={{ fontWeight: '700' }}
+                      >
+                        {isCompleted
+                          ? 'Đã giao'
+                          : isFailed
+                            ? 'Giao thất bại'
+                            : order.status === 'READY'
+                              ? 'Chờ nhận bánh'
+                              : 'Đang đi giao'}
+                      </AppText>
+                    </View>
+                  </View>
+
+                  {/* Dòng 2: Tên khách + SĐT */}
+                  <AppText variant="bodySemiBold" color={colors.textPrimary} numberOfLines={1}>
+                    {order.customerName}
+                    {order.customerPhone ? ` • ${order.customerPhone}` : ''}
+                  </AppText>
+
+                  {/* Dòng 3: Địa chỉ ngắn gọn */}
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 5,
+                      marginTop: 4,
+                    }}
+                  >
+                    <MapPin size={14} color={colors.primary} />
+                    <AppText
+                      variant="small"
+                      color={colors.textSecondary}
+                      numberOfLines={1}
+                      style={{ flex: 1 }}
+                    >
+                      {order.address}
+                    </AppText>
+                  </View>
+
+                  {/* Dòng 4: Số món + Tổng tiền + Bấm xem chi tiết */}
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginTop: 10,
+                      paddingTop: 8,
+                      borderTopWidth: 1,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <AppText variant="small" color={colors.textSecondary}>
+                        {order.items.length} món •
+                      </AppText>
+                      <AppText variant="bodySemiBold" color={colors.primary}>
+                        {formatCurrency(order.total)}
+                      </AppText>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                      <AppText variant="captionSemiBold" color={colors.primary}>
+                        Xem chi tiết
+                      </AppText>
+                      <ChevronRight size={15} color={colors.primary} />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </ScrollView>
+      )}
+
+      {/* MODAL CHI TIẾT ĐƠN HÀNG KHI BẤM VÀO CARD */}
+      <Modal
+        visible={!!selectedDetailOrder && !completingOrder && !failingOrder}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedOrderId(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.45)',
+            justifyContent: 'flex-end',
+          }}
+        >
+          {selectedDetailOrder && (
+            <View
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                padding: 20,
+                maxHeight: '88%',
+                width: '100%',
+                maxWidth: 430,
+                alignSelf: 'center',
+              }}
+            >
+              {/* Header Modal */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 12,
+                }}
+              >
+                <View>
+                  <AppText variant="h3" color={colors.textPrimary}>
+                    Chi tiết đơn #{selectedDetailOrder.orderCode}
+                  </AppText>
+                  <AppText variant="small" color={colors.textSecondary}>
+                    {selectedDetailOrder.status === 'COMPLETED' ||
+                    selectedDetailOrder.status === 'DELIVERED'
+                      ? 'Đã giao hoàn tất'
+                      : selectedDetailOrder.status === 'READY'
+                        ? 'Quản lý vừa phân công — Bấm xác nhận nhận bánh để bắt đầu đi giao'
+                        : 'Đang trên đường đi giao cho khách'}
+                  </AppText>
+                </View>
+                <TouchableOpacity onPress={() => setSelectedOrderId(null)}>
+                  <X size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                {/* Khách nhận + Gọi điện */}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    backgroundColor: '#F9FAFB',
+                    padding: 12,
+                    borderRadius: 12,
+                    marginBottom: 10,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <AppText variant="bodySemiBold" color={colors.textPrimary}>
+                      {selectedDetailOrder.customerName}
+                    </AppText>
+                    {!!selectedDetailOrder.customerPhone && (
+                      <AppText variant="small" color={colors.textSecondary}>
+                        SĐT: {selectedDetailOrder.customerPhone}
+                      </AppText>
+                    )}
+                  </View>
+
+                  {!!selectedDetailOrder.customerPhone && (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        void Linking.openURL(
+                          `tel:${selectedDetailOrder.customerPhone.replace(/[^\d+]/g, '')}`
+                        ).catch(() => {
+                          showToast({
+                            message: 'Thiết bị chưa hỗ trợ gọi điện trực tiếp.',
+                            type: 'error',
+                          });
+                        });
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 5,
+                        backgroundColor: colors.primarySoft,
+                        paddingHorizontal: 12,
+                        paddingVertical: 7,
+                        borderRadius: 999,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Phone size={14} color={colors.primary} />
+                      <AppText variant="captionSemiBold" color={colors.primary}>
+                        Gọi khách
+                      </AppText>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Địa chỉ giao + Ghi chú */}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                    backgroundColor: colors.surface,
+                    padding: 12,
+                    borderRadius: 12,
+                    marginBottom: 10,
+                  }}
+                >
+                  <MapPin size={16} color={colors.primary} style={{ marginTop: 2 }} />
+                  <View style={{ flex: 1 }}>
+                    <AppText variant="captionSemiBold" color={colors.primary}>
+                      Địa chỉ giao hàng
+                    </AppText>
+                    <AppText variant="small" color={colors.textPrimary} style={{ marginTop: 2 }}>
+                      {selectedDetailOrder.address}
+                    </AppText>
+                    {!!selectedDetailOrder.deliveryNote && (
+                      <AppText
+                        variant="small"
+                        color={colors.primary}
+                        style={{ fontWeight: '700', marginTop: 5 }}
+                      >
+                        Ghi chú giao nhận: {selectedDetailOrder.deliveryNote}
+                      </AppText>
+                    )}
+                  </View>
+                </View>
+
+                {/* Danh sách món */}
+                <View
+                  style={{
+                    borderTopWidth: 1,
+                    borderBottomWidth: 1,
+                    borderColor: colors.border,
+                    paddingVertical: 10,
+                    marginBottom: 10,
+                  }}
+                >
+                  <AppText
+                    variant="captionSemiBold"
+                    color={colors.textSecondary}
+                    style={{ marginBottom: 6 }}
+                  >
+                    Danh sách món ({selectedDetailOrder.items.length} món)
+                  </AppText>
+                  {selectedDetailOrder.items.map((it: any, idx: number) => {
+                    const isPizzaItem =
+                      String(it.productId || '').startsWith('PZ_') ||
+                      String(it.productName || it.name || '')
+                        .toLowerCase()
+                        .includes('pizza') ||
+                      (Array.isArray(it.customizationSummary) &&
+                        it.customizationSummary.length > 0);
+                    const cleanVariantName =
+                      !isPizzaItem && it.variantName === 'Đế Truyền Thống'
+                        ? ''
+                        : it.variantName;
+                    const optionText = [
+                      cleanVariantName,
+                      ...(it.addonNames ?? []),
+                      ...(Array.isArray(it.customizationSummary)
+                        ? it.customizationSummary
+                        : [it.customizationSummary]),
+                    ]
+                      .filter(Boolean)
+                      .filter((val, i, arr) => arr.indexOf(val) === i)
+                      .join(' • ');
+                    const itemNote = String(
+                      it.note ||
+                        it.specialInstructions ||
+                        it.customization?.specialInstructions ||
+                        ''
+                    ).trim();
+                    return (
+                      <View
+                        key={idx}
+                        style={{
+                          paddingVertical: 6,
+                          borderTopWidth: idx > 0 ? 1 : 0,
+                          borderTopColor: '#F3F4F6',
+                        }}
+                      >
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-start',
+                          }}
+                        >
+                          <AppText
+                            variant="small"
+                            color={colors.textPrimary}
+                            style={{ flex: 1, fontWeight: '600', paddingRight: 8 }}
+                          >
+                            {it.quantity || 1}x {it.productName || it.name || 'Món ăn'}
+                          </AppText>
+                          <AppText variant="small" color={colors.textSecondary}>
+                            {formatCurrency(
+                              Number(
+                                it.lineTotal ||
+                                  (it.unitPrice || it.price || 0) * (it.quantity || 1)
+                              )
+                            )}
+                          </AppText>
+                        </View>
+                        {!!optionText && (
+                          <AppText
+                            variant="small"
+                            color={colors.textSecondary}
+                            style={{ marginTop: 2 }}
+                          >
+                            {optionText}
+                          </AppText>
+                        )}
+                        {!!itemNote && (
+                          <AppText
+                            variant="small"
+                            color={colors.primary}
+                            style={{ fontWeight: '700', marginTop: 2 }}
+                          >
+                            Ghi chú: {itemNote}
+                          </AppText>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+
+                {/* Chi tiết tiền & Tổng thanh toán */}
+                {(() => {
+                  const itemsSum = selectedDetailOrder.items.reduce(
+                    (sum: number, it: any) =>
+                      sum +
+                      Number(
+                        it.lineTotal || (it.unitPrice || it.price || 0) * (it.quantity || 1)
+                      ),
+                    0
+                  );
+                  const orderSubtotal = Number(selectedDetailOrder.subtotal || itemsSum);
+                  const orderDeliveryFee = Number(selectedDetailOrder.deliveryFee || 0);
+                  const orderDiscount = Number(selectedDetailOrder.discount || 0);
+                  const orderMemberDiscount = Number(selectedDetailOrder.memberDiscount || 0);
+                  const orderVoucherCode = String(
+                    selectedDetailOrder.voucherCode || selectedDetailOrder.promoCode || ''
+                  ).trim();
+
+                  return (
+                    <View style={{ marginBottom: 10 }}>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginBottom: 4,
+                        }}
+                      >
+                        <AppText variant="small" color={colors.textSecondary}>
+                          Tạm tính
+                        </AppText>
+                        <AppText variant="small" color={colors.textPrimary}>
+                          {formatCurrency(orderSubtotal)}
+                        </AppText>
+                      </View>
+
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginBottom: 4,
+                        }}
+                      >
+                        <AppText variant="small" color={colors.textSecondary}>
+                          Phí giao hàng
+                        </AppText>
+                        <AppText variant="small" color={colors.textPrimary}>
+                          {orderDeliveryFee === 0
+                            ? 'Miễn phí'
+                            : formatCurrency(orderDeliveryFee)}
+                        </AppText>
+                      </View>
+
+                      {orderMemberDiscount > 0 && (
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            marginBottom: 4,
+                          }}
+                        >
+                          <AppText variant="small" color={colors.primary}>
+                            Giảm giá thành viên
+                          </AppText>
+                          <AppText variant="small" color={colors.primary} style={{ fontWeight: '600' }}>
+                            -{formatCurrency(orderMemberDiscount)}
+                          </AppText>
+                        </View>
+                      )}
+
+                      {orderDiscount > 0 && (
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            marginBottom: 4,
+                          }}
+                        >
+                          <AppText variant="small" color={colors.primary}>
+                            Giảm giá{orderVoucherCode ? ` (${orderVoucherCode})` : ''}
+                          </AppText>
+                          <AppText variant="small" color={colors.primary} style={{ fontWeight: '600' }}>
+                            -{formatCurrency(orderDiscount)}
+                          </AppText>
+                        </View>
+                      )}
+
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginTop: 6,
+                          paddingTop: 8,
+                          borderTopWidth: 1,
+                          borderTopColor: '#F3F4F6',
+                        }}
+                      >
+                        <AppText variant="bodySemiBold" color={colors.textSecondary}>
+                          {selectedDetailOrder.paymentMethod === 'payos'
+                            ? 'Thanh toán chuyển khoản QR'
+                            : 'Thu tiền mặt khi giao (COD)'}
+                        </AppText>
+                        <AppText variant="price" color={colors.primary}>
+                          {formatCurrency(selectedDetailOrder.total)}
+                        </AppText>
+                      </View>
+                    </View>
+                  );
+                })()}
+
+                {/* Lý do giao thất bại nếu có */}
+                {(selectedDetailOrder.status === 'CANCELLED' ||
+                  selectedDetailOrder.status === 'REJECTED') &&
+                  !!selectedDetailOrder.cancelReason && (
+                    <View
+                      style={{
+                        backgroundColor: '#FEF2F2',
+                        borderWidth: 1,
+                        borderColor: '#FECACA',
+                        borderRadius: 12,
+                        padding: 10,
+                        marginTop: 4,
+                      }}
+                    >
+                      <AppText variant="captionSemiBold" color="#DC2626">
+                        Lý do sự cố / không giao được:
+                      </AppText>
+                      <AppText variant="small" color="#991B1B" style={{ marginTop: 2 }}>
+                        {selectedDetailOrder.cancelReason}
+                      </AppText>
+                    </View>
+                  )}
+
+                {/* Ảnh bằng chứng nếu đã giao */}
+                {!!selectedDetailOrder.deliveryProofImage && (
+                  <View
+                    style={{
+                      backgroundColor: colors.surfaceAlt,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      borderRadius: 12,
+                      padding: 10,
+                      marginTop: 4,
+                    }}
+                  >
+                    <AppText
+                      variant="captionSemiBold"
+                      color={colors.textPrimary}
+                      style={{ marginBottom: 6 }}
+                    >
+                      Ảnh xác nhận khách đã nhận hàng:
+                    </AppText>
+                    <Image
+                      source={{ uri: selectedDetailOrder.deliveryProofImage }}
+                      style={{
+                        width: '100%',
+                        height: 170,
+                        borderRadius: 8,
+                        backgroundColor: '#E5E7EB',
+                      }}
+                      resizeMode="cover"
+                    />
+                  </View>
+                )}
+              </ScrollView>
+
+              {/* Nút hành động */}
+              {selectedDetailOrder.status === 'READY' ? (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => void handleStartDelivery(selectedDetailOrder)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    backgroundColor: colors.primary,
+                    paddingVertical: 13,
+                    borderRadius: 12,
+                  }}
+                >
+                  <Truck size={18} color="#FFFFFF" />
+                  <AppText variant="captionSemiBold" color="#FFFFFF">
+                    Xác nhận nhận bánh & Bắt đầu giao
+                  </AppText>
+                </TouchableOpacity>
+              ) : selectedDetailOrder.status !== 'COMPLETED' &&
+                selectedDetailOrder.status !== 'DELIVERED' &&
+                selectedDetailOrder.status !== 'CANCELLED' &&
+                selectedDetailOrder.status !== 'REJECTED' ? (
+                <View style={{ gap: 8 }}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => handleOpenCompleteModal(selectedDetailOrder)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      backgroundColor: colors.primary,
+                      paddingVertical: 13,
+                      borderRadius: 12,
+                    }}
+                  >
+                    <Camera size={18} color="#FFFFFF" />
+                    <AppText variant="captionSemiBold" color="#FFFFFF">
+                      Chụp ảnh & Xác nhận giao hoàn tất
+                    </AppText>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      setFailingOrder(selectedDetailOrder);
+                      setFailReason(STAFF_FAIL_REASONS[0]);
+                    }}
+                    style={{
+                      paddingVertical: 11,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: '#FECACA',
+                      backgroundColor: '#FEF2F2',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <AppText variant="captionSemiBold" color="#DC2626">
+                      Báo cáo sự cố
+                    </AppText>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <AppButton
+                  title="Đóng"
+                  variant="outline"
+                  onPress={() => setSelectedOrderId(null)}
+                />
+              )}
+            </View>
+          )}
+        </View>
+      </Modal>
+
+      {/* MODAL CHỤP ẢNH XÁC NHẬN KHÁCH NHẬN HÀNG */}
+      <Modal
+        visible={!!completingOrder}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCompletingOrder(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.45)',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: 20,
+              width: '100%',
+              maxWidth: 430,
+              alignSelf: 'center',
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 8,
+              }}
+            >
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <AppText variant="h3" color={colors.textPrimary}>
+                  Xác nhận giao hàng
+                </AppText>
+                <AppText variant="small" color={colors.textSecondary}>
+                  Đơn #{completingOrder?.orderCode} • Khách: {completingOrder?.customerName}
+                </AppText>
+              </View>
+              <TouchableOpacity onPress={() => setCompletingOrder(null)}>
+                <X size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <AppText variant="small" color={colors.textSecondary} style={{ marginBottom: 12 }}>
+              Vui lòng chụp ảnh (hoặc chọn ảnh) lúc khách hàng nhận bánh để làm bằng chứng giao hàng thành công:
+            </AppText>
+
+            {proofImage ? (
+              <View style={{ marginBottom: 12 }}>
+                <Image
+                  source={{ uri: proofImage }}
+                  style={{
+                    width: '100%',
+                    height: 190,
+                    borderRadius: 12,
+                    backgroundColor: '#F3F4F6',
+                  }}
+                  resizeMode="cover"
+                />
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                  <TouchableOpacity
+                    onPress={pickImageFromCamera}
+                    style={{
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      paddingVertical: 9,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surfaceAlt,
+                    }}
+                  >
+                    <Camera size={15} color={colors.textPrimary} />
+                    <AppText variant="small" color={colors.textPrimary}>
+                      Chụp lại
+                    </AppText>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={pickImageFromGallery}
+                    style={{
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      paddingVertical: 9,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surfaceAlt,
+                    }}
+                  >
+                    <ImageIcon size={15} color={colors.textPrimary} />
+                    <AppText variant="small" color={colors.textPrimary}>
+                      Đổi ảnh khác
+                    </AppText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View
+                style={{
+                  borderWidth: 1.5,
+                  borderStyle: 'dashed',
+                  borderColor: colors.primary,
+                  backgroundColor: colors.primarySoft,
+                  borderRadius: 14,
+                  padding: 18,
+                  alignItems: 'center',
+                  marginBottom: 12,
+                }}
+              >
+                <Camera size={32} color={colors.primary} />
+                <AppText
+                  variant="bodySemiBold"
+                  color={colors.textPrimary}
+                  style={{ marginTop: 8 }}
+                >
+                  Chưa có ảnh xác nhận giao hàng
+                </AppText>
+                <AppText
+                  variant="small"
+                  color={colors.textSecondary}
+                  style={{ textAlign: 'center', marginTop: 2, marginBottom: 14 }}
+                >
+                  Bắt buộc đính kèm 1 ảnh khách nhận hàng để hoàn tất đơn
+                </AppText>
+
+                <View style={{ flexDirection: 'row', gap: 10, width: '100%' }}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={pickImageFromCamera}
+                    style={{
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      backgroundColor: colors.primary,
+                      paddingVertical: 11,
+                      borderRadius: 10,
+                    }}
+                  >
+                    <Camera size={16} color="#FFFFFF" />
+                    <AppText variant="captionSemiBold" color="#FFFFFF">
+                      Chụp ảnh
+                    </AppText>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={pickImageFromGallery}
+                    style={{
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      backgroundColor: '#FFFFFF',
+                      borderWidth: 1,
+                      borderColor: colors.primary,
+                      paddingVertical: 11,
+                      borderRadius: 10,
+                    }}
+                  >
+                    <ImageIcon size={16} color={colors.primary} />
+                    <AppText variant="captionSemiBold" color={colors.primary}>
+                      Chọn ảnh từ máy
+                    </AppText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {!!proofError && (
+              <View
+                style={{
+                  backgroundColor: '#FEF2F2',
+                  borderWidth: 1,
+                  borderColor: '#FECACA',
+                  borderRadius: 10,
+                  padding: 10,
+                  marginBottom: 10,
+                }}
+              >
+                <AppText variant="small" color="#DC2626">
+                  {proofError}
+                </AppText>
+              </View>
+            )}
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+              <AppButton
+                title="Hủy"
+                variant="outline"
+                style={{ flex: 1 }}
+                onPress={() => setCompletingOrder(null)}
+              />
+              <AppButton
+                title="Hoàn tất giao hàng"
+                style={{ flex: 1.5, opacity: proofImage ? 1 : 0.6 }}
+                isLoading={submittingProof}
+                onPress={handleConfirmDeliveryComplete}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL BÁO GIAO HÀNG THẤT BẠI / KHÁCH KHÔNG NHẬN */}
+      <Modal
+        visible={!!failingOrder}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFailingOrder(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.45)',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 20,
+              padding: 20,
+              width: '100%',
+              maxWidth: 410,
+              alignSelf: 'center',
+            }}
+          >
+            <AppText variant="h3" color={colors.textPrimary} style={{ marginBottom: 4 }}>
+              Báo cáo sự cố #{failingOrder?.orderCode}
+            </AppText>
+            <AppText variant="small" color={colors.textSecondary} style={{ marginBottom: 12 }}>
+              Chọn lý do sự cố (đơn sẽ không tính doanh thu và gửi báo cáo về Admin):
+            </AppText>
+
+            {STAFF_FAIL_REASONS.map((r) => {
+              const active = failReason === r;
+              return (
+                <TouchableOpacity
+                  key={r}
+                  onPress={() => setFailReason(r)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingVertical: 10,
+                    paddingHorizontal: 12,
+                    borderRadius: 10,
+                    marginBottom: 6,
+                    backgroundColor: active ? colors.primarySoft : colors.surface,
+                    borderWidth: 1,
+                    borderColor: active ? colors.primary : colors.border,
+                  }}
+                >
+                  <AppText
+                    variant="bodyMedium"
+                    color={active ? colors.primary : colors.textPrimary}
+                    style={{ flex: 1, paddingRight: 8 }}
+                  >
+                    {r}
+                  </AppText>
+                  {active && <Check size={16} color={colors.primary} />}
+                </TouchableOpacity>
+              );
+            })}
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+              <AppButton
+                title="Đóng"
+                variant="outline"
+                style={{ flex: 1 }}
+                onPress={() => setFailingOrder(null)}
+              />
+              <AppButton
+                title="Gửi báo cáo"
+                style={{ flex: 1.3 }}
+                isLoading={submittingFail}
+                onPress={handleConfirmFailDelivery}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
 }

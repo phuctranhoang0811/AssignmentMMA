@@ -1,7 +1,8 @@
 import { StyleSheet } from 'react-native';
 import { FLOATING_CART_CLEARANCE } from './tabsLayout.styles';
+import { colors } from '../theme/colors';
 
-export const ACTIVE_TAB_RED = '#C62828';
+export const ACTIVE_TAB_RED = colors.primary;
 export const BRAND_RED = ACTIVE_TAB_RED;
 
 export const styles = StyleSheet.create({
@@ -142,7 +143,7 @@ export const styles = StyleSheet.create({
     marginBottom: 16,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#C62828',
+    backgroundColor: ACTIVE_TAB_RED,
     position: 'relative',
   },
   bannerImage: {
@@ -170,7 +171,7 @@ export const styles = StyleSheet.create({
     marginBottom: 4,
   },
   bannerBadgeText: {
-    color: '#B71C1C',
+    color: ACTIVE_TAB_RED,
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.4,
@@ -208,7 +209,7 @@ export const styles = StyleSheet.create({
     zIndex: 2,
   },
   memberTag: {
-    backgroundColor: '#C62828',
+    backgroundColor: ACTIVE_TAB_RED,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
@@ -269,7 +270,7 @@ export const styles = StyleSheet.create({
     gap: 6,
   },
   newBadge: {
-    backgroundColor: '#C62828',
+    backgroundColor: ACTIVE_TAB_RED,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -325,6 +326,51 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 3,
     elevation: 3,
+  },
+  plusButtonDisabled: {
+    backgroundColor: '#D1D5DB',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  cardContainerSoldOut: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E7EB',
+  },
+  soldOutImageOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(17, 24, 39, 0.16)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  soldOutBadge: {
+    backgroundColor: 'rgba(31, 41, 55, 0.88)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  soldOutBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  soldOutTitleText: {
+    color: '#4B5563',
+  },
+  soldOutSubText: {
+    color: '#6B7280',
   },
 
   /* Empty & Loading */

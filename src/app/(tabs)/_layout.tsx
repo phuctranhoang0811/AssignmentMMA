@@ -6,7 +6,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
-import { isAdminRole } from '../../utils/staff';
+import { isManagerRole, isStaffRole } from '../../utils/staff';
 import { triggerHaptic } from '../../utils/haptics';
 import { fontFamilies } from '../../theme/typography';
 import { styles, BRAND_RED, FLOATING_CART_OFFSET, FLOATING_CART_OFFSET_HOME } from '../../styles/tabsLayout.styles';
@@ -36,13 +36,19 @@ export default function TabsLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const { user, isAuthenticated } = useAuth();
-  const isAdmin = isAdminRole(user?.role);
+  const isTopAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
+  const isManager = isManagerRole(user?.role);
+  const isStaff = isStaffRole(user?.role) && !isTopAdmin && !isManager;
 
   useEffect(() => {
-    if (isAdmin) {
+    if (isTopAdmin) {
       router.replace('/admin/dashboard');
+    } else if (isManager) {
+      router.replace('/manager/dashboard');
+    } else if (isStaff) {
+      router.replace('/staff/orders');
     }
-  }, [isAdmin, router]);
+  }, [isTopAdmin, isManager, isStaff, router]);
   const { itemCount } = useCart();
   const insets = useSafeAreaInsets();
   const cartScaleAnim = useRef(new Animated.Value(itemCount > 0 ? 1 : 0)).current;
@@ -60,31 +66,32 @@ export default function TabsLayout() {
   const isHome = pathname === '/' || pathname === '/(tabs)/home' || pathname === '/home' || pathname.endsWith('home');
 
   useEffect(() => {
+    const useNative = Platform.OS !== 'web';
     if (showFloatingCart) {
       Animated.sequence([
         Animated.spring(cartScaleAnim, {
           toValue: 1.15,
           friction: 4,
           tension: 60,
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
         Animated.spring(cartScaleAnim, {
           toValue: 1,
           friction: 4,
           tension: 40,
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
       ]).start();
     } else {
       Animated.timing(cartScaleAnim, {
         toValue: 0,
         duration: 150,
-        useNativeDriver: true,
+        useNativeDriver: useNative,
       }).start();
     }
   }, [showFloatingCart, itemCount, cartScaleAnim]);
 
-  if (isAdmin) return null;
+  if (isTopAdmin || isManager || isStaff) return null;
   return (
     <View style={styles.container}>
       <Tabs
@@ -199,4 +206,3 @@ export default function TabsLayout() {
     </View>
   );
 }
-

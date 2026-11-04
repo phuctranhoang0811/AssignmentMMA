@@ -46,14 +46,14 @@ export function filterStaffOrders(orders: StaffOrder[], tab: StaffTab, fulfillme
 }
 
 // Keep the UI actions aligned with backend nextStatus(); Ahamove, or the store rider who took it, owns delivery after READY.
-export function staffOrderAction(order: StaffOrder) {
+export function staffOrderAction(order: StaffOrder, currentUserId?: string) {
   const kitchen: Record<string, string> = {
     PENDING_CONFIRMATION: 'Xác nhận đơn', CONFIRMED: 'Bắt đầu làm món', PREPARING: 'Món đã sẵn sàng',
   };
   if (kitchen[order.status]) return kitchen[order.status];
-  if (order.delivery?.provider === 'AHAMOVE' || order.rider) return undefined;
+  if (order.delivery?.provider === 'AHAMOVE') return undefined;
   if (order.status === 'READY') return order.fulfillmentType === 'delivery' ? 'Bắt đầu giao' : 'Khách đã nhận món';
-  if (order.status === 'OUT_FOR_DELIVERY') return 'Giao thành công';
+  if (order.status === 'OUT_FOR_DELIVERY') { const assignedId = (order as any).assignedStaffId || order.rider?.uid; return assignedId && currentUserId && assignedId !== currentUserId ? undefined : 'Xác nhận giao hoàn tất'; }
   return undefined;
 }
 

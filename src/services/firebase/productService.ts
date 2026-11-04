@@ -2,15 +2,17 @@ import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Product } from '../../types/product';
 import { ProductFilterParams, ProductService } from '../contracts';
-import { mockProducts } from '../../data/mockProducts';
 
-function mapDocToProduct(id: string, data: any): Product {
+function mapDocToProduct(id: string, data: any): Product & { sortOrder?: number } {
   return {
     id,
     name: data.name || '',
     categoryId: data.categoryId || data.category || 'pizza',
     description: data.description || '',
-    image: data.image || data.imageUrl || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500',
+    image:
+      data.image ||
+      data.imageUrl ||
+      'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500',
     basePrice: Number(data.basePrice || data.price || 0),
     originalPrice: data.originalPrice ? Number(data.originalPrice) : undefined,
     isAvailable: data.isAvailable !== false,
@@ -19,21 +21,21 @@ function mapDocToProduct(id: string, data: any): Product {
     isSpicy: Boolean(data.isSpicy),
     discountPercent: data.discountPercent ? Number(data.discountPercent) : undefined,
     memberDiscountTag: data.memberDiscountTag || undefined,
-    variants: data.variants || [],
-    addons: data.addons || [],
-    ingredients: data.ingredients || [],
-    tags: data.tags || [],
+    variants: Array.isArray(data.variants) ? data.variants : [],
+    addons: Array.isArray(data.addons) ? data.addons : [],
+    ingredients: Array.isArray(data.ingredients) ? data.ingredients : [],
+    tags: Array.isArray(data.tags) ? data.tags : [],
     promoGroups: Array.isArray(data.promoGroups) ? data.promoGroups : undefined,
     sizeOptions: data.sizeOptions,
     crustOptions: data.crustOptions,
-  } as Product;
+    sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : undefined,
+  } as Product & { sortOrder?: number };
 }
 
 class FirebaseProductService implements ProductService {
-  // In-memory cache for fast lookups
-  private cachedProducts: Product[] = [];
+  private cachedProducts: (Product & { sortOrder?: number })[] = [];
   private lastFetched = 0;
-  private readonly CACHE_TTL = 30000; // 30s
+  private readonly CACHE_TTL = 3000;
 
   private async fetchAllFromDb(): Promise<Product[]> {
     const now = Date.now();
@@ -43,22 +45,25 @@ class FirebaseProductService implements ProductService {
 
     try {
       const snap = await getDocs(collection(db, 'products'));
-      if (!snap.empty) {
-        const list: Product[] = [];
-        snap.forEach((d) => {
+      const list: (Product & { sortOrder?: number })[] = [];
+      snap.forEach((d) => {
+        if (!d.id.startsWith('__')) {
           list.push(mapDocToProduct(d.id, d.data()));
-        });
-        this.cachedProducts = list;
-        this.lastFetched = now;
-        return list;
-      }
+        }
+      });
+      list.sort((a, b) => {
+        const sa = a.sortOrder ?? 9999;
+        const sb = b.sortOrder ?? 9999;
+        if (sa !== sb) return sa - sb;
+        return a.id.localeCompare(b.id, undefined, { numeric: true });
+      });
+      this.cachedProducts = list;
+      this.lastFetched = now;
+      return list;
     } catch (err: any) {
-      console.warn('FirebaseProductService fetch error, falling back:', err?.message);
+      console.warn('FirebaseProductService fetch error:', err?.message);
+      return this.cachedProducts;
     }
-
-    // Fallback if Firestore has no products or error
-    if (this.cachedProducts.length > 0) return this.cachedProducts;
-    return mockProducts;
   }
 
   async list(params?: ProductFilterParams): Promise<Product[]> {
@@ -80,14 +85,31 @@ class FirebaseProductService implements ProductService {
     }
 
     if (params?.query && params.query.trim()) {
-      const q = params.query.toLowerCase().trim();
-      result = result.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.description.toLowerCase().includes(q) ||
-          p.ingredients?.some((ing) => ing.toLowerCase().includes(q)) ||
-          p.tags?.some((t) => t.toLowerCase().includes(q))
-      );
+      const norm = (s: string) =>
+        (s || '')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/đ/g, 'd')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const qRaw = params.query.toLowerCase().trim();
+      const qNorm = norm(params.query);
+      const tokens = qNorm.split(' ').filter(Boolean);
+
+      result = result.filter((p) => {
+        const raw = [
+          p.name,
+          p.description || '',
+          ...(p.ingredients || []),
+          ...(p.tags || []),
+        ]
+          .join(' ')
+          .toLowerCase();
+        if (raw.includes(qRaw)) return true;
+        const n = norm(raw);
+        return n.includes(qNorm) || (tokens.length > 0 && tokens.every((t) => n.includes(t)));
+      });
     }
 
     if (params?.onlyAvailable) {
@@ -121,15 +143,10 @@ class FirebaseProductService implements ProductService {
       console.warn('FirebaseProductService getById error:', err?.message);
     }
 
-    // Check cached or mock
     const fromCache = this.cachedProducts.find((p) => p.id === id);
-    if (fromCache) return fromCache;
-
-    const fromMock = mockProducts.find((p) => p.id === id);
-    return fromMock || null;
+    return fromCache || null;
   }
 
-  // Force cache invalidate when needed
   invalidateCache() {
     this.lastFetched = 0;
   }

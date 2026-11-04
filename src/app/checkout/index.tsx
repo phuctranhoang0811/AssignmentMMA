@@ -37,11 +37,12 @@ import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { calculateOrderTotals, getItemLineUnitPrice } from '../../utils/calculateTotals';
-import { geocodeAddressStrict, geocodeAddress } from '../../services/addressService';
+import { geocodeAddressStrict, geocodeAddress, getCoordinatesForAddress } from '../../services/addressService';
 import { colors } from '../../theme/colors';
 import { roadDistanceKm, type LatLng, type DeliveryFeeConfig } from '../../utils/deliveryFee';
 import { triggerHaptic } from '../../utils/haptics';
 import { findCoupon, useCatalog, useCoupons } from '../../services/catalog';
+import { isCouponExpired } from '../../utils/coupons';
 import { formatDeliveryTime, isDeliveryTimeAvailable } from '../../utils/deliveryTime';
 import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
 import { DeliveryTimeModal } from '../../components/modals/DeliveryTimeModal';
@@ -50,18 +51,16 @@ import { CouchIllustration } from '../../components/ui/CouchIllustration';
 import {
   getSavedDeliveryAddress,
   saveDeliveryAddress,
-  getSavedCustomerInfo,
-  saveCustomerInfo,
+  clearCustomerInfo,
 } from '../../services/addressStorage';
 
 import { styles, BRAND_RED } from '../../styles/checkout.styles';
 import { db } from '../../services/firebase';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, increment } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, setDoc, updateDoc, increment, arrayUnion } from 'firebase/firestore';
 import { subscribeStoresConfig } from '../../services/storeSync';
 import { fetchUserMemberStats } from '../../utils/memberTier';
 import { formatCustomizationSummary } from '../../types/pizzaCustomization';
 import { createPayosPayment, apiUrl } from '../../services/payosService';
-import { createCashOrder } from '../../services/orderApi';
 
 import { ahamoveEnabled, createAhamoveCod, deliveryCheckout, getDeliveryQuote, resumeAhamoveCod } from '../../services/deliveryService';
 import type { DeliveryQuote } from '../../types/delivery';
@@ -71,14 +70,11 @@ import { useStoreStatus } from '../../services/storeSettings';
 import { contactError, normalizePhone, type ContactField } from '../../utils/contact';
 import { isAdminRole } from '../../utils/staff';
 
-
 // Payment Methods
 const PAYMENT_METHODS = [
   { id: 'cash', name: 'Tiền mặt khi nhận hàng', subtext: 'Thanh toán bằng tiền mặt khi nhận món' },
   { id: 'payos', name: 'payOS', subtext: 'Chuyển khoản bằng mã QR • Cần đăng nhập' },
 ];
-
-
 
 export default function CheckoutScreen() {
   const { productsMap } = useCatalog();
@@ -131,44 +127,32 @@ export default function CheckoutScreen() {
       if (saved && !cancelled) setAddress(saved);
     });
 
-    // 2. Khôi phục thông tin khách hàng từ tài khoản hoặc local storage
-    getSavedCustomerInfo().then((info) => {
-      if (cancelled) return;
-      if (info?.deliveryNote) {
-        setDeliveryNote((prev) => prev || info.deliveryNote || '');
-      }
-      if (user && !user.isDemo) {
-        const nextName = user.fullname || info?.fullname || '';
-        const rawUserPhone = user.phone || info?.phone || '';
-        const normPhone = normalizePhone(rawUserPhone);
-        const nextPhone = normPhone ? normPhone.slice(1) : rawUserPhone;
-        const nextEmail = user.email || info?.email || '';
-        setFullname(nextName);
-        setPhone(nextPhone);
-        setEmail(nextEmail);
-        const hasErr =
-          !!contactError('fullname', nextName) ||
-          !!contactError('phone', nextPhone) ||
-          !!contactError('email', nextEmail);
-        setIsEditingContact(hasErr);
-      } else {
-        const nextName = info?.fullname || '';
-        const rawGuestPhone = info?.phone || '';
-        const normPhone = normalizePhone(rawGuestPhone);
-        const nextPhone = normPhone ? normPhone.slice(1) : rawGuestPhone;
-        const nextEmail = info?.email || '';
-        setFullname(nextName);
-        setPhone(nextPhone);
-        setEmail(nextEmail);
-        const hasErr =
-          !nextName.trim() ||
-          !nextPhone.trim() ||
-          !!contactError('fullname', nextName) ||
-          !!contactError('phone', nextPhone) ||
-          !!contactError('email', nextEmail);
-        setIsEditingContact(hasErr);
-      }
-    });
+    // 2. Chỉ tự động điền thông tin liên hệ khi ĐÃ ĐĂNG NHẬP tài khoản thật.
+    // Nếu chưa đăng nhập (khách vãng lai), luôn để trống để khách tự nhập, tuyệt đối không lấy tên tài khoản cũ.
+    if (user && !user.isDemo) {
+      const nextName = user.fullname || '';
+      const rawUserPhone = user.phone || '';
+      const normPhone = normalizePhone(rawUserPhone);
+      const nextPhone = normPhone ? normPhone.slice(1) : rawUserPhone;
+      const nextEmail = user.email || '';
+      setFullname(nextName);
+      setPhone(nextPhone);
+      setEmail(nextEmail);
+      const hasErr =
+        !nextName.trim() ||
+        !nextPhone.trim() ||
+        !!contactError('fullname', nextName) ||
+        !!contactError('phone', nextPhone) ||
+        !!contactError('email', nextEmail);
+      setIsEditingContact(hasErr);
+    } else {
+      void clearCustomerInfo();
+      setFullname('');
+      setPhone('');
+      setEmail('');
+      setDeliveryNote('');
+      setIsEditingContact(true);
+    }
 
     return () => { cancelled = true; };
   }, [user]);
@@ -176,19 +160,16 @@ export default function CheckoutScreen() {
   const handleUpdateFullname = (val: string) => {
     setFieldErrors(previous => previous.fullname ? { ...previous, fullname: contactError('fullname', val) } : previous);
     setFullname(val);
-    saveCustomerInfo({ fullname: val });
   };
 
   const handleUpdatePhone = (val: string) => {
     setFieldErrors(previous => previous.phone ? { ...previous, phone: contactError('phone', val) } : previous);
     setPhone(val);
-    saveCustomerInfo({ phone: val });
   };
 
   const handleUpdateEmail = (val: string) => {
     setFieldErrors(previous => previous.email ? { ...previous, email: contactError('email', val) } : previous);
     setEmail(val);
-    saveCustomerInfo({ email: val });
   };
 
   const validateContact = () => {
@@ -211,7 +192,6 @@ export default function CheckoutScreen() {
 
   const handleUpdateDeliveryNote = (val: string) => {
     setDeliveryNote(val);
-    saveCustomerInfo({ deliveryNote: val });
   };
 
   // Payment Method Modal & Selection
@@ -223,9 +203,22 @@ export default function CheckoutScreen() {
   const [voucherModalVisible, setVoucherModalVisible] = useState(false);
   const [inputVoucherCode, setInputVoucherCode] = useState('');
   const selectedVoucher = (promoCode && findCoupon(coupons, promoCode)) || null;
+  const availableVouchers = React.useMemo(
+    () =>
+      coupons.filter(
+        (c) =>
+          c &&
+          !(c as any).deleted &&
+          !isCouponExpired(c) &&
+          !(c.usageLimit && (c.usedCount || 0) >= c.usageLimit)
+      ),
+    [coupons]
+  );
 
   // Address Modal ('Tìm cửa hàng gần bạn nhất' / Nhập tay vị trí)
   const [addressModalVisible, setAddressModalVisible] = useState(false);
+  const [minDeliveryPopupVisible, setMinDeliveryPopupVisible] = useState(false);
+  const [storeClosedPopupVisible, setStoreClosedPopupVisible] = useState(false);
   // Terms Agreement
   const [agreeTerms, setAgreeTerms] = useState(true);
 
@@ -238,6 +231,7 @@ export default function CheckoutScreen() {
     itemCount: number;
     subtotal: number;
     deliveryFee: number;
+    memberDiscount: number;
     voucherDiscount: number;
     selectedVoucher: typeof selectedVoucher;
     total: number;
@@ -245,10 +239,6 @@ export default function CheckoutScreen() {
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Opened with an empty cart (e.g. a direct link): send the user to the menu. Placing an order also
-  // empties the cart, so never redirect while submitting or once the confirmation is showing.
-  // Only while this screen is in front: a paid payOS order empties the cart while its QR screen is on top,
-  // and replacing the route from here would swap that success screen for the menu.
   useFocusEffect(useCallback(() => {
     if (cartLoaded && items.length === 0 && !isSubmitting && !orderConfirmed) router.replace('/(tabs)/menu');
   }, [cartLoaded, items.length, isSubmitting, orderConfirmed, router]));
@@ -263,7 +253,6 @@ export default function CheckoutScreen() {
   const shippingSignature = JSON.stringify([user?.id, deliveryCheckout(shippingInput), shippingInput.paymentMethod, promoCode]);
   const validQuote = shippingQuote?.signature === shippingSignature ? shippingQuote.value : null;
 
-  // Shipping fee for orders the store delivers itself: distance from the store to the address the customer picked.
   const [activeStorePoints, setActiveStorePoints] = useState<
     { id: string; name: string; address: string; lat: number; lng: number }[]
   >([
@@ -282,9 +271,10 @@ export default function CheckoutScreen() {
       lng: 106.7183,
     },
   ]);
+  const [syncedDeliveryConfig, setSyncedDeliveryConfig] = useState<DeliveryFeeConfig | null>(null);
+  const [syncedShippingEnabled, setSyncedShippingEnabled] = useState<boolean>(true);
+  const [selectedDeliveryStoreId, setSelectedDeliveryStoreId] = useState<string | null>(null);
   useEffect(() => {
-    // Đánh thức server Render ngầm ngay khi mở màn hình Thanh toán
-    fetch(`${apiUrl()}/api/orders/lookup?phone=0&code=0`).catch(() => {});
     const unsub = subscribeStoresConfig((state) => {
       const pts = state.stores
         .filter((data) => data && data.isActive !== false && data.name)
@@ -296,20 +286,27 @@ export default function CheckoutScreen() {
           lng: typeof data.lng === 'number' ? data.lng : 106.7183,
         }));
       if (pts.length > 0) setActiveStorePoints(pts);
+      setSyncedShippingEnabled(state.shippingEnabled !== false);
+      if (state.delivery) {
+        setSyncedDeliveryConfig(state.delivery);
+      }
     });
     return () => unsub();
   }, []);
-  const baseShippingRules: DeliveryFeeConfig = store.settings?.delivery || {
+  const baseShippingRules: DeliveryFeeConfig = syncedDeliveryConfig || store.settings?.delivery || {
     storeLat: 10.8291,
     storeLng: 106.7183,
     baseKm: 3,
     baseFee: 0,
     perKm: 5000,
-    maxKm: 10,
+    maxKm: 15,
     freeOver: 300000,
+    minDeliveryOrder: 50000,
   };
+  const minDeliveryOrderAmount =
+    fulfillmentType === 'delivery' ? (baseShippingRules.minDeliveryOrder ?? 50000) : 0;
   const shippingConfig: DeliveryFeeConfig | undefined =
-    !useAhamove && fulfillmentType === 'delivery' ? baseShippingRules : undefined;
+    !useAhamove && fulfillmentType === 'delivery' && syncedShippingEnabled ? baseShippingRules : undefined;
   const [located, setLocated] = useState<{ address: string; point: LatLng | null } | null>(null);
   useEffect(() => {
     if (!shippingConfig || !address.trim()) return;
@@ -321,31 +318,25 @@ export default function CheckoutScreen() {
     }, 400);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [shippingConfig, address]);
-  const deliveryPoint = shippingConfig && located?.address === address ? located.point : null;
-  const effectiveShippingConfig = React.useMemo(() => {
-    if (!shippingConfig) return undefined;
-    if (!deliveryPoint || activeStorePoints.length === 0) return shippingConfig;
-    let nearest = activeStorePoints[0];
-    let minDist = roadDistanceKm(nearest, deliveryPoint);
-    for (const pt of activeStorePoints) {
-      const d = roadDistanceKm(pt, deliveryPoint);
-      if (d < minDist) {
-        minDist = d;
-        nearest = pt;
-      }
-    }
-    return { ...shippingConfig, storeLat: nearest.lat, storeLng: nearest.lng };
-  }, [shippingConfig, deliveryPoint, activeStorePoints]);
-  const locating = !!shippingConfig && !!address.trim() && located?.address !== address;
+  const deliveryPoint =
+    shippingConfig && address.trim()
+      ? located?.address === address && located.point
+        ? located.point
+        : getCoordinatesForAddress(address)
+      : null;
   const assignedStore = React.useMemo(() => {
     if (activeStorePoints.length === 0) {
-      return { id: 'store-lieu-giai', name: 'Pizza FPT Liễu Giai (Signature)', lat: 21.0352, lng: 105.8138 };
+      return { id: 'store-lieu-giai', name: 'Pizza FPT Liễu Giai (Signature)', address: '', lat: 21.0352, lng: 105.8138 };
     }
     if (fulfillmentType === 'takeaway') {
       const matched = activeStorePoints.find(
         (s) => address.includes(s.name) || (s.address && address.includes(s.address))
       );
       return matched || activeStorePoints[0];
+    }
+    if (selectedDeliveryStoreId) {
+      const explicit = activeStorePoints.find((s) => s.id === selectedDeliveryStoreId);
+      if (explicit) return explicit;
     }
     if (deliveryPoint) {
       let nearest = activeStorePoints[0];
@@ -360,7 +351,18 @@ export default function CheckoutScreen() {
       return nearest;
     }
     return activeStorePoints[0];
-  }, [activeStorePoints, fulfillmentType, address, deliveryPoint]);
+  }, [activeStorePoints, fulfillmentType, address, deliveryPoint, selectedDeliveryStoreId]);
+  const effectiveShippingConfig = React.useMemo(() => {
+    if (!shippingConfig) return undefined;
+    if (!deliveryPoint || activeStorePoints.length === 0) return shippingConfig;
+    return {
+      ...shippingConfig,
+      storeLat: assignedStore.lat,
+      storeLng: assignedStore.lng,
+      maxKm: shippingConfig.maxKm || 15,
+    };
+  }, [shippingConfig, deliveryPoint, activeStorePoints.length, assignedStore]);
+  const locating = !!shippingConfig && !!address.trim() && located?.address !== address;
 
   // Totals Calculation
   const [memberDiscountRate, setMemberDiscountRate] = useState(0);
@@ -378,30 +380,53 @@ export default function CheckoutScreen() {
     };
   }, [user]);
 
+  const isMember = !!user && !user.isDemo;
   const totals = calculateOrderTotals(items, productsMap,
     fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP', selectedVoucher, undefined,
-    effectiveShippingConfig && deliveryPoint ? { config: effectiveShippingConfig, to: deliveryPoint } : undefined);
+    effectiveShippingConfig && deliveryPoint ? { config: effectiveShippingConfig, to: deliveryPoint } : undefined,
+    isMember);
   const { subtotal, discount: baseVoucherDiscount } = totals;
-  const isMember = !!user && !user.isDemo;
   // Giảm giá thành viên (10% hạng Vàng / 15% hạng VIP cho món lẻ khi không dùng cùng lúc với voucher khuyến mãi)
   const singleItemsSubtotal = items.reduce((sum, item) => {
+    const isRewardItem =
+      Boolean((item as any)?.isRewardGift) ||
+      String(item.specialInstructions || '').includes('Quà đổi điểm FPT Rewards');
+    if (isRewardItem) return sum;
     const p = productsMap[item.productId];
     const isComboOrPromo =
       p?.categoryId === 'cheese_party' ||
       p?.categoryId === 'member_deals' ||
-      p?.categoryId === 'hot_deals';
+      p?.categoryId === 'hot_deals' ||
+      (p?.promoGroups || []).some((g) => ['cheese_party', 'member_deals', 'hot_deals'].includes(g)) ||
+      (!!p?.originalPrice && p.originalPrice > p.basePrice);
     if (isComboOrPromo) return sum;
-    const unit = getItemLineUnitPrice(item, p) || 0;
+    const unit = getItemLineUnitPrice(item, p, isMember) || 0;
     return sum + unit * (Number(item.quantity) || 1);
   }, 0);
+  const hasActivePromoVoucher = Boolean(
+    selectedVoucher && !selectedVoucher.freeShipping && subtotal >= selectedVoucher.minSubtotal
+  );
   const memberDiscount =
-    isMember && baseVoucherDiscount === 0 && memberDiscountRate > 0
+    isMember && memberDiscountRate > 0 && !hasActivePromoVoucher
       ? Math.round(singleItemsSubtotal * memberDiscountRate)
       : 0;
-  const voucherDiscount = baseVoucherDiscount;
+  const subtotalAfterMember = Math.max(0, subtotal - memberDiscount);
+  const voucherDiscount = (() => {
+    if (!selectedVoucher || selectedVoucher.freeShipping) return 0;
+    if (subtotalAfterMember < selectedVoucher.minSubtotal && subtotal < selectedVoucher.minSubtotal) {
+      return 0;
+    }
+    if (selectedVoucher.discountType === 'PERCENT') {
+      const pctVal = Math.round((subtotalAfterMember * selectedVoucher.value) / 100);
+      const capped = selectedVoucher.maxDiscount
+        ? Math.min(pctVal, selectedVoucher.maxDiscount)
+        : pctVal;
+      return Math.min(capped, subtotalAfterMember);
+    }
+    return Math.min(selectedVoucher.value, subtotalAfterMember);
+  })();
   const deliveryFee = useAhamove ? validQuote?.pricing.deliveryFee ?? 0 : totals.deliveryFee;
-  const baseTotal = useAhamove && validQuote ? validQuote.pricing.total : totals.total;
-  const total = Math.max(0, baseTotal - memberDiscount);
+  const total = Math.max(0, subtotalAfterMember - voucherDiscount + deliveryFee);
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const earnedPoints = isMember ? Math.floor(total / 10000) : 0;
 
@@ -458,7 +483,8 @@ export default function CheckoutScreen() {
   const handlePlaceOrder = async () => {
     if (isSubmitting) return;
     if (!store.open) {
-      Alert.alert('Cửa hàng chưa nhận đơn', store.message);
+      triggerHaptic('warning');
+      setStoreClosedPopupVisible(true);
       return;
     }
     if (selectedPaymentId === 'payos' && (!user || user.isDemo)) {
@@ -471,6 +497,19 @@ export default function CheckoutScreen() {
       return;
     }
     if (!validateContact()) return;
+    if (fulfillmentType === 'delivery' && !useAhamove && !syncedShippingEnabled) {
+      triggerHaptic('warning');
+      Alert.alert(
+        'Tạm ngưng giao hàng',
+        'Cửa hàng hiện đang tạm ngưng dịch vụ giao hàng tận nơi. Vui lòng chọn Nhận tại cửa hàng.'
+      );
+      return;
+    }
+    if (fulfillmentType === 'delivery' && minDeliveryOrderAmount > 0 && subtotal < minDeliveryOrderAmount) {
+      triggerHaptic('warning');
+      setMinDeliveryPopupVisible(true);
+      return;
+    }
     if (fulfillmentType === 'delivery' && !address.trim()) {
       setAddressModalVisible(true);
       return;
@@ -491,6 +530,16 @@ export default function CheckoutScreen() {
     }
     if (items.length === 0) {
       Alert.alert('Giỏ hàng trống', 'Vui lòng chọn món trước khi đặt hàng.');
+      return;
+    }
+    const soldOutItem = items.find((it) => productsMap[it.productId]?.isAvailable === false);
+    if (soldOutItem) {
+      const soldOutName =
+        productsMap[soldOutItem.productId]?.name || (soldOutItem as any).name || 'Sản phẩm';
+      Alert.alert(
+        'Món tạm hết hàng',
+        `Món "${soldOutName}" hiện đã tạm hết hàng. Vui lòng quay lại giỏ hàng để cập nhật trước khi đặt đơn.`
+      );
       return;
     }
 
@@ -538,7 +587,6 @@ export default function CheckoutScreen() {
       return;
     }
 
-    // Cash orders are priced and stored by the backend; the app never writes prices to Firestore.
     if (Boolean(false) && (!user || user?.isDemo)) {
       setIsSubmitting(false);
       router.push({ pathname: '/auth/login', params: { returnTo: 'checkout' } });
@@ -558,41 +606,54 @@ export default function CheckoutScreen() {
         try {
           const firestoreItems = items.map((item) => {
             const product = productsMap[item.productId];
-            const unitPrice = getItemLineUnitPrice(item, product) || 0;
+            const unitPrice = getItemLineUnitPrice(item, product, isMember) || 0;
             const lineTotal = unitPrice * (Number(item.quantity) || 1);
             const variant = product?.variants?.find((v) => v.id === item.variantId);
+            const fallbackVariantName =
+              item.variantId === 'small'
+                ? 'Cỡ Nhỏ'
+                : item.variantId === 'medium'
+                  ? 'Cỡ Vừa'
+                  : item.variantId === 'large'
+                    ? 'Cỡ Lớn'
+                    : '';
             const customSummary = item.customization ? formatCustomizationSummary(item.customization) : [];
+            const addonNames = (item.addonIds || [])
+              .map((id) => product?.addons?.find((a) => a.id === id)?.name)
+              .filter(Boolean) as string[];
+            const itemNote = (
+              item.specialInstructions ||
+              item.customization?.specialInstructions ||
+              ''
+            )
+              .replace(/\s*\[(MIN|PTS):\d+\]/g, '')
+              .trim();
             return {
               productId: item.productId,
               productName: product?.name || 'Sản phẩm',
               quantity: Number(item.quantity) || 1,
               unitPrice,
               lineTotal,
-              variantName: variant?.name || 'Đế Truyền Thống',
+              variantName: variant?.name || fallbackVariantName,
+              addonNames,
               customizationSummary: customSummary,
+              note: itemNote,
+              specialInstructions: itemNote,
               image: product?.image || '',
             };
           });
-          if (user && !user.isDemo) {
-            void createCashOrder(
-              {
-                customer: { fullname, phone: localPhone, email },
-                fulfillmentType: fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP',
-                needCutlery,
-                address,
-                items,
-                promoCode: selectedVoucher?.code,
-                paymentMethod: 'COD',
-                deliveryNote,
-                ...(effectiveShippingConfig && deliveryPoint ? { deliveryLocation: deliveryPoint } : {}),
-              },
-              formatDeliveryTime(deliveryTime)
-            )
-              .then((res) => {
-                if (res?.orderCode) setOrderCode(res.orderCode);
-              })
-              .catch(() => {});
-          }
+          const usedGiftIdsInOrder: string[] = [];
+          let redeemedPointsTotal = 0;
+          items.forEach((it) => {
+            const rawNote = String(it.specialInstructions || '');
+            const mGift = /Quà đổi điểm FPT Rewards \(([^)]+)\)/.exec(rawNote);
+            if (mGift && mGift[1]) usedGiftIdsInOrder.push(mGift[1]);
+            const mPts = /\[PTS:(\d+)\]/.exec(rawNote);
+            if (mPts && mPts[1]) {
+              redeemedPointsTotal += Number(mPts[1]) * (Number(it.quantity) || 1);
+            }
+          });
+
           await addDoc(collection(db, 'orders'), {
             orderCode: generatedOrderCode,
             createdAt: serverTimestamp(),
@@ -625,14 +686,40 @@ export default function CheckoutScreen() {
             subtotal,
             deliveryFee,
             discount: voucherDiscount,
+            memberDiscount,
             voucherCode: selectedVoucher?.code || null,
+            usedMemberGiftIds: usedGiftIdsInOrder,
+            redeemedPointsTotal,
             total,
             earnedPoints,
           });
-          if (user && !user.isDemo && user.id && earnedPoints > 0) {
-            updateDoc(doc(db, 'users', user.id), {
-              rewardPoints: increment(earnedPoints),
-            }).catch(() => {});
+          if (selectedVoucher && selectedVoucher.code) {
+            const voucherDocId = selectedVoucher.code.trim().toUpperCase();
+            setDoc(
+              doc(db, 'coupons', voucherDocId),
+              {
+                ...selectedVoucher,
+                code: voucherDocId,
+                usedCount: increment(1),
+              },
+              { merge: true }
+            ).catch(() => {});
+          }
+          if (user && !user.isDemo && user.id) {
+            if (usedGiftIdsInOrder.length > 0) {
+              try {
+                if (typeof window !== 'undefined' && window.localStorage) {
+                  const key = `fpt_used_member_gifts_${user.id}`;
+                  const raw = window.localStorage.getItem(key);
+                  const prev: string[] = raw ? JSON.parse(raw) : [];
+                  const merged = Array.from(new Set([...prev, ...usedGiftIdsInOrder]));
+                  window.localStorage.setItem(key, JSON.stringify(merged));
+                }
+              } catch {}
+              updateDoc(doc(db, 'users', user.id), {
+                usedMemberGiftIds: arrayUnion(...usedGiftIdsInOrder),
+              }).catch(() => {});
+            }
           }
         } catch {}
       }
@@ -660,23 +747,17 @@ export default function CheckoutScreen() {
       pad(now.getSeconds());
     setOrderDateString(dateFormatted);
 
-    // Lưu chắc chắn thông tin khách & địa chỉ xuống local storage để lần sau không bắt nhập lại
-    saveCustomerInfo({
-      fullname: fullname.trim(),
-      phone: localPhone.startsWith('0') ? localPhone.slice(1) : localPhone,
-      email: email.trim(),
-      deliveryNote: deliveryNote.trim(),
-    });
+    // Lưu địa chỉ giao hàng xuống local storage
     if (address.trim()) {
       saveDeliveryAddress(address.trim());
     }
 
-    // 1. Snapshot cart before clearing; amounts are what the backend stored (prices may have changed meanwhile).
     const orderSnapshot = {
       items: [...items],
       itemCount,
       subtotal: saved.subtotal,
       deliveryFee: saved.deliveryFee ?? deliveryFee,
+      memberDiscount,
       voucherDiscount: saved.discount,
       selectedVoucher,
       total: saved.total,
@@ -750,6 +831,11 @@ export default function CheckoutScreen() {
             <Text style={styles.infoText}>{fullname}</Text>
             <Text style={styles.infoText}>{phone}</Text>
             <Text style={styles.infoText}>{address}</Text>
+            {!!deliveryNote.trim() && (
+              <Text style={[styles.infoText, { color: BRAND_RED, fontWeight: '600', marginTop: 4 }]}>
+                Ghi chú giao nhận: {deliveryNote.trim()}
+              </Text>
+            )}
           </View>
 
           {/* Card 2: Phương thức thanh toán */}
@@ -768,10 +854,23 @@ export default function CheckoutScreen() {
             {/* Product list */}
             {(confirmedOrderData?.items || items).map((item, idx) => {
               const product = productsMap[item.productId];
-              const unitPrice = getItemLineUnitPrice(item, product) || 0;
+              const unitPrice = getItemLineUnitPrice(item, product, isMember) || 0;
               const lineTotal = unitPrice * (Number(item.quantity) || 1);
               const variant = product?.variants?.find((v) => v.id === item.variantId);
-              const variantName = variant?.name || 'Đế Truyền Thống';
+              const customParts = item.customization
+                ? formatCustomizationSummary(item.customization)
+                : [];
+              const addonParts = (item.addonIds || [])
+                .map((id) => product?.addons?.find((a) => a.id === id)?.name)
+                .filter(Boolean) as string[];
+              const optionParts = [variant?.name, ...customParts, ...addonParts]
+                .filter(Boolean)
+                .filter((val, i, arr) => arr.indexOf(val) === i);
+              const itemNote = (
+                item.specialInstructions ||
+                item.customization?.specialInstructions ||
+                ''
+              ).trim();
               return (
                 <View key={item.lineId || idx} style={styles.orderItemRow}>
                   <View style={styles.orderItemMainLine}>
@@ -781,9 +880,21 @@ export default function CheckoutScreen() {
                     <Text style={styles.orderItemQty}>{item.quantity}</Text>
                     <Text style={styles.orderItemPrice}>{formatCurrency(lineTotal)}</Text>
                   </View>
-                  <Text style={styles.orderItemOptions}>
-                    {item.customization ? formatCustomizationSummary(item.customization).join(' • ') || variantName : variantName}
-                  </Text>
+                  {optionParts.length > 0 && (
+                    <Text style={styles.orderItemOptions}>
+                      {optionParts.join(' • ')}
+                    </Text>
+                  )}
+                  {!!itemNote && (
+                    <Text
+                      style={[
+                        styles.orderItemOptions,
+                        { color: '#B45309', fontWeight: '600', marginTop: 2 },
+                      ]}
+                    >
+                      Ghi chú: {itemNote}
+                    </Text>
+                  )}
                 </View>
               );
             })}
@@ -803,8 +914,17 @@ export default function CheckoutScreen() {
                 <Text style={styles.pricingLabel}>Giảm giá thành viên</Text>
                 <Info size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
               </View>
-              <Text style={styles.pricingValue}>
-                {memberDiscount > 0 ? `-${formatCurrency(memberDiscount)}` : '0 đ'}
+              <Text
+                style={[
+                  styles.pricingValue,
+                  (confirmedOrderData?.memberDiscount ?? memberDiscount) > 0 && {
+                    color: BRAND_RED,
+                  },
+                ]}
+              >
+                {(confirmedOrderData?.memberDiscount ?? memberDiscount) > 0
+                  ? `-${formatCurrency(confirmedOrderData?.memberDiscount ?? memberDiscount)}`
+                  : '0 đ'}
               </Text>
             </View>
 
@@ -881,7 +1001,7 @@ export default function CheckoutScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => router.replace('/(tabs)/cart')}
           activeOpacity={0.7}
         >
           <ChevronLeft size={26} color="#111827" />
@@ -906,6 +1026,24 @@ export default function CheckoutScreen() {
             subtitle={address || 'Chọn địa chỉ nhận món'}
             onPress={handleOpenAddressModal}
           />
+          {fulfillmentType === 'delivery' && assignedStore && (
+            <>
+              <View style={styles.cardDivider} />
+              <CheckoutRow
+                icon={<Store size={20} color="#5B6470" />}
+                title="Chi nhánh giao hàng"
+                subtitle={assignedStore.name}
+                badge={activeStorePoints.length > 1 ? 'Đổi quán' : undefined}
+                onPress={() => {
+                  if (activeStorePoints.length <= 1) return;
+                  triggerHaptic('light');
+                  const currentIdx = activeStorePoints.findIndex((s) => s.id === assignedStore.id);
+                  const nextStore = activeStorePoints[(currentIdx + 1) % activeStorePoints.length];
+                  if (nextStore) setSelectedDeliveryStoreId(nextStore.id);
+                }}
+              />
+            </>
+          )}
           <View style={styles.cardDivider} />
           <CheckoutRow icon={<Clock3 size={20} color="#5B6470" />}
             title="Thời gian nhận" subtitle={useAhamove && deliveryTime === 'asap' ? 'Giao ngay khi món sẵn sàng' : formatDeliveryTime(deliveryTime)}
@@ -958,7 +1096,7 @@ export default function CheckoutScreen() {
           <View style={styles.contactField}>
             <Text style={styles.fieldLabel}>Họ tên</Text>
             <View style={[styles.contactInputRow, focusedField === 'fullname' && styles.inputFocused, !!fieldErrors.fullname && styles.inputInvalid]}>
-              <UserRound size={17} color="#9CA3AF" accessible={false} />
+              <UserRound size={17} color="#9CA3AF" />
               <TextInput ref={fullnameInput} style={styles.contactInput} onFocus={() => setFocusedField('fullname')}
                 onBlur={() => validateField('fullname', fullname)} value={fullname} onChangeText={handleUpdateFullname}
                 accessibilityLabel="Họ tên, bắt buộc" placeholder="Họ và tên" placeholderTextColor="#9CA3AF" autoComplete="name" returnKeyType="next" submitBehavior="submit"
@@ -969,7 +1107,7 @@ export default function CheckoutScreen() {
           <View style={styles.contactField}>
             <Text style={styles.fieldLabel}>Số điện thoại</Text>
             <View style={[styles.contactInputRow, focusedField === 'phone' && styles.inputFocused, !!fieldErrors.phone && styles.inputInvalid]}>
-              <Phone size={17} color="#9CA3AF" accessible={false} />
+              <Phone size={17} color="#9CA3AF" />
               <Text style={styles.phonePrefix}>+84</Text>
               <TextInput ref={phoneInput} style={styles.contactInput} onFocus={() => setFocusedField('phone')}
                 onBlur={() => validateField('phone', phone)} value={phone} onChangeText={handleUpdatePhone}
@@ -989,7 +1127,7 @@ export default function CheckoutScreen() {
                 </TouchableOpacity>
               </View>
               <View style={[styles.contactInputRow, focusedField === 'email' && styles.inputFocused, !!fieldErrors.email && styles.inputInvalid]}>
-                <Mail size={17} color="#9CA3AF" accessible={false} />
+                <Mail size={17} color="#9CA3AF" />
                 <TextInput ref={emailInput} style={styles.contactInput} onFocus={() => setFocusedField('email')}
                 onBlur={() => validateField('email', email)} value={email} onChangeText={handleUpdateEmail}
                   accessibilityLabel="Email, không bắt buộc" keyboardType="email-address" autoCapitalize="none" autoComplete="email"
@@ -1028,7 +1166,7 @@ export default function CheckoutScreen() {
 
         <View style={styles.checkoutCard}>
           <CheckoutRow icon={<ShoppingBag size={20} color="#5B6470" />} title="Đơn hàng"
-            badge={`${itemCount} món`} onPress={() => router.navigate('/(tabs)/cart')} />
+            badge={`${itemCount} món`} onPress={() => router.push({ pathname: '/(tabs)/cart', params: { from: 'checkout' } })} />
           <View style={styles.cardDivider} />
           <View style={styles.receiptDetails}>
             <View style={styles.pricingRow}>
@@ -1068,6 +1206,14 @@ export default function CheckoutScreen() {
               <View style={styles.pricingRow}>
                 <Text style={styles.savingsText}>Giảm giá</Text>
                 <Text style={styles.savingsText}>−{formatCurrency(voucherDiscount)}</Text>
+              </View>
+            )}
+            {memberDiscount > 0 && (
+              <View style={styles.pricingRow}>
+                <Text style={styles.savingsText}>
+                  Giảm giá thành viên ({Math.round(memberDiscountRate * 100)}%)
+                </Text>
+                <Text style={styles.savingsText}>−{formatCurrency(memberDiscount)}</Text>
               </View>
             )}
             {selectedVoucher && subtotal < selectedVoucher.minSubtotal && (
@@ -1122,7 +1268,7 @@ export default function CheckoutScreen() {
             <Text style={styles.orderBtnText}>{selectedPaymentId === 'payos' ? 'Đang tạo QR…' : 'Đang đặt hàng…'}</Text>
           </> : <>
             <Text style={styles.orderBtnText}>{selectedPaymentId === 'payos' ? 'Thanh toán' : 'Đặt hàng'}</Text>
-            <ArrowRight size={18} color="#FFFFFF" accessible={false} />
+            <ArrowRight size={18} color="#FFFFFF" />
           </>}
         </TouchableOpacity>
       </View>
@@ -1252,11 +1398,11 @@ export default function CheckoutScreen() {
             <View style={styles.placeholder} />
           </View>
 
-          <View style={styles.voucherBody}>
+          <View style={[styles.voucherBody, { justifyContent: 'flex-start' }]}>
             <View style={styles.voucherInputRow}>
               <TextInput
                 style={styles.voucherTextInput}
-                placeholder="Nhập mã voucher (vd: FPT40, FREESHIP)"
+                placeholder="Nhập mã giảm giá của bạn"
                 placeholderTextColor="#9CA3AF"
                 value={inputVoucherCode}
                 onChangeText={setInputVoucherCode}
@@ -1281,22 +1427,172 @@ export default function CheckoutScreen() {
               </TouchableOpacity>
             </View>
 
-            {selectedVoucher ? (
-              <View style={styles.whiteSectionBlock}>
-                <Text style={styles.sectionHeaderTitle}>Đã áp dụng: {selectedVoucher.code}</Text>
-                <Text style={styles.sectionSubTitle}>{selectedVoucher.description}</Text>
-                <TouchableOpacity accessibilityRole="button" onPress={() => setPromoCode('')} style={{ paddingVertical: 14 }}>
-                  <Text style={{ color: BRAND_RED }}>Gỡ mã giảm giá</Text>
-                </TouchableOpacity>
-              </View>
-            ) : <View style={styles.emptyVoucherArea}>
-              <EmptyTicketIcon />
-              <Text style={styles.emptyVoucherTitle}>Hiện không có mã giảm giá</Text>
-              <Text style={styles.emptyVoucherSub}>
-                Bạn có thể thử nhập mã: <Text style={{ fontWeight: '700' }}>FPT40</Text> hoặc{' '}
-                <Text style={{ fontWeight: '700' }}>FREESHIP</Text>
-              </Text>
-            </View>}
+            <Text style={{ fontSize: 13.5, color: '#6B7280', marginTop: 14, marginBottom: 4 }}>
+              Hoặc chọn mã giảm giá của bạn
+            </Text>
+
+            {availableVouchers.length > 0 ? (
+              <ScrollView
+                style={{ flex: 1, marginTop: 12 }}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 24, gap: 10 }}
+              >
+                {availableVouchers.map((voucher) => {
+                  const isSelected =
+                    selectedVoucher?.code.toUpperCase() === voucher.code.toUpperCase();
+                  const hasOtherSelected = !!selectedVoucher && !isSelected;
+                  const canApply = subtotal >= (voucher.minSubtotal || 0);
+                  const isDimmed = !canApply || hasOtherSelected;
+                  const benefitLabel = voucher.freeShipping
+                    ? 'Miễn phí giao hàng'
+                    : voucher.discountType === 'PERCENT'
+                    ? `Giảm ${voucher.value}%${
+                        voucher.maxDiscount
+                          ? ` (tối đa ${formatCurrency(voucher.maxDiscount)})`
+                          : ''
+                      }`
+                    : `Giảm ${formatCurrency(voucher.value)}`;
+
+                  return (
+                    <TouchableOpacity
+                      key={voucher.code}
+                      activeOpacity={canApply || isSelected ? 0.8 : 1}
+                      disabled={!canApply && !isSelected}
+                      onPress={() => {
+                        if (isSelected) {
+                          setPromoCode('');
+                          return;
+                        }
+                        if (!canApply) return;
+                        setPromoCode(voucher.code);
+                        triggerHaptic('success');
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: isSelected
+                          ? '#FFF7F5'
+                          : !canApply
+                          ? '#F3F4F6'
+                          : '#FFFFFF',
+                        borderRadius: 12,
+                        padding: 14,
+                        borderWidth: 1.5,
+                        borderColor: isSelected ? BRAND_RED : '#E5E7EB',
+                        borderLeftWidth: 4,
+                        borderLeftColor: isSelected
+                          ? BRAND_RED
+                          : isDimmed
+                          ? '#9CA3AF'
+                          : BRAND_RED,
+                        opacity: isSelected ? 1 : !canApply ? 0.45 : hasOtherSelected ? 0.55 : 1,
+                      }}
+                    >
+                      <View style={{ flex: 1, paddingRight: 12 }}>
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 8,
+                            flexWrap: 'wrap',
+                            marginBottom: 6,
+                          }}
+                        >
+                          <View
+                            style={{
+                              backgroundColor: isSelected ? BRAND_RED : '#FEF2F2',
+                              paddingHorizontal: 8,
+                              paddingVertical: 3,
+                              borderRadius: 5,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 12.5,
+                                fontWeight: '800',
+                                color: isSelected ? '#FFFFFF' : BRAND_RED,
+                              }}
+                            >
+                              {voucher.code}
+                            </Text>
+                          </View>
+                          <View
+                            style={{
+                              backgroundColor: '#ECFDF5',
+                              borderWidth: 1,
+                              borderColor: '#A7F3D0',
+                              paddingHorizontal: 8,
+                              paddingVertical: 2,
+                              borderRadius: 6,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 11.5,
+                                fontWeight: '700',
+                                color: '#047857',
+                              }}
+                            >
+                              {benefitLabel}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Text
+                          style={{
+                            fontSize: 13.5,
+                            fontWeight: '600',
+                            color: '#1F2937',
+                            marginBottom: 6,
+                          }}
+                        >
+                          {voucher.description}
+                        </Text>
+
+                        {!!voucher.expiresAt && (
+                          <Text style={{ fontSize: 12, color: '#6B7280' }}>
+                            HSD: {voucher.expiresAt}
+                          </Text>
+                        )}
+                      </View>
+
+                      <View
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 12,
+                          borderWidth: 2,
+                          borderColor: isSelected
+                            ? BRAND_RED
+                            : !canApply
+                            ? '#D1D5DB'
+                            : '#9CA3AF',
+                          backgroundColor: isSelected
+                            ? BRAND_RED
+                            : !canApply
+                            ? '#E5E7EB'
+                            : '#FFFFFF',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {isSelected && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              !selectedVoucher && (
+                <View style={[styles.emptyVoucherArea, { flex: 1 }]}>
+                  <EmptyTicketIcon />
+                  <Text style={styles.emptyVoucherTitle}>Chưa có mã giảm giá</Text>
+                  <Text style={styles.emptyVoucherSub}>
+                    Thêm mã giảm giá có sẵn vào thanh nhập mã phía trên
+                  </Text>
+                </View>
+              )
+            )}
 
             <TouchableOpacity
               style={styles.voucherDoneBtn}
@@ -1307,6 +1603,186 @@ export default function CheckoutScreen() {
             </TouchableOpacity>
           </View>
         </SafeAreaView>
+      </Modal>
+
+      {/* MODAL THÔNG BÁO CHƯA ĐỦ ĐIỀU KIỆN GIAO HÀNG */}
+      <Modal
+        visible={minDeliveryPopupVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMinDeliveryPopupVisible(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0, 0, 0, 0.55)',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: 20,
+          }}
+        >
+          <View
+            style={{
+              width: '100%',
+              maxWidth: 380,
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              paddingHorizontal: 22,
+              paddingVertical: 24,
+              alignItems: 'center',
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 17,
+                fontWeight: '700',
+                color: '#111827',
+                textAlign: 'center',
+              }}
+            >
+              Thông báo
+            </Text>
+
+            <View
+              style={{
+                width: 88,
+                height: 2.5,
+                backgroundColor: BRAND_RED,
+                borderRadius: 2,
+                marginTop: 8,
+                marginBottom: 18,
+              }}
+            />
+
+            <Text
+              style={{
+                fontSize: 15,
+                color: '#1F2937',
+                textAlign: 'center',
+                lineHeight: 22,
+              }}
+            >
+              Đợi đã! Bạn vui lòng mua thêm{' '}
+              {formatCurrency(Math.max(0, minDeliveryOrderAmount - subtotal))} để đủ điều
+              kiện giao hàng
+            </Text>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setMinDeliveryPopupVisible(false)}
+              style={{
+                width: '100%',
+                marginTop: 22,
+                paddingVertical: 13,
+                borderRadius: 8,
+                backgroundColor: BRAND_RED,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text
+                style={{
+                  color: '#FFFFFF',
+                  fontSize: 15.5,
+                  fontWeight: '600',
+                }}
+              >
+                Xác nhận
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* MODAL THÔNG BÁO CỬA HÀNG ĐÓNG CỬA (SAU 22:00 - 08:00)     */}
+      {/* ======================================================== */}
+      <Modal
+        visible={storeClosedPopupVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setStoreClosedPopupVisible(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: 24,
+          }}
+        >
+          <View
+            style={{
+              width: '100%',
+              maxWidth: 360,
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              paddingHorizontal: 22,
+              paddingTop: 22,
+              paddingBottom: 20,
+              alignItems: 'center',
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 17,
+                fontWeight: '700',
+                color: '#111827',
+                textAlign: 'center',
+              }}
+            >
+              Thông báo
+            </Text>
+
+            <View
+              style={{
+                width: 88,
+                height: 2.5,
+                backgroundColor: BRAND_RED,
+                borderRadius: 2,
+                marginTop: 8,
+                marginBottom: 18,
+              }}
+            />
+
+            <Text
+              style={{
+                fontSize: 15,
+                color: '#1F2937',
+                textAlign: 'center',
+                lineHeight: 22,
+              }}
+            >
+              {store.message ||
+                'Hiện tại cửa hàng đã đóng cửa (22:00 – 08:00). Vui lòng đặt hàng trong khung giờ hoạt động từ 08:00 đến 22:00.'}
+            </Text>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setStoreClosedPopupVisible(false)}
+              style={{
+                width: '100%',
+                marginTop: 22,
+                paddingVertical: 13,
+                borderRadius: 8,
+                backgroundColor: BRAND_RED,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text
+                style={{
+                  color: '#FFFFFF',
+                  fontSize: 15.5,
+                  fontWeight: '600',
+                }}
+              >
+                Xác nhận
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );

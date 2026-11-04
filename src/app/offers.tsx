@@ -5,16 +5,26 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Trash2 } from 'lucide-react-native';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import { subscribeOrderOverrides, type OrderDispatchOverride } from '../services/storeSync';
 import { useAuth } from '../state/AuthContext';
 import { useContentWidth } from '../utils/layout';
 import { triggerHaptic } from '../utils/haptics';
+import { formatCurrency } from '../utils/formatCurrency';
+import {
+  fetchUserMemberStats,
+  loadOrSeedMemberGiftRules,
+  getEligibleMemberGifts,
+  getMemberGiftOccasionLabel,
+} from '../utils/memberTier';
 import { styles, BRAND_RED } from '../styles/offers.styles';
 
 // Custom SVG: Hand holding red takeaway bag (matching Screenshot 2)
@@ -66,24 +76,55 @@ const OrderBagIcon = () => (
   </Svg>
 );
 
-// Custom SVG: Red Brand Emblem (matching Screenshot 2 second item)
+// Custom SVG: Centered Gift Box Icon (64x64 matching OrderBagIcon, brand red & white only)
 const BrandGiftLogoIcon = () => (
-  <Svg width={92} height={92} viewBox="0 0 92 92" fill="none">
-    <Circle cx="30" cy="46" r="44" fill={BRAND_RED} />
-    <Circle
-      cx="30"
-      cy="46"
-      r="36"
-      stroke="#FFFFFF"
-      strokeWidth={2.5}
+  <Svg width={64} height={64} viewBox="0 0 64 64" fill="none">
+    {/* Gift box body */}
+    <Rect
+      x="15"
+      y="28"
+      width="34"
+      height="22"
+      rx="3"
+      fill={BRAND_RED}
+      stroke="#111827"
+      strokeWidth={1.8}
+    />
+    {/* Gift box lid */}
+    <Rect
+      x="13"
+      y="21"
+      width="38"
+      height="8"
+      rx="2.5"
+      fill={BRAND_RED}
+      stroke="#111827"
+      strokeWidth={1.8}
+    />
+    {/* Vertical ribbon */}
+    <Rect
+      x="29"
+      y="21"
+      width="6"
+      height="29"
+      fill="#FFFFFF"
+      stroke="#111827"
+      strokeWidth={1.6}
+    />
+    {/* Bow left & right */}
+    <Path
+      d="M32 21C27 21 22 18 22 14.5C22 12 24.5 11 27 12.5C29.5 14 32 18 32 21Z"
+      fill="#FFFFFF"
+      stroke="#111827"
+      strokeWidth={1.6}
+      strokeLinejoin="round"
     />
     <Path
-      d="M8 48L24 38L36 38L52 48H8Z"
+      d="M32 21C37 21 42 18 42 14.5C42 12 39.5 11 37 12.5C34.5 14 32 18 32 21Z"
       fill="#FFFFFF"
-    />
-    <Path
-      d="M20 35H40L37 30H23L20 35Z"
-      fill="#FFFFFF"
+      stroke="#111827"
+      strokeWidth={1.6}
+      strokeLinejoin="round"
     />
   </Svg>
 );
@@ -95,13 +136,16 @@ interface NotificationItem {
   subtitle?: string;
   timeLabel: string;
   orderId?: string;
+  imageUrl?: string;
   read: boolean;
 }
 
-function getOrderStatusText(status?: string): string {
+function getOrderStatusText(status?: string, hasAssignedStaff?: boolean): string {
   switch (status) {
     case 'PREPARING':
-      return 'Đang chuẩn bị';
+      return 'Đang chuẩn bị món';
+    case 'READY':
+      return hasAssignedStaff ? 'Nhân viên đang nhận đơn đi giao' : 'Món đã làm xong';
     case 'READY_FOR_PICKUP':
     case 'OUT_FOR_DELIVERY':
       return 'Đang giao hàng';
@@ -109,7 +153,9 @@ function getOrderStatusText(status?: string): string {
     case 'COMPLETED':
       return 'Hoàn thành';
     case 'CANCELLED':
+    case 'REJECTED':
       return 'Đã hủy';
+    case 'PENDING':
     case 'PENDING_CONFIRMATION':
     case 'CONFIRMED':
     default:
@@ -160,15 +206,80 @@ export default function OffersScreen() {
   const [activeTab, setActiveTab] = useState<'promo' | 'personal'>('promo');
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [orderOverrides, setOrderOverrides] = useState<Record<string, OrderDispatchOverride>>({});
+  const deletedSetRef = React.useRef<Set<string>>(new Set());
+  const readSetRef = React.useRef<Set<string>>(new Set());
+
+  const getDeletedStorageKey = (uid: string) => `@pizza_fpt_deleted_notifs_${uid}`;
+  const getReadStorageKey = (uid: string) => `@pizza_fpt_read_notifs_${uid}`;
+
+  const readSyncLocalList = (key: string): string[] => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = window.localStorage.getItem(key);
+        if (raw) return JSON.parse(raw);
+      }
+    } catch {}
+    return [];
+  };
+
+  const writeSyncLocalList = (key: string, list: string[]) => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(key, JSON.stringify(list));
+      }
+    } catch {}
+    AsyncStorage.setItem(key, JSON.stringify(list)).catch(() => {});
+  };
+
+  useEffect(() => {
+    const unsub = subscribeOrderOverrides((map) => {
+      setOrderOverrides((prev) => {
+        const prevJson = JSON.stringify(prev);
+        const nextJson = JSON.stringify(map);
+        return prevJson === nextJson ? prev : map;
+      });
+    });
+    return () => unsub();
+  }, []);
+
+  const hasLoadedOnceRef = React.useRef(false);
 
   const loadPersonalNotifications = useCallback(async () => {
-    if (!isAuthenticated || !user || user.isDemo) {
+    if (!isAuthenticated || !user?.id || user.isDemo) {
       setNotifications([]);
       return;
     }
 
-    setIsLoading(true);
+    if (!hasLoadedOnceRef.current) {
+      setIsLoading(true);
+    }
     try {
+      const uid = user.id || 'guest';
+      const delKey = getDeletedStorageKey(uid);
+      const readKey = getReadStorageKey(uid);
+
+      // Nạp ngay từ localStorage đồng bộ trước
+      readSyncLocalList(delKey).forEach((id) => deletedSetRef.current.add(id));
+      readSyncLocalList(readKey).forEach((id) => readSetRef.current.add(id));
+
+      const [storedDeletedRaw, storedReadRaw, userSnap] = await Promise.all([
+        AsyncStorage.getItem(delKey).catch(() => null),
+        AsyncStorage.getItem(readKey).catch(() => null),
+        user.id ? getDoc(doc(db, 'users', user.id)).catch(() => null) : Promise.resolve(null),
+      ]);
+
+      const userData = userSnap?.exists?.() ? userSnap.data() : undefined;
+      [
+        ...(storedDeletedRaw ? JSON.parse(storedDeletedRaw) : []),
+        ...(Array.isArray(userData?.deletedNotifIds) ? userData.deletedNotifIds : []),
+      ].forEach((id: string) => deletedSetRef.current.add(id));
+
+      [
+        ...(storedReadRaw ? JSON.parse(storedReadRaw) : []),
+        ...(Array.isArray(userData?.readNotifIds) ? userData.readNotifIds : []),
+      ].forEach((id: string) => readSetRef.current.add(id));
+
       const ordersCol = collection(db, 'orders');
       const foundOrders: any[] = [];
 
@@ -205,64 +316,149 @@ export default function OffersScreen() {
         return timeB - timeA;
       });
 
-      const orderNotifs: NotificationItem[] = foundOrders.map((order) => {
-        const code = order.orderCode || order.id.slice(0, 10).toUpperCase();
-        const statusText = getOrderStatusText(order.status);
-        const clock = formatOrderClock(order);
-        return {
-          id: `order-${order.id}`,
-          type: 'order',
-          title: `Đơn hàng #${code}`,
-          subtitle: `${statusText} - ${clock}`,
-          timeLabel: formatRelativeTime(order),
-          orderId: order.id,
-          read: false,
-        };
-      });
+      const orderNotifs: NotificationItem[] = foundOrders
+        .filter((o) => String(o.orderCode || '').toUpperCase() !== 'PF-X469QK')
+        .map((order) => {
+          const override = orderOverrides[order.id];
+          const effectiveStatus = String(
+            override?.status || order.status || 'PENDING_CONFIRMATION'
+          );
+          const hasAssignedStaff = Boolean(
+            override?.assignedStaffId || order.assignedStaffId
+          );
+          const statusKey =
+            effectiveStatus === 'READY' && hasAssignedStaff
+              ? 'READY_ASSIGNED'
+              : effectiveStatus;
+          const code = order.orderCode || order.id.slice(0, 10).toUpperCase();
+          const statusText = getOrderStatusText(effectiveStatus, hasAssignedStaff);
+          const clock = formatOrderClock(order);
+          const notifId = `order-${order.id}-${statusKey}`;
+          const legacyId = `order-${order.id}`;
+          const isTerminal =
+            effectiveStatus === 'COMPLETED' ||
+            effectiveStatus === 'DELIVERED' ||
+            effectiveStatus === 'CANCELLED' ||
+            effectiveStatus === 'REJECTED';
 
-      const welcomeNotif: NotificationItem = {
-        id: 'welcome-gift',
-        type: 'welcome',
-        title: 'HUT TẶNG BẠN MÓN QUÀ - ĐĂNG KÝ THÀNH VIÊN MỚI',
-        timeLabel: '21/10/2026',
-        read: false,
-      };
+          const isDeleted =
+            deletedSetRef.current.has(notifId) ||
+            (isTerminal && deletedSetRef.current.has(legacyId));
 
-      setNotifications([...orderNotifs, welcomeNotif]);
-    } catch {
-      setNotifications([
-        {
-          id: 'welcome-gift',
-          type: 'welcome',
-          title: 'HUT TẶNG BẠN MÓN QUÀ - ĐĂNG KÝ THÀNH VIÊN MỚI',
-          timeLabel: '21/10/2026',
-          read: false,
-        },
+          return {
+            id: notifId,
+            type: 'order' as const,
+            title: `Đơn hàng #${code}`,
+            subtitle: `${statusText} - ${clock}`,
+            timeLabel: formatRelativeTime(order),
+            orderId: order.id,
+            read:
+              readSetRef.current.has(notifId) ||
+              (isTerminal && readSetRef.current.has(legacyId)),
+            _deleted: isDeleted,
+          };
+        })
+        .filter((item) => !item._deleted);
+
+      // Tạo thông báo Quà Tặng Đặc Quyền Thành Viên (Thăng Hạng Vàng / VIP & Sinh Nhật)
+      const [memberStats, giftRules] = await Promise.all([
+        fetchUserMemberStats(uid).catch(() => null),
+        loadOrSeedMemberGiftRules().catch(() => []),
       ]);
+
+      const localUsedGifts = readSyncLocalList(`fpt_used_member_gifts_${uid}`);
+      const usedSet = new Set<string>([
+        ...localUsedGifts,
+        ...(Array.isArray(userData?.usedMemberGiftIds) ? userData.usedMemberGiftIds : []),
+      ]);
+
+      const eligibleGifts = memberStats
+        ? getEligibleMemberGifts(
+            giftRules,
+            memberStats.id,
+            userData?.birthday || (user as any)?.birthday,
+            memberStats
+          )
+        : [];
+
+      const memberGiftNotifs: NotificationItem[] = eligibleGifts
+        .filter((rule) => !usedSet.has(rule.id))
+        .map((rule) => {
+          const notifId = `member-gift-${rule.id}`;
+          const cleanBaseTitle = rule.title
+            .replace(/^Quà Sinh Nhật:\s*/i, '')
+            .replace(/\s*miễn phí$/i, '')
+            .replace(/\s*\((Cỡ [^)]+)\)/i, ' - $1')
+            .trim();
+          const minK = Math.round((rule.minSubtotal || 0) / 1000);
+          const displayGiftTitle =
+            minK > 0 && !cleanBaseTitle.toLowerCase().includes('đơn hàng từ')
+              ? `${cleanBaseTitle} cho đơn hàng từ ${minK}K`
+              : cleanBaseTitle;
+          return {
+            id: notifId,
+            type: 'welcome' as const,
+            title: displayGiftTitle,
+            subtitle: `${getMemberGiftOccasionLabel(rule.occasion)} — Nhận tại Quà của tôi`,
+            timeLabel: 'Quà của tôi',
+            read: readSetRef.current.has(notifId),
+            _deleted: deletedSetRef.current.has(notifId),
+          };
+        })
+        .filter((item) => !item._deleted);
+
+      setNotifications([...memberGiftNotifs, ...orderNotifs]);
+      hasLoadedOnceRef.current = true;
+    } catch {
+      setNotifications([]);
     } finally {
       setIsLoading(false);
     }
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user?.id, user?.phone, user?.isDemo, orderOverrides]);
 
   useEffect(() => {
     loadPersonalNotifications();
   }, [loadPersonalNotifications]);
 
-  const handleReadAll = () => {
+  const handleReadAll = async () => {
     triggerHaptic('light');
+    notifications.forEach((n) => {
+      readSetRef.current.add(n.id);
+      if (n.orderId) readSetRef.current.add(`order-${n.orderId}`);
+    });
     setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+    if (user?.id) {
+      const merged = Array.from(readSetRef.current);
+      writeSyncLocalList(getReadStorageKey(user.id), merged);
+      await updateDoc(doc(db, 'users', user.id), { readNotifIds: merged }).catch(() => {});
+    }
   };
 
-  const handleDeleteNotification = (id: string) => {
+  const handleDeleteNotification = async (id: string, orderId?: string) => {
     triggerHaptic('medium');
+    deletedSetRef.current.add(id);
+    if (orderId) {
+      deletedSetRef.current.add(`order-${orderId}`);
+    }
     setNotifications((prev) => prev.filter((item) => item.id !== id));
+    if (user?.id) {
+      const merged = Array.from(deletedSetRef.current);
+      writeSyncLocalList(getDeletedStorageKey(user.id), merged);
+      await updateDoc(doc(db, 'users', user.id), { deletedNotifIds: merged }).catch(() => {});
+    }
   };
 
-  const handlePressNotification = (item: NotificationItem) => {
+  const handlePressNotification = async (item: NotificationItem) => {
     triggerHaptic('light');
+    readSetRef.current.add(item.id);
     setNotifications((prev) =>
       prev.map((n) => (n.id === item.id ? { ...n, read: true } : n))
     );
+    if (user?.id) {
+      const merged = Array.from(readSetRef.current);
+      writeSyncLocalList(getReadStorageKey(user.id), merged);
+      await updateDoc(doc(db, 'users', user.id), { readNotifIds: merged }).catch(() => {});
+    }
     if (item.type === 'order') {
       router.push(
         item.orderId
@@ -270,7 +466,7 @@ export default function OffersScreen() {
           : '/order/tracking'
       );
     } else {
-      router.push('/(tabs)/rewards');
+      router.push({ pathname: '/(tabs)/rewards', params: { tab: 'my_gifts' } });
     }
   };
 
@@ -298,62 +494,11 @@ export default function OffersScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 2-Tab Segmented Switch */}
-      <View style={styles.tabsWrapper}>
-        <View style={styles.tabsContainer}>
-          <TouchableOpacity
-            style={[
-              styles.tabButton,
-              activeTab === 'promo' && styles.tabButtonActive,
-            ]}
-            activeOpacity={0.85}
-            onPress={() => {
-              triggerHaptic('light');
-              setActiveTab('promo');
-            }}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === 'promo' && styles.tabTextActive,
-              ]}
-            >
-              Thông báo khuyến mãi
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.tabButton,
-              activeTab === 'personal' && styles.tabButtonActive,
-            ]}
-            activeOpacity={0.85}
-            onPress={() => {
-              triggerHaptic('light');
-              setActiveTab('personal');
-            }}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === 'personal' && styles.tabTextActive,
-              ]}
-            >
-              Thông tin của bạn
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Tab Content */}
-      {activeTab === 'promo' ? (
-        <View style={styles.emptyWrap}>
-          <Text style={styles.emptyText}>Không có thông báo nào</Text>
-        </View>
-      ) : !isAuthenticated || !user || user.isDemo ? (
+      {/* Danh sách Thông báo chung */}
+      {!isAuthenticated || !user || user.isDemo ? (
         <View style={styles.guestPromptWrap}>
           <Text style={styles.guestPromptText}>
-            Vui lòng đăng nhập để xem thông tin của bạn
+            Vui lòng đăng nhập để xem thông báo
           </Text>
           <TouchableOpacity
             style={styles.guestLoginBtn}
@@ -402,18 +547,18 @@ export default function OffersScreen() {
                       <OrderBagIcon />
                     </View>
                   ) : (
-                    <View style={styles.iconBoxLogo}>
+                    <View style={styles.iconBoxPink}>
                       <BrandGiftLogoIcon />
                     </View>
                   )}
 
                   <View style={styles.cardBody}>
                     <View>
-                      <Text style={styles.cardTitle} numberOfLines={1}>
+                      <Text style={styles.cardTitle} numberOfLines={2}>
                         {item.title}
                       </Text>
                       {!!item.subtitle && (
-                        <Text style={styles.cardSubtitle} numberOfLines={1}>
+                        <Text style={styles.cardSubtitle} numberOfLines={2}>
                           {item.subtitle}
                         </Text>
                       )}
@@ -430,7 +575,7 @@ export default function OffersScreen() {
                 <TouchableOpacity
                   style={styles.deleteActionBtn}
                   activeOpacity={0.85}
-                  onPress={() => handleDeleteNotification(item.id)}
+                  onPress={() => handleDeleteNotification(item.id, item.orderId)}
                 >
                   <Trash2 size={22} color="#FFFFFF" />
                 </TouchableOpacity>

@@ -21,7 +21,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react-native';
-import { createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { collection, onSnapshot, doc, updateDoc, setDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { getProvisioningAuth, getProvisioningDb } from '../../services/firebaseProvision';
@@ -31,6 +31,7 @@ import { colors } from '../../theme/colors';
 import { styles } from '../../styles/adminUsers.styles';
 import { DemoUser } from '../../types/user';
 import { useAuth } from '../../state/AuthContext';
+import { useToast } from '../../state/ToastContext';
 import { canChangeRole } from '../../utils/staff';
 import { reportAdminAction } from '../../services/orderApi';
 import { MOCK_PICKUP_STORES, type MockStoreItem } from '../../components/modals/StoreLocationModal';
@@ -55,35 +56,35 @@ const ROLE_SECTIONS: {
   color: string;
   match: (role?: string) => boolean;
 }[] = [
-  {
-    key: 'admin',
-    title: 'Admin & Quản lý',
-    hint: 'Toàn quyền & Quản lý quán',
-    color: colors.primary,
-    match: (r) => r === 'SUPER_ADMIN' || r === 'ADMIN' || r === 'STORE_MANAGER',
-  },
-  {
-    key: 'kitchen',
-    title: 'Nhân viên',
-    hint: 'Xử lý & giao đơn hàng',
-    color: colors.success,
-    match: (r) => r === 'EMPLOYEE' || r === 'ROLE_KITCHEN',
-  },
-  {
-    key: 'user',
-    title: 'Khách hàng',
-    hint: 'Đặt món & tích điểm',
-    color: colors.textSecondary,
-    match: (r) => (r === 'BLACKLISTED' ? false : true),
-  },
-  {
-    key: 'blocked',
-    title: 'Đã khóa',
-    hint: 'Hoàn tác mở khóa hoặc xóa vĩnh viễn',
-    color: colors.error,
-    match: (r) => r === 'BLACKLISTED',
-  },
-];
+    {
+      key: 'admin',
+      title: 'Admin & Quản lý',
+      hint: 'Toàn quyền & Quản lý quán',
+      color: colors.primary,
+      match: (r) => r === 'SUPER_ADMIN' || r === 'ADMIN' || r === 'STORE_MANAGER',
+    },
+    {
+      key: 'kitchen',
+      title: 'Nhân viên',
+      hint: 'Xử lý & giao đơn hàng',
+      color: colors.primary,
+      match: (r) => r === 'EMPLOYEE' || r === 'ROLE_KITCHEN',
+    },
+    {
+      key: 'user',
+      title: 'Khách hàng',
+      hint: 'Đặt món & tích điểm',
+      color: colors.primary,
+      match: (r) => (r === 'BLACKLISTED' ? false : true),
+    },
+    {
+      key: 'blocked',
+      title: 'Đã khóa',
+      hint: 'Hoàn tác mở khóa hoặc xóa vĩnh viễn',
+      color: colors.primary,
+      match: (r) => r === 'BLACKLISTED',
+    },
+  ];
 
 // Xác định tài khoản thuộc khu vực nào (ưu tiên nhóm quyền, fallback = Khách hàng)
 const sectionKeyForRole = (role?: string): string =>
@@ -91,6 +92,7 @@ const sectionKeyForRole = (role?: string): string =>
 
 export default function AdminUsersScreen() {
   const { user: me } = useAuth();
+  const { showToast } = useToast();
   const [users, setUsers] = useState<DemoUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -104,6 +106,8 @@ export default function AdminUsersScreen() {
   // Modal cấp tài khoản nhân viên mới
   const [createVisible, setCreateVisible] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [editError, setEditError] = useState('');
   const [cName, setCName] = useState('');
   const [cEmail, setCEmail] = useState('');
   const [cPhone, setCPhone] = useState('');
@@ -176,8 +180,81 @@ export default function AdminUsersScreen() {
     return () => unsub();
   }, []);
 
+  const formatRoleLabel = (role?: string) => {
+    switch (role) {
+      case 'SUPER_ADMIN':
+      case 'ADMIN':
+        return 'Admin';
+      case 'STORE_MANAGER':
+        return 'Manager';
+      case 'EMPLOYEE':
+      case 'ROLE_KITCHEN':
+        return 'Nhân viên';
+      case 'BLACKLISTED':
+        return 'Đã khóa';
+      default:
+        return 'User';
+    }
+  };
+
+  // Gộp danh sách tài khoản từ Firestore users + staffStoreMap (loại bỏ ROLE_RIDER và đã xóa vĩnh viễn)
+  const allActiveAccounts: DemoUser[] = (() => {
+    const mergedById = new Map<string, DemoUser>();
+    users.forEach((u) => {
+      const m = staffStoreMap[u.id];
+      if (u.role === 'ROLE_RIDER' || m?.deleted === true) return;
+      const resolvedRole =
+        u.role && u.role !== 'USER'
+          ? u.role
+          : m?.role || u.role || 'USER';
+      const resolvedStoreId = m?.storeId ? m.storeId : u.storeId;
+      const liveStore = resolvedStoreId
+        ? storesList.find((s) => s.id === resolvedStoreId)
+        : undefined;
+      const resolvedStoreName =
+        liveStore?.name || (m?.storeName ? m.storeName : u.storeName);
+      mergedById.set(u.id, {
+        ...u,
+        fullname: m?.fullName || u.fullname || 'Người dùng',
+        role: resolvedRole,
+        storeId: resolvedStoreId,
+        storeName:
+          resolvedRole === 'SUPER_ADMIN' || resolvedRole === 'USER'
+            ? undefined
+            : resolvedStoreName,
+        phone: m?.phone || u.phone || '',
+      });
+    });
+
+    Object.entries(staffStoreMap).forEach(([uid, m]) => {
+      if (!m || m.deleted || mergedById.has(uid) || !m.email) return;
+      const resolvedRole = m.role || 'EMPLOYEE';
+      const resolvedStoreId = m.storeId || undefined;
+      const liveStore = resolvedStoreId
+        ? storesList.find((s) => s.id === resolvedStoreId)
+        : undefined;
+      mergedById.set(uid, {
+        id: uid,
+        fullname: m.fullName || 'Nhân viên',
+        email: m.email,
+        phone: m.phone || '',
+        role: resolvedRole,
+        storeId: resolvedStoreId,
+        storeName:
+          resolvedRole === 'SUPER_ADMIN' || resolvedRole === 'USER'
+            ? undefined
+            : liveStore?.name || m.storeName || undefined,
+        rewardPoints: 0,
+        isDemo: false,
+      });
+    });
+
+    return Array.from(mergedById.values());
+  })();
+
   const handleOpenRoleModal = (u: DemoUser) => {
     setSelectedUser(u);
+    setEditError('');
     const initialRole =
       u.role === 'SUPER_ADMIN' || u.role === 'STORE_MANAGER' || u.role === 'EMPLOYEE'
         ? u.role
@@ -190,30 +267,64 @@ export default function AdminUsersScreen() {
 
   const handleUpdateRole = async (newRole?: string) => {
     if (!selectedUser) return;
+    setEditError('');
     const targetRole = newRole || editRole;
     const needsStore = targetRole === 'STORE_MANAGER' || targetRole === 'EMPLOYEE';
     const pickedStore = needsStore
       ? storesList.find((s) => s.id === editStoreId) || storesList[0] || MOCK_PICKUP_STORES[0]
       : null;
-    const cleanPhone = editPhone.trim();
+    const cleanPhone = editPhone.replace(/[\s.-]/g, '').trim();
+
+    if (cleanPhone && !/^0[0-9]{9}$/.test(cleanPhone)) {
+      const msg = 'Số điện thoại không hợp lệ! Vui lòng nhập đúng 10 chữ số bắt đầu bằng số 0.';
+      setEditError(msg);
+      showToast({ message: msg, type: 'error' });
+      Alert.alert('Số điện thoại không hợp lệ', msg);
+      return;
+    }
+
+    if (cleanPhone) {
+      const dupPhoneAcc = allActiveAccounts.find(
+        (u) =>
+          u.id !== selectedUser.id &&
+          u.phone &&
+          u.phone.replace(/[\s.-]/g, '').trim() === cleanPhone
+      );
+      if (dupPhoneAcc) {
+        const msg = `Số điện thoại "${cleanPhone}" đã được sử dụng bởi tài khoản "${dupPhoneAcc.fullname}" (${dupPhoneAcc.email}). Vui lòng nhập số điện thoại khác!`;
+        setEditError(msg);
+        showToast({ message: msg, type: 'error' });
+        Alert.alert('Trùng số điện thoại', msg);
+        return;
+      }
+    }
+
     try {
       if (targetRole !== selectedUser.role) {
         const userRef = doc(db, 'users', selectedUser.id);
         await updateDoc(userRef, {
           role: targetRole,
           updatedAt: serverTimestamp(),
-        });
+        }).catch(() => { });
       }
+      await saveStaffStoresEntry(selectedUser.id, {
+        role: targetRole,
+        fullName: selectedUser.fullname,
+        storeId: pickedStore ? pickedStore.id : null,
+        storeName: pickedStore ? pickedStore.name : null,
+        phone: cleanPhone,
+        email: selectedUser.email,
+      });
       setUsers((prev) =>
         prev.map((u) =>
           u.id === selectedUser.id
             ? {
-                ...u,
-                role: targetRole,
-                phone: cleanPhone || u.phone,
-                storeId: pickedStore ? pickedStore.id : undefined,
-                storeName: pickedStore ? pickedStore.name : undefined,
-              }
+              ...u,
+              role: targetRole,
+              phone: cleanPhone || u.phone,
+              storeId: pickedStore ? pickedStore.id : undefined,
+              storeName: pickedStore ? pickedStore.name : undefined,
+            }
             : u
         )
       );
@@ -221,20 +332,15 @@ export default function AdminUsersScreen() {
         from: selectedUser.role ?? 'USER',
         to: targetRole,
       });
-      await saveStaffStoresEntry(selectedUser.id, {
-        storeId: pickedStore ? pickedStore.id : null,
-        storeName: pickedStore ? pickedStore.name : null,
-        phone: cleanPhone,
-        email: selectedUser.email,
-      });
-      Alert.alert(
-        'Đã lưu tùy chỉnh',
-        `Đã cập nhật ${selectedUser.fullname}: ${formatRoleLabel(targetRole)}${pickedStore ? ` • ${pickedStore.name}` : ''}.`
-      );
-    } catch (e: any) {
-      Alert.alert('Chưa cập nhật được', e?.message || 'Vui lòng thử lại.');
-    } finally {
       setRoleModalVisible(false);
+      showToast({
+        message: `Đã cập nhật ${selectedUser.fullname}: ${formatRoleLabel(targetRole)}${pickedStore ? ` • ${pickedStore.name}` : ''}`,
+        type: 'success',
+      });
+    } catch (e: any) {
+      const msg = e?.message || 'Vui lòng thử lại.';
+      setEditError(msg);
+      showToast({ message: msg, type: 'error' });
     }
   };
 
@@ -255,12 +361,11 @@ export default function AdminUsersScreen() {
           style: isBlocked ? 'default' : 'destructive',
           onPress: async () => {
             try {
-              await updateDoc(doc(db, 'users', u.id), { role: nextRole, updatedAt: serverTimestamp() });
-              if (!isBlocked) {
-                await saveStaffStoresEntry(u.id, {
-                  previousRole: u.role || 'USER',
-                });
-              }
+              await updateDoc(doc(db, 'users', u.id), { role: nextRole, updatedAt: serverTimestamp() }).catch(() => { });
+              await saveStaffStoresEntry(u.id, {
+                role: nextRole,
+                ...(!isBlocked ? { previousRole: u.role || 'USER' } : {}),
+              });
               setUsers((prev) =>
                 prev.map((item) => (item.id === u.id ? { ...item, role: nextRole } : item))
               );
@@ -300,6 +405,7 @@ export default function AdminUsersScreen() {
   };
 
   const handleOpenCreateModal = () => {
+    setCreateError('');
     setCName('');
     setCEmail('');
     setCPhone('');
@@ -309,120 +415,227 @@ export default function AdminUsersScreen() {
     setCreateVisible(true);
   };
 
-  // Tạo tài khoản đăng nhập (Firebase Auth) + hồ sơ quyền (Firestore) cho nhân viên.
+  // Tạo tài khoản đăng nhập (Firebase Auth) + hồ sơ quyền (Firestore) cho Quản lý / Nhân viên.
   const handleCreateAccount = async () => {
+    setCreateError('');
     const email = cEmail.trim().toLowerCase();
     const name = cName.trim();
-    const cleanPhone = cPhone.trim();
+    const cleanPhone = cPhone.replace(/[\s.-]/g, '').trim();
+
     if (!name || !email || !cPassword.trim()) {
-      Alert.alert('Thiếu thông tin', 'Cần nhập họ tên, email và mật khẩu cho nhân viên.');
+      const msg = 'Vui lòng nhập đầy đủ Họ và tên, Email và Mật khẩu!';
+      setCreateError(msg);
+      showToast({ message: msg, type: 'error' });
+      Alert.alert('Thiếu thông tin', msg);
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      Alert.alert('Email không hợp lệ', 'Ví dụ dạng đúng: ten.nhanvien@pizzafpt.com');
+      const msg = 'Email không đúng định dạng (Ví dụ đúng: quanly@pizzaht.vn).';
+      setCreateError(msg);
+      showToast({ message: msg, type: 'error' });
+      Alert.alert('Email không hợp lệ', msg);
+      return;
+    }
+    if (cleanPhone && !/^0[0-9]{9}$/.test(cleanPhone)) {
+      const msg = 'Số điện thoại không hợp lệ! Vui lòng nhập đúng 10 chữ số bắt đầu bằng số 0 (VD: 0901234567).';
+      setCreateError(msg);
+      showToast({ message: msg, type: 'error' });
+      Alert.alert('Số điện thoại không hợp lệ', msg);
       return;
     }
     if (cPassword.trim().length < 6) {
-      Alert.alert('Mật khẩu quá ngắn', 'Mật khẩu cần tối thiểu 6 ký tự.');
+      const msg = 'Mật khẩu quá ngắn! Mật khẩu cần tối thiểu 6 ký tự.';
+      setCreateError(msg);
+      showToast({ message: msg, type: 'error' });
+      Alert.alert('Mật khẩu quá ngắn', msg);
+      return;
+    }
+
+    // 1. Kiểm tra trùng Số điện thoại với các tài khoản đang hoạt động
+    if (cleanPhone) {
+      const dupPhoneUser = allActiveAccounts.find(
+        (u) =>
+          u.phone &&
+          u.phone.replace(/[\s.-]/g, '').trim() === cleanPhone &&
+          u.email.toLowerCase() !== email
+      );
+      if (dupPhoneUser) {
+        const msg = `Số điện thoại "${cleanPhone}" đã được sử dụng bởi tài khoản "${dupPhoneUser.fullname}" (${dupPhoneUser.email}). Vui lòng dùng số điện thoại khác!`;
+        setCreateError(msg);
+        showToast({ message: msg, type: 'error' });
+        Alert.alert('Trùng số điện thoại', msg);
+        return;
+      }
+    }
+
+    // 2. Kiểm tra trùng Email với các tài khoản đang hoạt động
+    const dupEmailUser = allActiveAccounts.find(
+      (u) => u.email && u.email.toLowerCase() === email
+    );
+    // Nếu email đã tồn tại ở tài khoản đang hoạt động (trừ trường hợp vừa bấm tạo dở bị kẹt ở role USER cùng tên)
+    const isStuckHalfCreatedUser =
+      dupEmailUser &&
+      dupEmailUser.role === 'USER' &&
+      !staffStoreMap[dupEmailUser.id]?.role &&
+      dupEmailUser.fullname.trim().toLowerCase() === name.toLowerCase();
+
+    if (dupEmailUser && !isStuckHalfCreatedUser) {
+      const msg = `Email "${email}" đã được sử dụng bởi tài khoản "${dupEmailUser.fullname}" (${formatRoleLabel(dupEmailUser.role)}). Vui lòng nhập email khác!`;
+      setCreateError(msg);
+      showToast({ message: msg, type: 'error' });
+      Alert.alert('Trùng địa chỉ Email', msg);
       return;
     }
 
     setIsCreating(true);
     const provisionAuth = getProvisioningAuth();
     try {
-      const cred = await createUserWithEmailAndPassword(provisionAuth, email, cPassword.trim());
-      const uid = cred.user.uid;
-
-      const provisionDb = getProvisioningDb();
       const pickedStore =
         cRole !== 'SUPER_ADMIN'
           ? storesList.find((s) => s.id === cStoreId) || storesList[0] || MOCK_PICKUP_STORES[0]
           : null;
-      const baseUserDoc = {
-        uid,
-        email,
-        fullName: name,
-        role: 'USER',
-        rewardPoints: 0,
-        welcomePending: true,
-        emailVerified: false,
-        createdAt: serverTimestamp(),
-      };
-      let createdWithPhone = false;
-      if (/^0[0-9]{9}$/.test(cleanPhone)) {
-        try {
-          const batch = writeBatch(provisionDb);
-          batch.set(doc(provisionDb, 'phone_numbers', cleanPhone), { uid });
-          batch.set(doc(provisionDb, 'users', uid), { ...baseUserDoc, phone: cleanPhone });
-          await batch.commit();
-          createdWithPhone = true;
-        } catch {
-          createdWithPhone = false;
+
+      let uid = '';
+      let isNewFirebaseUser = false;
+
+      try {
+        const cred = await createUserWithEmailAndPassword(provisionAuth, email, cPassword.trim());
+        uid = cred.user.uid;
+        isNewFirebaseUser = true;
+      } catch (authCreateErr: any) {
+        if (authCreateErr?.code === 'auth/email-already-in-use') {
+          // Kiểm tra xem email này có phải của tài khoản đã xóa hoặc bị kẹt giữa chừng không
+          const deletedOrStuckUser = users.find(
+            (u) =>
+              u.email.toLowerCase() === email &&
+              (staffStoreMap[u.id]?.deleted === true || isStuckHalfCreatedUser)
+          );
+          if (deletedOrStuckUser) {
+            uid = deletedOrStuckUser.id;
+          } else {
+            // Thử đăng nhập vào provisionAuth nếu là tài khoản vừa tạo dở chưa kịp lên snapshot
+            try {
+              const signInCred = await signInWithEmailAndPassword(
+                provisionAuth,
+                email,
+                cPassword.trim()
+              );
+              const existingActive = allActiveAccounts.find((u) => u.id === signInCred.user.uid);
+              if (existingActive && !isStuckHalfCreatedUser) {
+                throw new Error('ACTIVE_DUPLICATE');
+              }
+              uid = signInCred.user.uid;
+            } catch {
+              const dupMsg = `Email "${email}" đã được đăng ký tài khoản trước đó. Vui lòng nhập một địa chỉ email khác!`;
+              setCreateError(dupMsg);
+              showToast({ message: dupMsg, type: 'error' });
+              Alert.alert('Trùng địa chỉ Email', dupMsg);
+              return;
+            }
+          }
+        } else {
+          throw authCreateErr;
         }
       }
-      if (!createdWithPhone) {
-        await setDoc(doc(provisionDb, 'users', uid), {
-          ...baseUserDoc,
-          phone: '',
-        });
+
+      const provisionDb = getProvisioningDb();
+      if (isNewFirebaseUser) {
+        const baseUserDoc = {
+          uid,
+          email,
+          fullName: name,
+          role: 'USER',
+          rewardPoints: 0,
+          welcomePending: true,
+          emailVerified: false,
+          createdAt: serverTimestamp(),
+        };
+        let createdWithPhone = false;
+        if (/^0[0-9]{9}$/.test(cleanPhone)) {
+          try {
+            const batch = writeBatch(provisionDb);
+            batch.set(doc(provisionDb, 'phone_numbers', cleanPhone), { uid });
+            batch.set(doc(provisionDb, 'users', uid), { ...baseUserDoc, phone: cleanPhone });
+            await batch.commit();
+            createdWithPhone = true;
+          } catch {
+            createdWithPhone = false;
+          }
+        }
+        if (!createdWithPhone) {
+          await setDoc(doc(provisionDb, 'users', uid), {
+            ...baseUserDoc,
+            phone: '',
+          }).catch(() => { });
+        }
       }
+
       if (cRole !== 'USER') {
         await updateDoc(doc(db, 'users', uid), {
           role: cRole,
           updatedAt: serverTimestamp(),
-        });
+        }).catch(() => { });
       }
+
       await saveStaffStoresEntry(uid, {
+        role: cRole,
+        fullName: name,
         storeId: pickedStore ? pickedStore.id : null,
         storeName: pickedStore ? pickedStore.name : null,
         phone: cleanPhone,
         email,
+        deleted: false,
+      });
+
+      setUsers((prev) => {
+        const exists = prev.some((u) => u.id === uid);
+        const newEntry: DemoUser = {
+          id: uid,
+          fullname: name,
+          email,
+          phone: cleanPhone,
+          role: cRole,
+          storeId: pickedStore ? pickedStore.id : undefined,
+          storeName: pickedStore ? pickedStore.name : undefined,
+          rewardPoints: 0,
+          isDemo: false,
+        };
+        return exists ? prev.map((u) => (u.id === uid ? newEntry : u)) : [newEntry, ...prev];
       });
 
       void reportAdminAction('ACCOUNT_CREATED', `users/${uid}`, { name, email, role: cRole });
       setCreateVisible(false);
+      showToast({
+        message: `Đã tạo tài khoản ${formatRoleLabel(cRole)}: ${name} (${email})`,
+        type: 'success',
+      });
       Alert.alert(
-        'Đã cấp tài khoản',
-        `${name} (${email})\nQuyền: ${formatRoleLabel(cRole)}${pickedStore ? `\nQuán: ${pickedStore.name}` : ''}\nMật khẩu: ${cPassword.trim()}\n\nGửi thông tin này cho nhân viên để đăng nhập.`
+        'Đã cấp tài khoản thành công',
+        `${name} (${email})\nQuyền: ${formatRoleLabel(cRole)}${pickedStore ? `\nQuán: ${pickedStore.name}` : ''}${cleanPhone ? `\nSĐT: ${cleanPhone}` : ''}\nMật khẩu: ${cPassword.trim()}`
       );
     } catch (e: any) {
       const msg =
         e?.code === 'auth/email-already-in-use'
-          ? 'Email này đã có tài khoản. Dùng email khác hoặc bấm "Tùy chỉnh" trên tài khoản cũ.'
+          ? `Email "${email}" đã được sử dụng. Vui lòng nhập email khác!`
           : e?.message || 'Không thể tạo tài khoản, vui lòng thử lại.';
+      setCreateError(msg);
+      showToast({ message: msg, type: 'error' });
       Alert.alert('Chưa tạo được tài khoản', msg);
     } finally {
-      await signOut(provisionAuth).catch(() => {});
+      await signOut(provisionAuth).catch(() => { });
       setIsCreating(false);
     }
   };
 
-  // Loại bỏ hoàn toàn các tài khoản ROLE_RIDER và các tài khoản đã xóa vĩnh viễn
-  const searchedUsers = users
-    .filter((u) => u.role !== 'ROLE_RIDER' && staffStoreMap[u.id]?.deleted !== true)
-    .map((u) => {
-      const m = staffStoreMap[u.id];
-      const resolvedStoreId = m?.storeId ? m.storeId : u.storeId;
-      const liveStore = resolvedStoreId
-        ? storesList.find((s) => s.id === resolvedStoreId)
-        : undefined;
-      const resolvedStoreName =
-        liveStore?.name || (m?.storeName ? m.storeName : u.storeName);
-      return {
-        ...u,
-        storeId: resolvedStoreId,
-        storeName: u.role === 'SUPER_ADMIN' || u.role === 'USER' ? undefined : resolvedStoreName,
-        phone: m?.phone || u.phone || '',
-      };
-    })
-    .filter((u) => {
-      const q = searchQuery.toLowerCase();
-      return (
-        u.fullname.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q) ||
-        u.phone.includes(q)
-      );
-    });
+  // Lọc theo từ khóa tìm kiếm
+  const searchedUsers = allActiveAccounts.filter((u) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      u.fullname.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      u.phone.includes(q)
+    );
+  });
 
   // Tài khoản đang hoạt động (không tính tài khoản đã khóa)
   const activeOnlyUsers = searchedUsers.filter((u) => u.role !== 'BLACKLISTED');
@@ -441,28 +654,11 @@ export default function AdminUsersScreen() {
 
   const activeSectionMeta = ROLE_SECTIONS.find((s) => s.key === activeSection);
 
-  const formatRoleLabel = (role?: string) => {
-    switch (role) {
-      case 'SUPER_ADMIN':
-      case 'ADMIN':
-        return 'Admin';
-      case 'STORE_MANAGER':
-        return 'Manager';
-      case 'EMPLOYEE':
-      case 'ROLE_KITCHEN':
-        return 'Nhân viên';
-      case 'BLACKLISTED':
-        return 'Đã khóa';
-      default:
-        return 'User';
-    }
-  };
-
   const getRoleBadgeColor = (role?: string) => {
-    if (role === 'SUPER_ADMIN') return { bg: colors.primarySoft, text: colors.primary };
-    if (role === 'STORE_MANAGER') return { bg: colors.warningSoft, text: colors.warning };
-    if (role === 'EMPLOYEE' || role === 'ROLE_KITCHEN') return { bg: colors.successSoft, text: colors.success };
-    if (role === 'BLACKLISTED') return { bg: colors.errorSoft, text: colors.error };
+    if (role === 'SUPER_ADMIN' || role === 'ADMIN') return { bg: colors.primarySoft, text: colors.primary };
+    if (role === 'STORE_MANAGER') return { bg: colors.primarySoft, text: colors.primary };
+    if (role === 'EMPLOYEE' || role === 'ROLE_KITCHEN') return { bg: colors.primarySoft, text: colors.primary };
+    if (role === 'BLACKLISTED') return { bg: colors.surfaceAlt, text: colors.textSecondary };
     return { bg: colors.surfaceAlt, text: colors.textSecondary };
   };
 
@@ -700,25 +896,52 @@ export default function AdminUsersScreen() {
                 Tạo email đăng nhập + quyền, gửi thông tin cho nhân viên tự đăng nhập app
               </AppText>
 
+              {!!createError && (
+                <View
+                  style={{
+                    backgroundColor: '#FEF2F2',
+                    borderWidth: 1,
+                    borderColor: '#FECACA',
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    marginBottom: 12,
+                  }}
+                >
+                  <AppText variant="small" color="#DC2626" style={{ fontWeight: '600', lineHeight: 19 }}>
+                    ⚠️ {createError}
+                  </AppText>
+                </View>
+              )}
+
               <TextInput
                 style={styles.formInput}
                 placeholder="Họ và tên *"
                 value={cName}
-                onChangeText={setCName}
+                onChangeText={(txt) => {
+                  setCName(txt);
+                  if (createError) setCreateError('');
+                }}
               />
               <TextInput
                 style={styles.formInput}
                 placeholder="Email đăng nhập * (VD: thi.nv@pizzaht.vn)"
                 value={cEmail}
-                onChangeText={setCEmail}
+                onChangeText={(txt) => {
+                  setCEmail(txt);
+                  if (createError) setCreateError('');
+                }}
                 autoCapitalize="none"
                 keyboardType="email-address"
               />
               <TextInput
                 style={styles.formInput}
-                placeholder="Số điện thoại"
+                placeholder="Số điện thoại (10 số, VD: 0901234567)"
                 value={cPhone}
-                onChangeText={setCPhone}
+                onChangeText={(txt) => {
+                  setCPhone(txt);
+                  if (createError) setCreateError('');
+                }}
                 keyboardType="phone-pad"
               />
               <View style={{ position: 'relative', justifyContent: 'center' }}>
@@ -867,6 +1090,24 @@ export default function AdminUsersScreen() {
                 Điều chỉnh cửa hàng, số điện thoại & vai trò cho {selectedUser?.fullname} ({selectedUser?.email})
               </AppText>
 
+              {!!editError && (
+                <View
+                  style={{
+                    backgroundColor: '#FEF2F2',
+                    borderWidth: 1,
+                    borderColor: '#FECACA',
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    marginBottom: 12,
+                  }}
+                >
+                  <AppText variant="small" color="#DC2626" style={{ fontWeight: '600', lineHeight: 19 }}>
+                    ⚠️ {editError}
+                  </AppText>
+                </View>
+              )}
+
               <AppText variant="captionSemiBold" color={colors.textSecondary} style={{ marginBottom: 6 }}>
                 Số điện thoại liên hệ
               </AppText>
@@ -874,7 +1115,10 @@ export default function AdminUsersScreen() {
                 style={styles.formInput}
                 placeholder="Nhập số điện thoại (VD: 0901234567)"
                 value={editPhone}
-                onChangeText={setEditPhone}
+                onChangeText={(txt) => {
+                  setEditPhone(txt);
+                  if (editError) setEditError('');
+                }}
                 keyboardType="phone-pad"
               />
 

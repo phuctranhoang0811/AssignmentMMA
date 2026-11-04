@@ -111,7 +111,7 @@ export const AppButton: React.FC<AppButtonProps> = ({
   };
 
   return (
-    <Animated.View style={[{ transform: [{ scale: scaleAnim }], width: fullWidth ? '100%' : 'auto' }]}>
+    <Animated.View style={[{ transform: [{ scale: scaleAnim }] }, style?.flex !== undefined ? { flex: style.flex } : { width: fullWidth ? '100%' : 'auto' }]}>
       <TouchableOpacity
         activeOpacity={0.88}
         onPress={handlePress}

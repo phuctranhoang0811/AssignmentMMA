@@ -225,8 +225,6 @@ export default function ManagerDashboardScreen() {
   const todayProdMap: Record<string, { name: string; count: number; revenue: number }> = {};
 
   const dailyRevenue = [0, 0, 0, 0, 0, 0, 0];
-  let weekRevenue = 0;
-  let weekCompletedCount = 0;
 
   let allTimeRevenue = 0;
   let allTimeCompletedCount = 0;
@@ -235,6 +233,9 @@ export default function ManagerDashboardScreen() {
   const allTimeProdMap: Record<string, { name: string; count: number; revenue: number }> = {};
 
   rawOrders.forEach((raw) => {
+    if (String(raw.orderCode || '').toUpperCase() === 'PF-X469QK') {
+      return;
+    }
     if (currentStore && !doesOrderBelongToStore(raw, currentStore, storesList)) {
       return;
     }
@@ -257,8 +258,6 @@ export default function ManagerDashboardScreen() {
       }
 
       if (isThisWeek) {
-        weekRevenue += total;
-        weekCompletedCount++;
         const dayIdx = (d.getDay() + 6) % 7;
         if (dayIdx >= 0 && dayIdx < 7) {
           dailyRevenue[dayIdx] += total;
@@ -502,11 +501,11 @@ export default function ManagerDashboardScreen() {
               <AppText variant="captionMedium" color={colors.textSecondary}>
                 Chờ duyệt
               </AppText>
-              <View style={[styles.statIconWrap, { backgroundColor: colors.warningSoft }]}>
-                <Clock size={20} color={colors.warning} />
+              <View style={[styles.statIconWrap, { backgroundColor: colors.primarySoft }]}>
+                <Clock size={20} color={colors.primary} />
               </View>
             </View>
-            <AppText variant="price" color={colors.warning} style={styles.statValue} numberOfLines={1}>
+            <AppText variant="price" color={colors.primary} style={styles.statValue} numberOfLines={1}>
               {pendingOrdersCount} đơn
             </AppText>
             <AppText variant="small" color={colors.primary}>
@@ -536,11 +535,11 @@ export default function ManagerDashboardScreen() {
               <AppText variant="captionMedium" color={colors.textSecondary}>
                 Doanh thu hôm nay
               </AppText>
-              <View style={[styles.statIconWrap, { backgroundColor: colors.successSoft }]}>
-                <TrendingUp size={20} color={colors.success} />
+              <View style={[styles.statIconWrap, { backgroundColor: colors.primarySoft }]}>
+                <TrendingUp size={20} color={colors.primary} />
               </View>
             </View>
-            <AppText variant="price" color={colors.success} style={styles.statValue} numberOfLines={1}>
+            <AppText variant="price" color={colors.primary} style={styles.statValue} numberOfLines={1}>
               {formatCurrency(todayRevenue)}
             </AppText>
             <AppText variant="small" color={colors.textSecondary} numberOfLines={1}>
@@ -734,7 +733,7 @@ export default function ManagerDashboardScreen() {
                 <AppText variant="small" color={colors.textSecondary}>
                   Tổng doanh thu tích lũy ({currentStore?.name})
                 </AppText>
-                <AppText variant="price" color={colors.success} style={{ marginTop: 4 }}>
+                <AppText variant="price" color={colors.primary} style={{ marginTop: 4 }}>
                   {formatCurrency(allTimeRevenue)}
                 </AppText>
                 <AppText variant="small" color={colors.textSecondary} style={{ marginTop: 2 }}>
@@ -755,13 +754,13 @@ export default function ManagerDashboardScreen() {
                   }}
                 >
                   <AppText variant="small" color={colors.textSecondary}>
-                    Doanh thu tuần này
+                    Doanh thu tháng này
                   </AppText>
                   <AppText variant="bodySemiBold" color={colors.textPrimary} style={{ marginTop: 4 }}>
-                    {formatCurrency(weekRevenue)}
+                    {formatCurrency(monthRevenue)}
                   </AppText>
                   <AppText variant="small" color={colors.textSecondary}>
-                    {weekCompletedCount} đơn hoàn tất
+                    Tháng {now.getMonth() + 1}/{now.getFullYear()}
                   </AppText>
                 </View>
 
@@ -776,13 +775,13 @@ export default function ManagerDashboardScreen() {
                   }}
                 >
                   <AppText variant="small" color={colors.textSecondary}>
-                    Doanh thu tháng này
+                    Doanh thu trong ngày
                   </AppText>
                   <AppText variant="bodySemiBold" color={colors.textPrimary} style={{ marginTop: 4 }}>
-                    {formatCurrency(monthRevenue)}
+                    {formatCurrency(todayRevenue)}
                   </AppText>
                   <AppText variant="small" color={colors.textSecondary}>
-                    Tháng {now.getMonth() + 1}/{now.getFullYear()}
+                    {todayCompletedCount} đơn hoàn tất
                   </AppText>
                 </View>
               </View>
@@ -816,7 +815,7 @@ export default function ManagerDashboardScreen() {
                         {idx + 1}. {item.name}
                       </AppText>
                       <AppText variant="small" color={colors.primary}>
-                        {item.count} phần ({formatCurrency(item.revenue)})
+                        {item.count} phần
                       </AppText>
                     </View>
                   ))}

@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Platform,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -17,22 +18,32 @@ import {
   Store,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Check,
   FileText,
+  AlertTriangle,
+  X,
+  Phone,
+  MapPin,
 } from 'lucide-react-native';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { useAuth } from '../../state/AuthContext';
+import { useToast } from '../../state/ToastContext';
 import { Alert } from '../../utils/alert';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { AppText } from '../../components/ui/AppText';
+import { AppButton } from '../../components/ui/AppButton';
 import { colors } from '../../theme/colors';
 import { styles } from '../../styles/adminDashboard.styles';
 import { formatCurrency } from '../../utils/formatCurrency';
 import {
   subscribeStoresConfig,
+  subscribeOrderOverrides,
+  saveOrderOverride,
   DEFAULT_STORE_BRANCHES,
   type SyncedStoreBranch,
+  type OrderDispatchOverride,
 } from '../../services/storeSync';
 
 const DAYS_OF_WEEK = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
@@ -137,13 +148,24 @@ function isDateInCurrentWeek(d: Date, now: Date): boolean {
 export default function AdminDashboardScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { showToast } = useToast();
 
   const [refreshing, setRefreshing] = useState(false);
   const [storesList, setStoresList] = useState<SyncedStoreBranch[]>(DEFAULT_STORE_BRANCHES);
   const [selectedStoreId, setSelectedStoreId] = useState<string>(user?.storeId || 'ALL');
   const [storeDropdownOpen, setStoreDropdownOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [incidentsOpen, setIncidentsOpen] = useState(false);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [rawOrders, setRawOrders] = useState<Record<string, any>[]>([]);
+  const [orderOverrides, setOrderOverrides] = useState<Record<string, OrderDispatchOverride>>({});
+
+  useEffect(() => {
+    const unsubOverrides = subscribeOrderOverrides((map) => {
+      setOrderOverrides(map);
+    });
+    return () => unsubOverrides();
+  }, []);
 
   useEffect(() => {
     if (user?.storeId) {
@@ -174,7 +196,7 @@ export default function AdminDashboardScreen() {
         (snapshot: any) => {
           const list: Record<string, any>[] = [];
           snapshot.forEach((docSnap: any) => {
-            list.push(docSnap.data());
+            list.push({ id: docSnap.id, ...docSnap.data() });
           });
           setRawOrders(list);
         },
@@ -206,8 +228,6 @@ export default function AdminDashboardScreen() {
 
   // Thống kê TUẦN HIỆN TẠI (biểu đồ T2 -> CN)
   const dailyRevenue = [0, 0, 0, 0, 0, 0, 0];
-  let weekRevenue = 0;
-  let weekCompletedCount = 0;
 
   // Thống kê TỔNG KẾT TÍCH LŨY (hiển thị trong Ô Tổng kết dưới cùng khi bấm mở)
   let allTimeRevenue = 0;
@@ -216,15 +236,20 @@ export default function AdminDashboardScreen() {
   let cancelledOrdersCount = 0;
   const allTimeProdMap: Record<string, { name: string; count: number; revenue: number }> = {};
   const storeBreakdownMap: Record<string, { name: string; count: number; revenue: number }> = {};
+  const incidentOrders: Record<string, any>[] = [];
 
   storesList.forEach((st) => {
     storeBreakdownMap[st.id] = { name: st.name, count: 0, revenue: 0 };
   });
 
   rawOrders.forEach((data) => {
+    if (String(data.orderCode || '').toUpperCase() === 'PF-X469QK') {
+      return;
+    }
+    const ov = data.id ? orderOverrides[data.id] : undefined;
     const total = Number(data.totalAmount || data.total || 0);
-    const status = data.status;
-    const d = parseOrderDate(data);
+    const status = ov?.status || data.status;
+    const d = ov?.updatedAtMs ? new Date(ov.updatedAtMs) : parseOrderDate(data);
 
     // Tính doanh thu phân bổ từng quán cho Ô Tổng kết
     if (status === 'COMPLETED' || status === 'DELIVERED') {
@@ -259,8 +284,6 @@ export default function AdminDashboardScreen() {
 
       // 2. Cộng vào Biểu đồ tuần hiện tại
       if (isThisWeek) {
-        weekRevenue += total;
-        weekCompletedCount++;
         const dayIdx = (d.getDay() + 6) % 7;
         if (dayIdx >= 0 && dayIdx < 7) {
           dailyRevenue[dayIdx] += total;
@@ -297,8 +320,44 @@ export default function AdminDashboardScreen() {
       pendingOrdersCount++;
     } else if (status === 'CANCELLED' || status === 'REJECTED') {
       cancelledOrdersCount++;
+      const matchedBranch =
+        storesList.find((st) => doesOrderMatchStore(data, st, storesList)) || storesList[0];
+      incidentOrders.push({
+        ...data,
+        id: String(data.id || ''),
+        orderCode: String(data.orderCode || String(data.id || '').slice(-6).toUpperCase()),
+        status,
+        total,
+        branchName: matchedBranch?.name || data.storeName || 'Pizza FPT',
+        customerName: String(
+          data.customer?.fullname || data.customerName || data.recipientName || 'Khách hàng'
+        ),
+        customerPhone: String(
+          data.customer?.phone || data.customerPhone || data.recipientPhone || ''
+        ),
+        address: String(data.address || data.deliveryAddress || 'Nhận tại cửa hàng'),
+        isPickup:
+          data.fulfillmentType === 'takeaway' || data.fulfillmentType === 'PICKUP',
+        cancelReason: String(
+          ov?.cancelReason || data.cancelReason || 'Đơn bị hủy / từ chối'
+        ),
+        assignedStaffName: String(ov?.assignedStaffName || data.assignedStaffName || ''),
+        assignedStaffPhone: String(ov?.assignedStaffPhone || data.assignedStaffPhone || ''),
+        incidentResolved: Boolean(ov?.incidentResolved),
+        incidentReportedBy: String(
+          ov?.incidentReportedBy || (data.userId ? 'Chi nhánh / Khách hàng' : 'Chi nhánh')
+        ),
+        updatedAtDate: d,
+        updatedAtMs: d.getTime(),
+      });
     }
   });
+
+  incidentOrders.sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+  const unresolvedIncidentCount = incidentOrders.filter((o) => !o.incidentResolved).length;
+  const selectedIncidentOrder = selectedIncidentId
+    ? incidentOrders.find((o) => o.id === selectedIncidentId) || null
+    : null;
 
   const topProducts = Object.values(todayProdMap)
     .sort((a, b) => b.count - a.count)
@@ -530,11 +589,11 @@ export default function AdminDashboardScreen() {
               <AppText variant="captionMedium" color={colors.textSecondary}>
                 Chờ duyệt
               </AppText>
-              <View style={[styles.statIconWrap, { backgroundColor: colors.warningSoft }]}>
-                <Clock size={20} color={colors.warning} />
+              <View style={[styles.statIconWrap, { backgroundColor: colors.primarySoft }]}>
+                <Clock size={20} color={colors.primary} />
               </View>
             </View>
-            <AppText variant="price" color={colors.warning} style={styles.statValue} numberOfLines={1}>
+            <AppText variant="price" color={colors.primary} style={styles.statValue} numberOfLines={1}>
               {pendingOrdersCount} đơn
             </AppText>
             <AppText variant="small" color={colors.textSecondary}>
@@ -564,11 +623,11 @@ export default function AdminDashboardScreen() {
               <AppText variant="captionMedium" color={colors.textSecondary}>
                 Doanh thu hôm nay
               </AppText>
-              <View style={[styles.statIconWrap, { backgroundColor: colors.successSoft }]}>
-                <TrendingUp size={20} color={colors.success} />
+              <View style={[styles.statIconWrap, { backgroundColor: colors.primarySoft }]}>
+                <TrendingUp size={20} color={colors.primary} />
               </View>
             </View>
-            <AppText variant="price" color={colors.success} style={styles.statValue} numberOfLines={1}>
+            <AppText variant="price" color={colors.primary} style={styles.statValue} numberOfLines={1}>
               {formatCurrency(todayRevenue)}
             </AppText>
             <AppText variant="small" color={colors.textSecondary} numberOfLines={1}>
@@ -689,6 +748,196 @@ export default function AdminDashboardScreen() {
           )}
         </View>
 
+        {/* Ô ĐƠN HÀNG GẶP SỰ CỐ / ĐÃ HỦY (Bấm vào để xem các card đơn sự cố -> bấm vào card để xem chi tiết) */}
+        <View
+          style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 16,
+            marginBottom: 16,
+            borderWidth: 1,
+            borderColor:
+              unresolvedIncidentCount > 0
+                ? '#DC2626'
+                : incidentsOpen
+                  ? colors.primary
+                  : colors.border,
+            overflow: 'hidden',
+          }}
+        >
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => setIncidentsOpen((prev) => !prev)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  backgroundColor: unresolvedIncidentCount > 0 ? '#FEE2E2' : colors.surfaceAlt,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <AlertTriangle
+                  size={19}
+                  color={unresolvedIncidentCount > 0 ? '#DC2626' : colors.textSecondary}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <AppText variant="cardTitle" color={colors.textPrimary}>
+                    Đơn hàng gặp sự cố / Đã hủy
+                  </AppText>
+                  {unresolvedIncidentCount > 0 && (
+                    <View
+                      style={{
+                        backgroundColor: '#DC2626',
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderRadius: 999,
+                      }}
+                    >
+                      <AppText variant="small" color="#FFFFFF" style={{ fontWeight: '700' }}>
+                        {unresolvedIncidentCount} cần kiểm tra
+                      </AppText>
+                    </View>
+                  )}
+                </View>
+                <AppText variant="small" color={colors.textSecondary}>
+                  {incidentOrders.length === 0
+                    ? 'Hiện chưa có đơn hàng nào gặp sự cố hoặc bị hủy'
+                    : incidentsOpen
+                      ? 'Bấm vào từng thẻ đơn bên dưới để xem chi tiết & xử lý'
+                      : `Có tổng cộng ${incidentOrders.length} đơn hủy/sự cố — Bấm để xem danh sách`}
+                </AppText>
+              </View>
+            </View>
+            {incidentsOpen ? (
+              <ChevronUp size={20} color={colors.primary} />
+            ) : (
+              <ChevronDown size={20} color={colors.textSecondary} />
+            )}
+          </TouchableOpacity>
+
+          {incidentsOpen && (
+            <View
+              style={{
+                borderTopWidth: 1,
+                borderTopColor: colors.border,
+                padding: 14,
+                backgroundColor: colors.surface,
+              }}
+            >
+              {incidentOrders.length === 0 ? (
+                <View
+                  style={{
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 12,
+                    padding: 18,
+                    alignItems: 'center',
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <AppText variant="caption" color={colors.textSecondary}>
+                    Không có đơn hàng nào gặp sự cố tại cơ sở này.
+                  </AppText>
+                </View>
+              ) : (
+                incidentOrders.map((inc) => (
+                  <TouchableOpacity
+                    key={inc.id}
+                    activeOpacity={0.8}
+                    onPress={() => setSelectedIncidentId(inc.id)}
+                    style={{
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: 12,
+                      padding: 12,
+                      marginBottom: 10,
+                      borderWidth: 1,
+                      borderColor: inc.incidentResolved ? colors.border : '#FECACA',
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: 4,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                        <AppText variant="bodySemiBold" color={colors.textPrimary}>
+                          Đơn #{inc.orderCode}
+                        </AppText>
+                        <AppText variant="small" color={colors.textSecondary} numberOfLines={1}>
+                          • {inc.branchName}
+                        </AppText>
+                      </View>
+                      <View
+                        style={{
+                          backgroundColor: inc.incidentResolved ? colors.surfaceAlt : colors.primarySoft,
+                          paddingHorizontal: 8,
+                          paddingVertical: 3,
+                          borderRadius: 999,
+                          flexShrink: 0,
+                        }}
+                      >
+                        <AppText
+                          variant="small"
+                          color={inc.incidentResolved ? colors.textSecondary : colors.primary}
+                          style={{ fontWeight: '700' }}
+                        >
+                          {inc.incidentResolved ? 'Đã xử lý' : 'Cần kiểm tra'}
+                        </AppText>
+                      </View>
+                    </View>
+
+                    <AppText
+                      variant="small"
+                      color="#DC2626"
+                      numberOfLines={2}
+                      style={{ fontWeight: '700', marginBottom: 6 }}
+                    >
+                      Sự cố: {inc.cancelReason}
+                    </AppText>
+
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingTop: 6,
+                        borderTopWidth: 1,
+                        borderTopColor: colors.border,
+                      }}
+                    >
+                      <AppText variant="small" color={colors.textSecondary} numberOfLines={1} style={{ flex: 1 }}>
+                        Khách: {inc.customerName}
+                        {inc.customerPhone ? ` • ${inc.customerPhone}` : ''}
+                      </AppText>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                        <AppText variant="small" color={colors.primary} style={{ fontWeight: '700' }}>
+                          Chi tiết
+                        </AppText>
+                        <ChevronRight size={14} color={colors.primary} />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </View>
+          )}
+        </View>
+
         {/* Ô TỔNG KẾT DƯỚI CÙNG (Khi nào cần xem tổng tích lũy thì bấm vô) */}
         <View
           style={{
@@ -765,7 +1014,7 @@ export default function AdminDashboardScreen() {
                 <AppText variant="small" color={colors.textSecondary}>
                   Tổng doanh thu tích lũy ({selectedStore ? selectedStore.name : 'Tất cả cơ sở'})
                 </AppText>
-                <AppText variant="price" color={colors.success} style={{ marginTop: 4 }}>
+                <AppText variant="price" color={colors.primary} style={{ marginTop: 4 }}>
                   {formatCurrency(allTimeRevenue)}
                 </AppText>
                 <AppText variant="small" color={colors.textSecondary} style={{ marginTop: 2 }}>
@@ -774,29 +1023,8 @@ export default function AdminDashboardScreen() {
                 </AppText>
               </View>
 
-              {/* Doanh thu Tuần này & Tháng này */}
+              {/* Doanh thu Tháng này & Trong ngày */}
               <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-                <View
-                  style={{
-                    flex: 1,
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: 12,
-                    padding: 12,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}
-                >
-                  <AppText variant="small" color={colors.textSecondary}>
-                    Doanh thu tuần này
-                  </AppText>
-                  <AppText variant="bodySemiBold" color={colors.textPrimary} style={{ marginTop: 4 }}>
-                    {formatCurrency(weekRevenue)}
-                  </AppText>
-                  <AppText variant="small" color={colors.textSecondary}>
-                    {weekCompletedCount} đơn hoàn tất
-                  </AppText>
-                </View>
-
                 <View
                   style={{
                     flex: 1,
@@ -815,6 +1043,27 @@ export default function AdminDashboardScreen() {
                   </AppText>
                   <AppText variant="small" color={colors.textSecondary}>
                     Tháng {now.getMonth() + 1}/{now.getFullYear()}
+                  </AppText>
+                </View>
+
+                <View
+                  style={{
+                    flex: 1,
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 12,
+                    padding: 12,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <AppText variant="small" color={colors.textSecondary}>
+                    Doanh thu trong ngày
+                  </AppText>
+                  <AppText variant="bodySemiBold" color={colors.textPrimary} style={{ marginTop: 4 }}>
+                    {formatCurrency(todayRevenue)}
+                  </AppText>
+                  <AppText variant="small" color={colors.textSecondary}>
+                    {todayCompletedCount} đơn hoàn tất
                   </AppText>
                 </View>
               </View>
@@ -856,7 +1105,7 @@ export default function AdminDashboardScreen() {
                             {stStat.count} đơn hoàn tất
                           </AppText>
                         </View>
-                        <AppText variant="bodySemiBold" color={colors.success}>
+                        <AppText variant="bodySemiBold" color={colors.primary}>
                           {formatCurrency(stStat.revenue)}
                         </AppText>
                       </View>
@@ -895,7 +1144,7 @@ export default function AdminDashboardScreen() {
                         {idx + 1}. {item.name}
                       </AppText>
                       <AppText variant="small" color={colors.primary}>
-                        {item.count} phần ({formatCurrency(item.revenue)})
+                        {item.count} phần
                       </AppText>
                     </View>
                   ))}
@@ -905,6 +1154,290 @@ export default function AdminDashboardScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* MODAL XEM CHI TIẾT ĐƠN GẶP SỰ CỐ KHI BẤM VÀO CARD */}
+      <Modal
+        visible={!!selectedIncidentOrder}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedIncidentId(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.45)',
+            justifyContent: 'flex-end',
+          }}
+        >
+          {selectedIncidentOrder && (
+            <View
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                padding: 20,
+                maxHeight: '88%',
+                width: '100%',
+                maxWidth: 430,
+                alignSelf: 'center',
+              }}
+            >
+              {/* Header Modal */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 12,
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <AppText variant="h3" color={colors.textPrimary}>
+                      Đơn sự cố #{selectedIncidentOrder.orderCode}
+                    </AppText>
+                    <View
+                      style={{
+                        backgroundColor: selectedIncidentOrder.incidentResolved
+                          ? colors.surfaceAlt
+                          : colors.primarySoft,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: 999,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <AppText
+                        variant="small"
+                        color={selectedIncidentOrder.incidentResolved ? colors.textSecondary : colors.primary}
+                        style={{ fontWeight: '700' }}
+                      >
+                        {selectedIncidentOrder.incidentResolved ? 'Đã xử lý' : 'Cần kiểm tra'}
+                      </AppText>
+                    </View>
+                  </View>
+                  <AppText variant="small" color={colors.textSecondary} style={{ marginTop: 2 }}>
+                    Chi nhánh: {selectedIncidentOrder.branchName} •{' '}
+                    {selectedIncidentOrder.updatedAtDate?.toLocaleString('vi-VN', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                    })}
+                  </AppText>
+                </View>
+                <TouchableOpacity onPress={() => setSelectedIncidentId(null)}>
+                  <X size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                {/* Hộp lý do sự cố */}
+                <View
+                  style={{
+                    backgroundColor: '#FEF2F2',
+                    borderWidth: 1,
+                    borderColor: '#FECACA',
+                    borderRadius: 12,
+                    padding: 12,
+                    marginBottom: 12,
+                  }}
+                >
+                  <AppText variant="captionSemiBold" color="#DC2626">
+                    Nguyên nhân sự cố / hủy đơn:
+                  </AppText>
+                  <AppText
+                    variant="bodySemiBold"
+                    color="#991B1B"
+                    style={{ marginTop: 3 }}
+                  >
+                    {selectedIncidentOrder.cancelReason}
+                  </AppText>
+                  <AppText variant="small" color="#B91C1C" style={{ marginTop: 4 }}>
+                    Ghi nhận từ: {selectedIncidentOrder.incidentReportedBy}
+                  </AppText>
+                </View>
+
+                {/* Thông tin khách hàng */}
+                <View
+                  style={{
+                    backgroundColor: colors.surface,
+                    borderRadius: 12,
+                    padding: 12,
+                    marginBottom: 10,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: 4,
+                    }}
+                  >
+                    <AppText variant="captionSemiBold" color={colors.textSecondary}>
+                      Thông tin khách hàng
+                    </AppText>
+                    <View
+                      style={{
+                        backgroundColor: selectedIncidentOrder.userId ? colors.primarySoft : colors.surfaceAlt,
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderRadius: 999,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <AppText
+                        variant="small"
+                        color={selectedIncidentOrder.userId ? colors.primary : colors.textSecondary}
+                        style={{ fontWeight: '700' }}
+                      >
+                        {selectedIncidentOrder.userId
+                          ? 'Tài khoản thành viên'
+                          : 'Khách vãng lai'}
+                      </AppText>
+                    </View>
+                  </View>
+
+                  <AppText variant="bodySemiBold" color={colors.textPrimary}>
+                    {selectedIncidentOrder.customerName}
+                  </AppText>
+                  {!!selectedIncidentOrder.customerPhone && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                      <Phone size={13} color={colors.primary} />
+                      <AppText variant="small" color={colors.primary} style={{ fontWeight: '700' }}>
+                        SĐT khách: {selectedIncidentOrder.customerPhone}
+                      </AppText>
+                    </View>
+                  )}
+
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginTop: 6 }}>
+                    <MapPin size={14} color={colors.textSecondary} style={{ marginTop: 2 }} />
+                    <AppText variant="small" color={colors.textSecondary} style={{ flex: 1 }}>
+                      {selectedIncidentOrder.isPickup
+                        ? `Nhận tại quán (${selectedIncidentOrder.branchName})`
+                        : selectedIncidentOrder.address}
+                    </AppText>
+                  </View>
+                </View>
+
+                {/* Thông tin Nhân viên giao hàng (nếu có) */}
+                {!!selectedIncidentOrder.assignedStaffName && (
+                  <View
+                    style={{
+                      backgroundColor: colors.primarySoft,
+                      borderRadius: 12,
+                      padding: 12,
+                      marginBottom: 10,
+                      borderWidth: 1,
+                      borderColor: '#FECACA',
+                    }}
+                  >
+                    <AppText variant="captionSemiBold" color={colors.primary}>
+                      Nhân viên đi giao đơn này:
+                    </AppText>
+                    <AppText variant="bodySemiBold" color={colors.textPrimary} style={{ marginTop: 2 }}>
+                      {selectedIncidentOrder.assignedStaffName}
+                      {selectedIncidentOrder.assignedStaffPhone
+                        ? ` • ${selectedIncidentOrder.assignedStaffPhone}`
+                        : ''}
+                    </AppText>
+                  </View>
+                )}
+
+                {/* Danh sách món ăn */}
+                <View
+                  style={{
+                    borderTopWidth: 1,
+                    borderBottomWidth: 1,
+                    borderColor: colors.border,
+                    paddingVertical: 10,
+                    marginBottom: 10,
+                  }}
+                >
+                  <AppText
+                    variant="captionSemiBold"
+                    color={colors.textSecondary}
+                    style={{ marginBottom: 6 }}
+                  >
+                    Danh sách món ({(selectedIncidentOrder.items || []).length} món)
+                  </AppText>
+                  {(selectedIncidentOrder.items || []).map((it: any, idx: number) => (
+                    <View
+                      key={idx}
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        paddingVertical: 4,
+                      }}
+                    >
+                      <AppText variant="small" color={colors.textPrimary} style={{ flex: 1 }}>
+                        {it.quantity || 1}x {it.productName || it.name || 'Món ăn'}
+                      </AppText>
+                      <AppText variant="small" color={colors.textSecondary}>
+                        {formatCurrency(
+                          Number(
+                            it.lineTotal ||
+                              (it.unitPrice || it.price || 0) * (it.quantity || 1)
+                          )
+                        )}
+                      </AppText>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Tổng giá trị đơn */}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <AppText variant="bodySemiBold" color={colors.textSecondary}>
+                    Tổng giá trị đơn hàng
+                  </AppText>
+                  <AppText variant="price" color={colors.primary}>
+                    {formatCurrency(selectedIncidentOrder.total)}
+                  </AppText>
+                </View>
+              </ScrollView>
+
+              {/* Nút hành động cho Admin */}
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <AppButton
+                  title="Đóng"
+                  variant="outline"
+                  style={{ flex: 1 }}
+                  onPress={() => setSelectedIncidentId(null)}
+                />
+                {!selectedIncidentOrder.incidentResolved && (
+                  <AppButton
+                    title="Đánh dấu đã giải quyết"
+                    style={{ flex: 1.5 }}
+                    onPress={async () => {
+                      const targetId = selectedIncidentOrder.id;
+                      const targetCode = selectedIncidentOrder.orderCode;
+                      setSelectedIncidentId(null);
+                      await saveOrderOverride(targetId, {
+                        incidentResolved: true,
+                        incidentResolvedAt: new Date().toISOString(),
+                      });
+                      showToast({
+                        message: `Đã đánh dấu giải quyết xong sự cố đơn #${targetCode}!`,
+                        type: 'success',
+                      });
+                    }}
+                  />
+                )}
+              </View>
+            </View>
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
