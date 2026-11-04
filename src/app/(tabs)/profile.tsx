@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,12 @@ import {
   Modal,
   Platform,
   Pressable,
+  Image,
 } from 'react-native';
 import { Alert } from '../../utils/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import { useRouter, useFocusEffect } from 'expo-router';
+import Svg, { Path, Circle, Rect, G } from 'react-native-svg';
 import {
   LogIn,
   UserPlus,
@@ -24,9 +25,18 @@ import {
   Sparkles,
   ShieldCheck,
 } from 'lucide-react-native';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../services/firebase';
 import { useAuth } from '../../state/AuthContext';
 import { styles } from '../../styles/profile.styles';
 import { isRiderRole, isStaffRole } from '../../utils/staff';
+import {
+  fetchUserMemberStats,
+  getMemberTierFromSpent,
+  calculateMaturityDate,
+  type MemberTierInfo,
+} from '../../utils/memberTier';
+import type { RedeemedGift } from '../../data/rewards';
 
 // Custom Pizza Reward Slice Badge Icon (exact match to user mockup)
 const PizzaRewardIcon = ({ size = 22, color = '#1E2024' }: { size?: number; color?: string }) => (
@@ -39,24 +49,152 @@ const PizzaRewardIcon = ({ size = 22, color = '#1E2024' }: { size?: number; colo
   </Svg>
 );
 
-// Custom Membership Badge Icon on Red Card
-const CardBadgeIcon = () => (
-  <Svg width={32} height={32} viewBox="0 0 28 28" fill="none">
-    {/* Fanned cards design */}
-    <Path d="M6 21L12 5l5 2-6 16z" fill="rgba(255,255,255,0.3)" />
-    <Path d="M12 5l6 1l4 15-7-2z" fill="rgba(255,255,255,0.5)" />
-    <Path d="M9 19l4-12 5 2-4 12z" stroke="#FFFFFF" strokeWidth={1.6} fill="#CF4226" />
-    <Circle cx="13" cy="11" r="1.2" fill="#FFFFFF" />
-    <Circle cx="15.5" cy="14" r="1" fill="#FFFFFF" />
-    <Circle cx="11.5" cy="14" r="1" fill="#FFFFFF" />
-  </Svg>
-);
+// Crisp Vector Pizza Badge Icon on #CF4226 Member Card (1 slice = Cơ Bản, 2 = Vàng, 3 = VIP)
+const MemberCardPizzaIcon = ({
+  tier = 'vip',
+  height = 32,
+}: {
+  tier?: 'basic' | 'gold' | 'vip';
+  height?: number;
+}) => {
+  if (tier === 'basic') {
+    return (
+      <Svg width={28} height={height} viewBox="0 0 36 44" fill="none">
+        <G transform="rotate(14 18 22)">
+          <Path d="M4 5C11 2 25 2 32 5L30 9.5C24 7 12 7 6 9.5L4 5Z" fill="#FFFFFF" />
+          <Path d="M6.2 11.2C12.2 8.8 23.8 8.8 29.8 11.2L18 41L6.2 11.2Z" fill="#FFFFFF" />
+          <Path
+            d="M18 14L19.3 18H23.5L20.1 20.4L21.4 24.4L18 22L14.6 24.4L15.9 20.4L12.5 18H16.7L18 14Z"
+            fill="#CF4226"
+          />
+          <Path
+            d="M18 26.5L18.8 29H21.4L19.3 30.5L20.1 33L18 31.5L15.9 33L16.7 30.5L14.6 29H17.2L18 26.5Z"
+            fill="#CF4226"
+          />
+        </G>
+      </Svg>
+    );
+  }
+
+  if (tier === 'gold') {
+    return (
+      <Svg width={42} height={height} viewBox="0 0 56 44" fill="none">
+        <G transform="translate(2, 4) rotate(-24 18 32)">
+          <Path d="M5 6C11 3.5 23 3.5 29 6L27.5 10C22 8 12 8 6.5 10L5 6Z" fill="#FFFFFF" />
+          <Path d="M7 11.5C12 9.5 22 9.5 27 11.5L17 38L7 11.5Z" fill="#FFFFFF" />
+          <Path
+            d="M17 14.5L18.2 18.2H22L18.9 20.4L20.1 24.1L17 21.9L13.9 24.1L15.1 20.4L12 18.2H15.8L17 14.5Z"
+            fill="#CF4226"
+          />
+          <Path
+            d="M17 25.5L17.7 27.6H19.9L18.1 28.9L18.8 31L17 29.7L15.2 31L15.9 28.9L14.1 27.6H16.3L17 25.5Z"
+            fill="#CF4226"
+          />
+        </G>
+        <G transform="translate(18, 1) rotate(14 18 34)">
+          <Path d="M4 5C11 2.2 25 2.2 32 5L30.2 9.5C24 7.2 12 7.2 5.8 9.5L4 5Z" fill="#FFFFFF" />
+          <Path d="M6.2 11.2C12.2 9 23.8 9 29.8 11.2L18 40L6.2 11.2Z" fill="#FFFFFF" />
+          <Path
+            d="M18 14.5L19.3 18.5H23.5L20.1 21L21.4 25L18 22.5L14.6 25L15.9 21L12.5 18.5H16.7L18 14.5Z"
+            fill="#CF4226"
+          />
+          <Path
+            d="M18 26.5L18.8 28.9H21.3L19.3 30.4L20.1 32.8L18 31.3L15.9 32.8L16.7 30.4L14.7 28.9H17.2L18 26.5Z"
+            fill="#CF4226"
+          />
+        </G>
+      </Svg>
+    );
+  }
+
+  // VIP: 3 Pizza Slices
+  return (
+    <Svg width={48} height={height} viewBox="0 0 64 44" fill="none">
+      <G transform="translate(0, 6) rotate(-38 16 28)">
+        <Path d="M5 6C10 4 20 4 25 6L23.8 9.5C19 7.8 11 7.8 6.2 9.5L5 6Z" fill="#FFFFFF" />
+        <Path d="M6.5 11C11 9.2 19 9.2 23.5 11L15 35L6.5 11Z" fill="#FFFFFF" />
+        <Path
+          d="M15 14L15.9 16.8H18.8L16.5 18.5L17.4 21.3L15 19.6L12.6 21.3L13.5 18.5L11.2 16.8H14.1L15 14Z"
+          fill="#CF4226"
+        />
+      </G>
+      <G transform="translate(17, 1)">
+        <Path d="M5 6C10 4 20 4 25 6L23.8 9.5C19 7.8 11 7.8 6.2 9.5L5 6Z" fill="#FFFFFF" />
+        <Path d="M6.5 11C11 9.2 19 9.2 23.5 11L15 35L6.5 11Z" fill="#FFFFFF" />
+        <Path
+          d="M15 14L15.9 16.8H18.8L16.5 18.5L17.4 21.3L15 19.6L12.6 21.3L13.5 18.5L11.2 16.8H14.1L15 14Z"
+          fill="#CF4226"
+        />
+      </G>
+      <G transform="translate(32, 6) rotate(38 16 28)">
+        <Path d="M5 6C10 4 20 4 25 6L23.8 9.5C19 7.8 11 7.8 6.2 9.5L5 6Z" fill="#FFFFFF" />
+        <Path d="M6.5 11C11 9.2 19 9.2 23.5 11L15 35L6.5 11Z" fill="#FFFFFF" />
+        <Path
+          d="M15 14L15.9 16.8H18.8L16.5 18.5L17.4 21.3L15 19.6L12.6 21.3L13.5 18.5L11.2 16.8H14.1L15 14Z"
+          fill="#CF4226"
+        />
+      </G>
+    </Svg>
+  );
+};
 
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, isAuthenticated, logout } = useAuth();
   const [showQRModal, setShowQRModal] = useState(false);
+  const [tierInfo, setTierInfo] = useState<MemberTierInfo>(() =>
+    getMemberTierFromSpent(
+      (user?.rewardPoints ?? 0) * 10000,
+      user?.rewardPoints ?? 0,
+      calculateMaturityDate()
+    )
+  );
+  const [syncedPoints, setSyncedPoints] = useState<number | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const uid = user?.id;
+      if (!uid || user?.isDemo) {
+        setSyncedPoints(null);
+        return;
+      }
+
+      Promise.all([
+        fetchUserMemberStats(uid),
+        getDoc(doc(db, 'users', uid)).catch(() => null),
+      ])
+        .then(([stats, userSnap]) => {
+          if (!active) return;
+          const data = userSnap?.exists() ? userSnap.data() : undefined;
+          const redeemedGifts: RedeemedGift[] = Array.isArray(data?.redeemedGifts)
+            ? data.redeemedGifts
+            : [];
+          const spentPoints = redeemedGifts.reduce(
+            (sum, g) => sum + (Number(g.points) || 0),
+            0
+          );
+          const netOrderPoints = Math.max(0, stats.earnedPointsFromOrders - spentPoints);
+          const pts =
+            typeof data?.rewardPoints === 'number'
+              ? spentPoints > 0
+                ? data.rewardPoints
+                : Math.max(data.rewardPoints, netOrderPoints)
+              : netOrderPoints;
+          setSyncedPoints(pts);
+          setTierInfo(stats);
+        })
+        .catch(() => {});
+
+      return () => {
+        active = false;
+      };
+    }, [user?.id, user?.isDemo, user?.rewardPoints])
+  );
+
+  const displayPoints =
+    syncedPoints ?? Math.max(user?.rewardPoints ?? 0, tierInfo.earnedPointsFromOrders);
 
   const handleLogoutConfirm = async () => {
     if (Platform.OS === 'web') {
@@ -98,11 +236,11 @@ export default function ProfileScreen() {
           /* KHI ĐÃ ĐĂNG NHẬP (Authenticated View)                    */
           /* ======================================================== */
           <View>
-            {/* Membership Card (Màu đỏ chủ đạo Pizza FPT) */}
+            {/* Membership Card (Đồng bộ 100% với trang FPT Rewards) */}
             <View style={styles.memberCard}>
               <View style={styles.memberCardTop}>
                 <View style={styles.memberBadgeWrap}>
-                  <CardBadgeIcon />
+                  <MemberCardPizzaIcon tier={tierInfo.id} />
                 </View>
                 <View style={styles.memberInfo}>
                   <Text style={styles.memberTier}>
@@ -112,34 +250,29 @@ export default function ProfileScreen() {
                       ? 'Quản lý Chi nhánh (Manager)'
                       : user?.role === 'EMPLOYEE'
                       ? 'Nhân viên (Staff)'
-                      : 'Thành viên Thường'}
+                      : tierInfo.cardTitle}
                   </Text>
-                  <Text style={styles.memberExpiry}>Ngày hết hạn 30/11/2027</Text>
+                  <Text style={styles.memberExpiry}>
+                    Ngày hết hạn {tierInfo.maturityDate}
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.memberCardBottom}>
                 <View style={styles.statCol}>
-                  <Text style={styles.statNumber}>{user?.rewardPoints ?? 0}</Text>
+                  <Text style={styles.statNumber}>{displayPoints}</Text>
                   <Text style={styles.statUnit}> điểm</Text>
                 </View>
                 <View style={[styles.statCol, { alignItems: 'flex-end' }]}>
                   <Text style={styles.statNumber}>
-                    {user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' ? '15%' : '0%'}
+                    {user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN'
+                      ? '15%'
+                      : `${tierInfo.discountPercent}%`}
                   </Text>
                   <Text style={styles.statUnit}> giảm giá</Text>
                 </View>
               </View>
             </View>
-
-            {/* Button: Hiển thị mã QR */}
-            <TouchableOpacity
-              style={styles.qrOutlineBtn}
-              activeOpacity={0.8}
-              onPress={() => setShowQRModal(true)}
-            >
-              <Text style={styles.qrOutlineBtnText}>Hiển thị mã QR</Text>
-            </TouchableOpacity>
 
             {/* Menu Group 1 */}
             <View style={styles.cardGroup}>
@@ -470,4 +603,3 @@ export default function ProfileScreen() {
     </SafeAreaView>
   );
 }
-

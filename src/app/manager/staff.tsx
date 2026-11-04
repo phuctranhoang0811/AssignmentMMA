@@ -7,16 +7,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import {
   Search,
   X,
   Users,
   Phone,
   Mail,
-  Truck,
-  CheckCircle2,
-  Calendar,
 } from 'lucide-react-native';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -28,27 +24,24 @@ import {
   subscribeStoresConfig,
   subscribeStaffStoresMap,
   subscribeStaffSchedules,
-  subscribeOrderOverrides,
   getStaffShiftOnDate,
   DEFAULT_STORE_BRANCHES,
   type SyncedStoreBranch,
   type StaffCustomizationEntry,
   type StaffScheduleRecord,
-  type OrderDispatchOverride,
   type ShiftType,
 } from '../../services/storeSync';
 
 const DAY_KEYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'] as const;
 
 const SHIFT_BADGE: Record<ShiftType, { label: string; color: string; bg: string }> = {
-  MORNING: { label: 'Hôm nay: Ca Sáng (08:00 - 14:00)', color: '#1D4ED8', bg: '#DBEAFE' },
-  EVENING: { label: 'Hôm nay: Ca Tối (14:00 - 22:00)', color: '#B45309', bg: '#FEF3C7' },
-  FULL: { label: 'Hôm nay: Full ca (08:00 - 22:00)', color: '#15803D', bg: '#DCFCE7' },
-  OFF: { label: 'Hôm nay: Nghỉ ca', color: '#6B7280', bg: '#F3F4F6' },
+  MORNING: { label: 'Ca Sáng (08:00 - 14:00)', color: colors.primary, bg: colors.primarySoft },
+  EVENING: { label: 'Ca Tối (14:00 - 22:00)', color: colors.primary, bg: colors.primarySoft },
+  FULL: { label: 'Full ca (08:00 - 22:00)', color: colors.primary, bg: colors.primarySoft },
+  OFF: { label: 'Nghỉ ca', color: colors.textSecondary, bg: colors.surfaceAlt },
 };
 
 export default function ManagerStaffScreen() {
-  const router = useRouter();
   const { user } = useAuth();
 
   const [storesList, setStoresList] = useState<SyncedStoreBranch[]>(DEFAULT_STORE_BRANCHES);
@@ -57,10 +50,8 @@ export default function ManagerStaffScreen() {
   const [loading, setLoading] = useState(true);
 
   const [rawUsers, setRawUsers] = useState<Record<string, any>[]>([]);
-  const [rawOrders, setRawOrders] = useState<Record<string, any>[]>([]);
   const [staffMap, setStaffMap] = useState<Record<string, StaffCustomizationEntry>>({});
   const [schedulesMap, setSchedulesMap] = useState<Record<string, StaffScheduleRecord>>({});
-  const [orderOverrides, setOrderOverrides] = useState<Record<string, OrderDispatchOverride>>({});
 
   useEffect(() => {
     const unsubStores = subscribeStoresConfig((state) => {
@@ -79,15 +70,11 @@ export default function ManagerStaffScreen() {
     const unsubSchedules = subscribeStaffSchedules((map) => {
       setSchedulesMap(map);
     });
-    const unsubOverrides = subscribeOrderOverrides((map) => {
-      setOrderOverrides(map);
-    });
 
     return () => {
       unsubStores();
       unsubStaff();
       unsubSchedules();
-      unsubOverrides();
     };
   }, [user?.id, user?.storeId]);
 
@@ -107,21 +94,8 @@ export default function ManagerStaffScreen() {
       }
     );
 
-    const unsubOrders = onSnapshot(
-      query(collection(db, 'orders')),
-      (snap) => {
-        const oList: Record<string, any>[] = [];
-        snap.forEach((docSnap) => {
-          oList.push({ id: docSnap.id, ...docSnap.data() });
-        });
-        setRawOrders(oList);
-      },
-      () => {}
-    );
-
     return () => {
       unsubUsers();
-      unsubOrders();
     };
   }, []);
 
@@ -130,15 +104,37 @@ export default function ManagerStaffScreen() {
 
   const todayKey = DAY_KEYS[(new Date().getDay() + 6) % 7] || 'T2';
 
-  const branchStaff = rawUsers
+  const combinedUsers = (() => {
+    const byId = new Map<string, Record<string, any>>();
+    rawUsers.forEach((u) => byId.set(String(u.id), u));
+    Object.entries(staffMap).forEach(([uid, m]) => {
+      if (!m || m.deleted || byId.has(uid)) return;
+      byId.set(uid, {
+        id: uid,
+        fullName: m.fullName || 'Nhân viên',
+        email: m.email || '',
+        phone: m.phone || '',
+        role: m.role || 'EMPLOYEE',
+        storeId: m.storeId || undefined,
+        storeName: m.storeName || undefined,
+      });
+    });
+    return Array.from(byId.values());
+  })();
+
+  const branchStaff = combinedUsers
     .filter((u) => {
       const custom = staffMap[u.id];
-      if (custom?.deleted || u.role === 'BLACKLISTED' || u.role === 'ROLE_RIDER') return false;
-      const isStaff = u.role === 'EMPLOYEE' || u.role === 'ROLE_KITCHEN';
+      const effRole = custom?.role || u.role;
+      if (custom?.deleted || effRole === 'BLACKLISTED' || effRole === 'ROLE_RIDER') return false;
+      const isStaff = effRole === 'EMPLOYEE' || effRole === 'ROLE_KITCHEN';
       if (!isStaff) return false;
       const uStoreId = custom?.storeId !== undefined ? custom.storeId : u.storeId;
-      if (uStoreId && currentStore) {
-        return uStoreId === currentStore.id;
+      const uStoreName = custom?.storeName || u.storeName || '';
+      if (currentStore) {
+        if (uStoreId && uStoreId === currentStore.id) return true;
+        if (uStoreName && uStoreName === currentStore.name) return true;
+        if (uStoreId || uStoreName) return false;
       }
       return true;
     })
@@ -146,27 +142,12 @@ export default function ManagerStaffScreen() {
       const custom = staffMap[u.id];
       const todayShift: ShiftType = getStaffShiftOnDate(schedulesMap[u.id], new Date());
 
-      // Đếm số đơn đang giao & đã hoàn tất của nhân viên này
-      let deliveringCount = 0;
-      let completedCount = 0;
-      rawOrders.forEach((ord) => {
-        const ov = orderOverrides[ord.id];
-        const staffId = ov?.assignedStaffId ?? ord.assignedStaffId;
-        const status = ov?.status ?? ord.status;
-        if (staffId === u.id) {
-          if (status === 'OUT_FOR_DELIVERY') deliveringCount++;
-          else if (status === 'COMPLETED' || status === 'DELIVERED') completedCount++;
-        }
-      });
-
       return {
         id: u.id,
-        fullname: String(u.fullName || u.fullname || u.name || 'Nhân viên'),
+        fullname: String(custom?.fullName || u.fullName || u.fullname || u.name || 'Nhân viên'),
         email: String(u.email || custom?.email || ''),
         phone: String(custom?.phone || u.phone || ''),
         todayShift,
-        deliveringCount,
-        completedCount,
       };
     })
     .filter((s) => {
@@ -252,7 +233,7 @@ export default function ManagerStaffScreen() {
             <AppText variant="small" color={colors.textSecondary}>
               Đi làm hôm nay ({todayKey})
             </AppText>
-            <AppText variant="price" color="#15803D" style={{ marginTop: 2 }}>
+            <AppText variant="price" color={colors.primary} style={{ marginTop: 2 }}>
               {workingTodayCount} người
             </AppText>
           </View>
@@ -306,9 +287,10 @@ export default function ManagerStaffScreen() {
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       marginBottom: 8,
+                      gap: 8,
                     }}
                   >
-                    <AppText variant="cardTitle" color={colors.textPrimary} style={{ flex: 1 }}>
+                    <AppText variant="cardTitle" color={colors.textPrimary} style={{ flex: 1 }} numberOfLines={1}>
                       {staff.fullname}
                     </AppText>
                     <View
@@ -317,6 +299,7 @@ export default function ManagerStaffScreen() {
                         paddingHorizontal: 10,
                         paddingVertical: 4,
                         borderRadius: 999,
+                        flexShrink: 0,
                       }}
                     >
                       <AppText variant="small" color={badge.color} style={{ fontWeight: '700' }}>
@@ -326,7 +309,7 @@ export default function ManagerStaffScreen() {
                   </View>
 
                   {/* SĐT & Email */}
-                  <View style={{ gap: 5, marginBottom: 12 }}>
+                  <View style={{ gap: 5 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Phone size={14} color={colors.textSecondary} />
                       <AppText variant="small" color={colors.textPrimary}>
@@ -339,52 +322,6 @@ export default function ManagerStaffScreen() {
                         {staff.email}
                       </AppText>
                     </View>
-                  </View>
-
-                  {/* Thống kê đơn giao + Nút sang xếp lịch */}
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      borderTopWidth: 1,
-                      borderTopColor: colors.border,
-                      paddingTop: 10,
-                    }}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Truck size={14} color="#EA580C" />
-                        <AppText variant="small" color={colors.textPrimary}>
-                          Đang giao: {staff.deliveringCount}
-                        </AppText>
-                      </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <CheckCircle2 size={14} color="#15803D" />
-                        <AppText variant="small" color={colors.textPrimary}>
-                          Đã giao: {staff.completedCount}
-                        </AppText>
-                      </View>
-                    </View>
-
-                    <TouchableOpacity
-                      activeOpacity={0.75}
-                      onPress={() => router.replace('/manager/schedule')}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 5,
-                        backgroundColor: colors.primarySoft,
-                        paddingHorizontal: 10,
-                        paddingVertical: 6,
-                        borderRadius: 8,
-                      }}
-                    >
-                      <Calendar size={13} color={colors.primary} />
-                      <AppText variant="small" color={colors.primary} style={{ fontWeight: '600' }}>
-                        Đổi ca làm
-                      </AppText>
-                    </TouchableOpacity>
                   </View>
                 </View>
               );

@@ -4,6 +4,7 @@
  */
 
 import * as Location from 'expo-location';
+import { Platform } from 'react-native';
 
 export interface AddressSuggestion {
   id: string;
@@ -462,12 +463,14 @@ export async function searchVietnamAddresses(query: string): Promise<AddressSugg
 
 /**
  * Vị trí thật của địa chỉ từ bộ định vị của thiết bị, hoặc null nếu không tìm được.
- * Dùng cho việc tính tiền (phí giao hàng, vị trí cửa hàng): tuyệt đối không rơi về tọa độ đoán của danh mục cục bộ,
- * vì một địa chỉ gõ bậy sẽ bị tính như ngay cạnh cửa hàng.
+ * Dùng cho việc tính tiền (phí giao hàng, vị trí cửa hàng): trên Web dùng trực tiếp bảng tọa độ để không gọi API đã gỡ của SDK 49+.
  */
 export async function geocodeAddressStrict(address: string): Promise<{ lat: number; lng: number } | null> {
   const clean = (address || '').trim();
   if (!clean) return null;
+  if (Platform.OS === 'web') {
+    return getCoordinatesForAddress(clean);
+  }
   for (const query of [clean, `${clean}, Việt Nam`]) {
     try {
       const found = await Location.geocodeAsync(query);
@@ -482,26 +485,60 @@ export async function geocodeAddressStrict(address: string): Promise<{ lat: numb
  */
 export function getCoordinatesForAddress(address: string): { lat: number; lng: number } {
   const norm = removeVietnameseTones(address || '');
-  if (norm.includes('dao son tay')) {
+  if (
+    norm.includes('dai hoc fpt') ||
+    norm.includes('dh fpt') ||
+    norm.includes('fpt university') ||
+    norm.includes('cong nghe cao') ||
+    norm.includes('long thanh my') ||
+    norm.includes('tang nhon phu') ||
+    norm.includes('duong d1') ||
+    norm.includes('d. d1') ||
+    norm.includes('lo e2a')
+  ) {
+    // Trường Đại học FPT TP.HCM, 7 Đ. D1, Khu Công Nghệ Cao (cách Đường 48 Hiệp Bình Chánh đúng ~11.6 km đường bộ)
+    return { lat: 10.8411, lng: 106.8099 };
+  }
+  if (
+    norm.includes('sinh vien') ||
+    norm.includes('nha van hoa') ||
+    norm.includes('lang dai hoc') ||
+    norm.includes('luu huu phuoc') ||
+    norm.includes('dong hoa') ||
+    norm.includes('di an') ||
+    norm.includes('quang truong sang tao') ||
+    norm.includes('linh trung') ||
+    norm.includes('dhqg')
+  ) {
+    // Nhà Văn Hóa Sinh Viên TP.HCM, Số 1 Lưu Hữu Phước (cách Đường 48 Hiệp Bình Chánh đúng ~12.6 km đường bộ trên Google Maps)
+    return { lat: 10.8755, lng: 106.8105 };
+  }
+  if (norm.includes('dao son tay') || norm.includes('linh xuan')) {
     return { lat: 10.8785, lng: 106.7788 }; // Trường THPT Đào Sơn Tây, Linh Xuân, TP. Thủ Đức
   }
-  if (norm.includes('sinh vien') || norm.includes('lang dai hoc')) {
-    return { lat: 10.8804, lng: 106.8041 }; // Nhà Văn Hóa Sinh Viên ĐHQG
+  if (norm.includes('vo van ngan') || norm.includes('binh tho') || norm.includes('linh chieu')) {
+    return { lat: 10.8505, lng: 106.7652 }; // Võ Văn Ngân, Bình Thọ, TP. Thủ Đức
   }
   if (norm.includes('ca sau') || norm.includes('ca xau') || norm.includes('hoa ca')) {
     return { lat: 10.8385, lng: 106.7262 }; // Sân Banh Cỏ Nhân Tạo Cá Sấu Hoa Cà, Hiệp Bình Chánh
   }
-  if (norm.includes('48')) {
+  if (norm.includes('gigamall') || norm.includes('pham van dong') || norm.includes('240') || norm.includes('242')) {
+    return { lat: 10.8295, lng: 106.7222 }; // GigaMall Phạm Văn Đồng (cách Đại học FPT đúng ~12.5 km trên Google Maps)
+  }
+  if (norm.includes('48') || norm.includes('hiep binh')) {
     return { lat: 10.8428, lng: 106.7285 }; // Đường 48, P. Hiệp Bình Chánh, TP. Thủ Đức
   }
-  if (norm.includes('29')) {
+  if (norm.includes('29') || norm.includes('tam ha')) {
     return { lat: 10.858, lng: 106.758 }; // Đường 29, Tam Hà, TP. Thủ Đức
   }
-  if (norm.includes('le duan') || norm.includes('quan 1') || norm.includes('ben nghe')) {
+  if (norm.includes('landmark') || norm.includes('binh thanh') || norm.includes('dien bien phu')) {
+    return { lat: 10.795, lng: 106.7218 }; // Landmark 81, Quận Bình Thạnh
+  }
+  if (norm.includes('le duan') || norm.includes('quan 1') || norm.includes('ben nghe') || norm.includes('ben thanh')) {
     return { lat: 10.7797, lng: 106.699 }; // Quận 1, TP.HCM
   }
-  if (norm.includes('duy tan') || norm.includes('cau giay') || norm.includes('ha noi')) {
-    return { lat: 21.0313, lng: 105.7834 }; // Duy Tân, Cầu Giấy, Hà Nội
+  if (norm.includes('duy tan') || norm.includes('cau giay') || norm.includes('ha noi') || norm.includes('lieu giai') || norm.includes('ba dinh')) {
+    return { lat: 21.0313, lng: 105.7834 }; // Hà Nội
   }
   if (norm.includes('vinh long')) {
     return { lat: 10.0452, lng: 105.7469 }; // Vĩnh Long
@@ -594,7 +631,7 @@ export function getAddressFromCoordinates(
  */
 export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number }> {
   const cleanAddr = (address || '').trim();
-  if (!cleanAddr) {
+  if (!cleanAddr || Platform.OS === 'web') {
     return getCoordinatesForAddress(address);
   }
 
@@ -625,6 +662,9 @@ export async function reverseGeocodeLocation(
   lng: number,
   fallback?: string
 ): Promise<string> {
+  if (Platform.OS === 'web') {
+    return getAddressFromCoordinates(lat, lng, fallback);
+  }
   try {
     const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
     if (results && results.length > 0) {
@@ -693,4 +733,3 @@ export async function getCurrentPhoneLocation(): Promise<{
     return null;
   }
 }
-

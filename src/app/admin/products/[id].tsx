@@ -11,12 +11,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../services/firebase';
+import { productService } from '../../../services';
 import { ScreenHeader } from '../../../components/ui/ScreenHeader';
 import { AppText } from '../../../components/ui/AppText';
 import { AppButton } from '../../../components/ui/AppButton';
 import { colors } from '../../../theme/colors';
 import { styles } from '../../../styles/adminProducts.styles';
-import { mockProducts } from '../../../data/mockProducts';
 import { formatCurrency } from '../../../utils/formatCurrency';
 import { reportAdminAction } from '../../../services/orderApi';
 import { PIZZA_CRUSTS, isCustomizablePizza } from '../../../types/pizzaCustomization';
@@ -34,7 +34,6 @@ export default function AdminProductDetailScreen() {
   const [isAvailable, setIsAvailable] = useState(true);
   const [isPopular, setIsPopular] = useState(false);
 
-  // The product's own variants are what customers pay per size (full price, not a surcharge).
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [hasCrusts, setHasCrusts] = useState(false);
 
@@ -53,26 +52,9 @@ export default function AdminProductDetailScreen() {
           setIsPopular(Boolean(data.isPopular));
           setVariants(data.variants ?? []);
           setHasCrusts(isCustomizablePizza(data as Product));
-        } else {
-          const found = mockProducts.find((p) => p.id === id);
-          if (found) {
-            setName(found.name);
-            setPrice(String(found.basePrice));
-            setDesc(found.description);
-            setIsAvailable(found.isAvailable !== false);
-          setIsPopular(Boolean(found.isPopular));
-            setIsPopular(Boolean(found.isPopular));
-          }
         }
       } catch {
-        const found = mockProducts.find((p) => p.id === id);
-        if (found) {
-          setName(found.name);
-          setPrice(String(found.basePrice));
-          setDesc(found.description);
-          setIsAvailable(found.isAvailable !== false);
-          setIsPopular(Boolean(found.isPopular));
-        }
+        // Ignore error
       } finally {
         setLoading(false);
       }
@@ -85,7 +67,7 @@ export default function AdminProductDetailScreen() {
       Alert.alert('Lỗi', 'Vui lòng nhập tên và giá');
       return;
     }
-    if (variants.some(v => !(v.price > 0))) {
+    if (variants.some((v) => !(v.price > 0))) {
       Alert.alert('Lỗi', 'Giá mỗi size phải lớn hơn 0');
       return;
     }
@@ -96,14 +78,20 @@ export default function AdminProductDetailScreen() {
         await updateDoc(docRef, {
           name: name.trim(),
           basePrice: Number(price),
-          description: desc.trim(),
+          description: desc.trim() || name.trim(),
           isAvailable,
           isPopular,
-          ...(variants.length ? { variants } : {}),
+          variants: hasCrusts ? variants : [],
           updatedAt: serverTimestamp(),
         });
-        void reportAdminAction('PRODUCT_UPDATED', `products/${id}`, { name: name.trim(), basePrice: Number(price), isAvailable, isPopular });
-        Alert.alert('Thành công', 'Đã lưu thông tin món ăn và giá theo size');
+        productService.invalidateCache?.();
+        void reportAdminAction('PRODUCT_UPDATED', `products/${id}`, {
+          name: name.trim(),
+          basePrice: Number(price),
+          isAvailable,
+          isPopular,
+        });
+        Alert.alert('Thành công', 'Đã lưu thông tin món ăn');
         router.back();
       }
     } catch (e: any) {
@@ -114,7 +102,9 @@ export default function AdminProductDetailScreen() {
   };
 
   const updateVariantPrice = (index: number, val: string) => {
-    setVariants(prev => prev.map((v, i) => (i === index ? { ...v, price: Number(val.replace(/\D/g, '')) || 0 } : v)));
+    setVariants((prev) =>
+      prev.map((v, i) => (i === index ? { ...v, price: Number(val.replace(/\D/g, '')) || 0 } : v))
+    );
   };
 
   if (loading) {
@@ -209,7 +199,7 @@ export default function AdminProductDetailScreen() {
           />
         </View>
 
-        {variants.length > 0 && (
+        {hasCrusts && variants.length > 0 && (
           <View style={{ marginTop: 8, marginBottom: 20 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <AppText variant="cardTitle" color={colors.textPrimary}>

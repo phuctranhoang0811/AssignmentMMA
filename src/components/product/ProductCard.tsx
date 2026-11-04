@@ -28,11 +28,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const { addItem } = useCart();
   const { showToast } = useToast();
   const favorited = isFavorite(product.id);
+  const isSoldOut = product.isAvailable === false;
 
   const cardScale = useRef(new Animated.Value(1)).current;
   const heartScale = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
+    if (isSoldOut) return;
     Animated.spring(cardScale, {
       toValue: 0.98,
       useNativeDriver: true,
@@ -41,6 +43,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   };
 
   const handlePressOut = () => {
+    if (isSoldOut) return;
     Animated.spring(cardScale, {
       toValue: 1,
       friction: 4,
@@ -50,6 +53,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   };
 
   const handlePress = () => {
+    if (isSoldOut) return;
     router.push({
       pathname: '/product/[id]',
       params: { id: product.id },
@@ -77,7 +81,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   const handleAddPress = (e: any) => {
     e.stopPropagation?.();
-    if (!product.isAvailable) return;
+    if (isSoldOut) return;
 
     if (product.variants && product.variants.length > 0) {
       handlePress();
@@ -108,17 +112,27 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       ]}
     >
       <TouchableOpacity
-        activeOpacity={0.92}
+        activeOpacity={isSoldOut ? 1 : 0.92}
+        disabled={isSoldOut}
         onPress={handlePress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
+        onPressIn={isSoldOut ? undefined : handlePressIn}
+        onPressOut={isSoldOut ? undefined : handlePressOut}
         style={[
           styles.card,
-          !product.isAvailable && styles.unavailableCard,
+          isSoldOut && styles.unavailableCard,
         ]}
       >
         <View style={isGrid ? styles.gridImageWrapper : styles.horizontalImageWrapper}>
           <ProductImage uri={product.image} style={styles.image} iconSize={32} />
+          {isSoldOut && (
+            <View style={styles.soldOutOverlay}>
+              <View style={styles.soldOutBadge}>
+                <AppText variant="captionMedium" color={colors.white} style={styles.soldOutBadgeText}>
+                  HẾT MÓN
+                </AppText>
+              </View>
+            </View>
+          )}
           {product.tags && product.tags.length > 0 && (
             <View style={styles.badge}>
               <AppText variant="captionMedium" color={colors.white}>
@@ -149,14 +163,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <AppText
               variant="cardTitle"
               numberOfLines={1}
-              style={styles.title}
+              style={[styles.title, isSoldOut && { color: colors.textDisabled }]}
             >
               {product.name}
             </AppText>
 
             <AppText
               variant="caption"
-              color={colors.textSecondary}
+              color={isSoldOut ? colors.textDisabled : colors.textSecondary}
               numberOfLines={2}
               style={styles.description}
             >
@@ -167,7 +181,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <View style={styles.footer}>
             <PriceText amount={product.basePrice} size="md" />
 
-            {product.isAvailable ? (
+            {!isSoldOut ? (
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={handleAddPress}
@@ -178,9 +192,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 <Plus size={18} color={colors.white} />
               </TouchableOpacity>
             ) : (
-              <AppText variant="caption" color={colors.textDisabled}>
-                Hết hàng
-              </AppText>
+              <View style={[styles.addButton, { backgroundColor: '#D1D5DB' }]}>
+                <Plus size={18} color={colors.white} />
+              </View>
             )}
           </View>
         </View>
@@ -208,7 +222,8 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
   },
   unavailableCard: {
-    opacity: 0.65,
+    backgroundColor: '#F9FAFB',
+    borderColor: '#E5E7EB',
   },
   gridImageWrapper: {
     width: '100%',
@@ -272,5 +287,27 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  soldOutOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(17, 24, 39, 0.16)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  soldOutBadge: {
+    backgroundColor: 'rgba(31, 41, 55, 0.88)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  soldOutBadgeText: {
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

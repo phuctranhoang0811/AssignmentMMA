@@ -24,8 +24,10 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
   const handleBack = () => {
     if (onBack) {
       onBack();
-    } else {
+    } else if (router.canGoBack()) {
       router.back();
+    } else {
+      router.replace('/(tabs)/home');
     }
   };
 

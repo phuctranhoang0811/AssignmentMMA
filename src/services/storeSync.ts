@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, onSnapshot, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import { getCoordinatesForAddress } from './addressService';
 import { parseDeliveryFeeConfig, type DeliveryFeeConfig } from '../utils/deliveryFee';
 
 const STORAGE_KEY = '@fpt_stores_config_sync_v2';
@@ -44,8 +45,9 @@ export const DEFAULT_DELIVERY_CONFIG: DeliveryFeeConfig = {
   baseKm: 3,
   baseFee: 0,
   perKm: 5000,
-  maxKm: 10,
+  maxKm: 20,
   freeOver: 300000,
+  minDeliveryOrder: 50000,
 };
 
 export interface StoreConfigState {
@@ -67,24 +69,33 @@ let firestoreListening = false;
 const listeners = new Set<(state: StoreConfigState) => void>();
 
 export function sanitizeStoreBranch(raw: any, idx = 0): SyncedStoreBranch {
-  const rawAddress = String(raw?.address || '');
-  const isHanoi =
-    rawAddress.toLowerCase().includes('hà nội') ||
-    rawAddress.toLowerCase().includes('ba đình') ||
-    rawAddress.toLowerCase().includes('liễu giai');
-  const fallbackLat = isHanoi ? 21.0352 : 10.8291;
-  const fallbackLng = isHanoi ? 105.8138 : 106.7183;
+  const rawName = String(raw?.name || 'Cửa hàng Pizza FPT').trim();
+  const rawAddress = String(raw?.address || '').trim();
+  const inferred = getCoordinatesForAddress(`${rawName} ${rawAddress}`);
+
+  let lat = typeof raw?.lat === 'number' && Number.isFinite(raw.lat) ? raw.lat : inferred.lat;
+  let lng = typeof raw?.lng === 'number' && Number.isFinite(raw.lng) ? raw.lng : inferred.lng;
+
+  // Nếu tên hoặc địa chỉ quán có địa danh cụ thể (như Đại học FPT, Nhà Văn Hóa Sinh Viên, Đào Sơn Tây...)
+  // thì luôn đồng bộ đúng tọa độ chuẩn của địa danh đó để tránh bị lưu dính tọa độ cũ khi đổi địa chỉ quán
+  const hasSpecificLandmark =
+    Math.abs(inferred.lat - 10.8428) > 0.001 || Math.abs(inferred.lng - 106.7285) > 0.001;
+
+  if (hasSpecificLandmark) {
+    lat = inferred.lat;
+    lng = inferred.lng;
+  }
 
   return {
     id: String(raw?.id || `store-${idx}`),
-    name: String(raw?.name || 'Cửa hàng Pizza FPT').trim(),
-    address: rawAddress.trim(),
+    name: rawName,
+    address: rawAddress,
     openingTime: String(raw?.openingTime || '10:00 - 22:00')
       .replace(/^Opening time:\s*/i, '')
       .trim(),
     isActive: raw?.isActive !== false,
-    lat: typeof raw?.lat === 'number' && Number.isFinite(raw.lat) ? raw.lat : fallbackLat,
-    lng: typeof raw?.lng === 'number' && Number.isFinite(raw.lng) ? raw.lng : fallbackLng,
+    lat,
+    lng,
   };
 }
 
@@ -108,7 +119,7 @@ let authSyncHooked = false;
 async function pushStoresConfigToFirestore() {
   if (currentState.updatedAtMs <= 0 || !auth.currentUser) return;
   await setDoc(
-    doc(db, 'coupons', '__STORES_CONFIG__'),
+    doc(db, 'coupons', '__STORES_CONFIG'),
     {
       expiresAt: '01/01/2000',
       stores: currentState.stores,
@@ -132,7 +143,7 @@ function ensureAuthSyncHook() {
       }
       if (Object.keys(currentStaffMap).length > 0) {
         void setDoc(
-          doc(db, 'coupons', '__STAFF_STORES__'),
+          doc(db, 'coupons', '__STAFF_STORES'),
           {
             expiresAt: '01/01/2000',
             mapping: currentStaffMap,
@@ -143,7 +154,7 @@ function ensureAuthSyncHook() {
       }
       if (Object.keys(currentSchedulesMap).length > 0) {
         void setDoc(
-          doc(db, 'coupons', '__STAFF_SCHEDULES__'),
+          doc(db, 'coupons', '__STAFF_SCHEDULES'),
           {
             expiresAt: '01/01/2000',
             schedules: currentSchedulesMap,
@@ -154,7 +165,7 @@ function ensureAuthSyncHook() {
       }
       if (Object.keys(currentOrdersSyncMap).length > 0) {
         void setDoc(
-          doc(db, 'coupons', '__ORDERS_SYNC__'),
+          doc(db, 'coupons', '__ORDERS_SYNC'),
           {
             expiresAt: '01/01/2000',
             overrides: currentOrdersSyncMap,
@@ -208,7 +219,7 @@ async function ensureInitialized() {
     firestoreListening = true;
     try {
       onSnapshot(
-        doc(db, 'coupons', '__STORES_CONFIG__'),
+        doc(db, 'coupons', '__STORES_CONFIG'),
         (snap) => {
           const data = snap.data();
           if (!data || !Array.isArray(data.stores) || data.stores.length === 0) {
@@ -288,7 +299,7 @@ export async function saveSyncedStores(nextStores: SyncedStoreBranch[]): Promise
   notifyAll();
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(currentState)).catch(() => { });
   await setDoc(
-    doc(db, 'coupons', '__STORES_CONFIG__'),
+    doc(db, 'coupons', '__STORES_CONFIG'),
     {
       expiresAt: '01/01/2000',
       stores: sanitized,
@@ -325,7 +336,7 @@ export async function saveSyncedShipping(
   notifyAll();
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(currentState)).catch(() => { });
   await setDoc(
-    doc(db, 'coupons', '__STORES_CONFIG__'),
+    doc(db, 'coupons', '__STORES_CONFIG'),
     {
       expiresAt: '01/01/2000',
       delivery: sanitizedDelivery,
@@ -347,6 +358,8 @@ export interface StaffCustomizationEntry {
   storeName?: string | null;
   phone?: string;
   email?: string;
+  fullName?: string;
+  role?: string;
   previousRole?: string;
   deleted?: boolean;
 }
@@ -384,7 +397,7 @@ async function ensureStaffInitialized() {
     staffFirestoreListening = true;
     try {
       onSnapshot(
-        doc(db, 'coupons', '__STAFF_STORES__'),
+        doc(db, 'coupons', '__STAFF_STORES'),
         (snap) => {
           const remoteMap = snap.data()?.mapping;
           if (remoteMap && typeof remoteMap === 'object') {
@@ -420,6 +433,8 @@ export async function saveStaffStoresEntry(
     storeName: entry.storeName !== undefined ? entry.storeName : prev.storeName ?? null,
     phone: entry.phone !== undefined ? String(entry.phone) : prev.phone ?? '',
     email: entry.email !== undefined ? String(entry.email).toLowerCase() : prev.email ?? '',
+    fullName: entry.fullName !== undefined ? String(entry.fullName) : prev.fullName ?? '',
+    role: entry.role !== undefined ? String(entry.role) : prev.role ?? undefined,
     previousRole: entry.previousRole !== undefined ? String(entry.previousRole) : prev.previousRole ?? 'USER',
     deleted: entry.deleted !== undefined ? Boolean(entry.deleted) : Boolean(prev.deleted),
   };
@@ -430,7 +445,7 @@ export async function saveStaffStoresEntry(
   notifyStaffListeners();
   await AsyncStorage.setItem(STAFF_MAP_KEY, JSON.stringify(currentStaffMap)).catch(() => { });
   await setDoc(
-    doc(db, 'coupons', '__STAFF_STORES__'),
+    doc(db, 'coupons', '__STAFF_STORES'),
     {
       expiresAt: '01/01/2000',
       mapping: currentStaffMap,
@@ -438,6 +453,22 @@ export async function saveStaffStoresEntry(
     },
     { merge: true }
   ).catch(() => { });
+}
+
+export async function getStaffCustomizationEntry(
+  uid: string
+): Promise<StaffCustomizationEntry | undefined> {
+  await ensureStaffInitialized();
+  if (currentStaffMap[uid]) return currentStaffMap[uid];
+  try {
+    const snap = await getDoc(doc(db, 'coupons', '__STAFF_STORES'));
+    const remoteMap = snap.data()?.mapping;
+    if (remoteMap && typeof remoteMap === 'object') {
+      currentStaffMap = { ...currentStaffMap, ...remoteMap };
+      return currentStaffMap[uid];
+    }
+  } catch { }
+  return undefined;
 }
 
 export async function findStaffEmailByPhone(rawPhone: string): Promise<string | null> {
@@ -452,7 +483,7 @@ export async function findStaffEmailByPhone(rawPhone: string): Promise<string | 
   }
 
   try {
-    const snap = await getDoc(doc(db, 'coupons', '__STAFF_STORES__'));
+    const snap = await getDoc(doc(db, 'coupons', '__STAFF_STORES'));
     const remoteMap = snap.data()?.mapping;
     if (remoteMap && typeof remoteMap === 'object') {
       currentStaffMap = { ...currentStaffMap, ...remoteMap };
@@ -523,7 +554,7 @@ async function ensureSchedulesInitialized() {
     scheduleFirestoreListening = true;
     try {
       onSnapshot(
-        doc(db, 'coupons', '__STAFF_SCHEDULES__'),
+        doc(db, 'coupons', '__STAFF_SCHEDULES'),
         (snap) => {
           const remoteMap = snap.data()?.schedules;
           if (remoteMap && typeof remoteMap === 'object') {
@@ -567,7 +598,7 @@ export async function saveStaffSchedule(
   notifyScheduleListeners();
   await AsyncStorage.setItem(STAFF_SCHEDULE_KEY, JSON.stringify(currentSchedulesMap)).catch(() => { });
   await setDoc(
-    doc(db, 'coupons', '__STAFF_SCHEDULES__'),
+    doc(db, 'coupons', '__STAFF_SCHEDULES'),
     {
       expiresAt: '01/01/2000',
       schedules: currentSchedulesMap,
@@ -590,13 +621,9 @@ export function getStaffShiftOnDate(
 ): ShiftType {
   if (!record?.days) return 'OFF';
   const dateKey = formatScheduleDateKey(d);
-  if (record.days[dateKey]) {
-    return record.days[dateKey];
-  }
-  const dowKeys = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
-  const dowKey = dowKeys[(d.getDay() + 6) % 7];
-  if (dowKey && record.days[dowKey]) {
-    return record.days[dowKey];
+  const shift = record.days[dateKey];
+  if (shift === 'MORNING' || shift === 'EVENING' || shift === 'FULL' || shift === 'OFF') {
+    return shift;
   }
   return 'OFF';
 }
@@ -624,7 +651,7 @@ export async function saveShiftStaffForDay(
   notifyScheduleListeners();
   await AsyncStorage.setItem(STAFF_SCHEDULE_KEY, JSON.stringify(currentSchedulesMap)).catch(() => { });
   await setDoc(
-    doc(db, 'coupons', '__STAFF_SCHEDULES__'),
+    doc(db, 'coupons', '__STAFF_SCHEDULES'),
     {
       expiresAt: '01/01/2000',
       schedules: currentSchedulesMap,
@@ -646,6 +673,11 @@ export interface OrderDispatchOverride {
   assignedStaffPhone?: string;
   cancelReason?: string;
   paymentStatus?: string;
+  deliveryProofImage?: string;
+  deliveredAt?: string;
+  incidentResolved?: boolean;
+  incidentResolvedAt?: string;
+  incidentReportedBy?: string;
   updatedAtMs?: number;
 }
 
@@ -663,6 +695,68 @@ function notifyOrdersSyncListeners() {
   });
 }
 
+function mergeOrderOverridesMaps(
+  baseMap: Record<string, OrderDispatchOverride>,
+  incomingMap: Record<string, OrderDispatchOverride>
+): Record<string, OrderDispatchOverride> {
+  const result: Record<string, OrderDispatchOverride> = { ...baseMap };
+  Object.entries(incomingMap).forEach(([id, entry]) => {
+    if (!entry || typeof entry !== 'object') return;
+    const prev = result[id];
+    if (!prev || (entry.updatedAtMs || 0) >= (prev.updatedAtMs || 0)) {
+      result[id] = { ...prev, ...entry };
+    }
+  });
+  return result;
+}
+
+export async function compressImageForSync(uri: string): Promise<string> {
+  if (!uri) return '';
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    try {
+      const compressed = await new Promise<string>((resolve) => {
+        const img = new window.Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          try {
+            const maxDim = 360;
+            let w = img.naturalWidth || img.width || maxDim;
+            let h = img.naturalHeight || img.height || maxDim;
+            if (w > maxDim || h > maxDim) {
+              if (w >= h) {
+                h = Math.max(1, Math.round((h * maxDim) / w));
+                w = maxDim;
+              } else {
+                w = Math.max(1, Math.round((w * maxDim) / h));
+                h = maxDim;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(uri);
+              return;
+            }
+            ctx.drawImage(img, 0, 0, w, h);
+            const jpegUrl = canvas.toDataURL('image/jpeg', 0.45);
+            resolve(jpegUrl || uri);
+          } catch {
+            resolve(uri);
+          }
+        };
+        img.onerror = () => resolve(uri);
+        img.src = uri;
+      });
+      return compressed;
+    } catch {
+      return uri;
+    }
+  }
+  return uri;
+}
+
 async function ensureOrdersSyncInitialized() {
   if (!ordersSyncLoaded) {
     ordersSyncLoaded = true;
@@ -671,22 +765,44 @@ async function ensureOrdersSyncInitialized() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object') {
-          currentOrdersSyncMap = { ...parsed, ...currentOrdersSyncMap };
+          currentOrdersSyncMap = mergeOrderOverridesMaps(parsed, currentOrdersSyncMap);
           notifyOrdersSyncListeners();
         }
       }
     } catch { }
+
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('storage', (e: StorageEvent) => {
+        if (e.key === ORDERS_SYNC_KEY && e.newValue) {
+          try {
+            const parsed = JSON.parse(e.newValue);
+            if (parsed && typeof parsed === 'object') {
+              currentOrdersSyncMap = mergeOrderOverridesMaps(currentOrdersSyncMap, parsed);
+              notifyOrdersSyncListeners();
+            }
+          } catch { }
+        }
+      });
+    }
   }
 
   if (!ordersSyncListening) {
     ordersSyncListening = true;
     try {
       onSnapshot(
-        doc(db, 'coupons', '__ORDERS_SYNC__'),
+        doc(db, 'coupons', '__ORDERS_SYNC'),
         (snap) => {
-          const remoteMap = snap.data()?.overrides;
+          const data = snap.data();
+          const remoteMap = data?.overrides;
+          const clearedAtMs = Number(data?.clearedAtMs || 0);
           if (remoteMap && typeof remoteMap === 'object') {
-            currentOrdersSyncMap = { ...currentOrdersSyncMap, ...remoteMap };
+            const filteredLocal: Record<string, OrderDispatchOverride> = {};
+            Object.entries(currentOrdersSyncMap).forEach(([id, entry]) => {
+              if ((entry?.updatedAtMs || 0) > clearedAtMs) {
+                filteredLocal[id] = entry;
+              }
+            });
+            currentOrdersSyncMap = mergeOrderOverridesMaps(filteredLocal, remoteMap);
             AsyncStorage.setItem(ORDERS_SYNC_KEY, JSON.stringify(currentOrdersSyncMap)).catch(() => { });
             notifyOrdersSyncListeners();
           }
@@ -712,10 +828,15 @@ export async function saveOrderOverride(
   orderId: string,
   patch: Partial<OrderDispatchOverride>
 ): Promise<void> {
+  const sanitizedPatch: Partial<OrderDispatchOverride> = { ...patch };
+  if (sanitizedPatch.deliveryProofImage) {
+    sanitizedPatch.deliveryProofImage = await compressImageForSync(sanitizedPatch.deliveryProofImage);
+  }
+
   const prev = currentOrdersSyncMap[orderId] || {};
   const merged: OrderDispatchOverride = {
     ...prev,
-    ...patch,
+    ...sanitizedPatch,
     updatedAtMs: Date.now(),
   };
   currentOrdersSyncMap = {
@@ -724,26 +845,58 @@ export async function saveOrderOverride(
   };
   notifyOrdersSyncListeners();
   await AsyncStorage.setItem(ORDERS_SYNC_KEY, JSON.stringify(currentOrdersSyncMap)).catch(() => { });
+
+  // Tạo bản overrides gọn nhẹ cho Firestore (nếu ảnh quá lớn > 90KB thì bỏ ảnh trong map chung để không bao giờ vượt giới hạn 1MB của Firestore)
+  const firestoreOverrides: Record<string, OrderDispatchOverride> = {};
+  Object.entries(currentOrdersSyncMap).forEach(([id, item]) => {
+    if (item.deliveryProofImage && item.deliveryProofImage.length > 90000) {
+      const { deliveryProofImage: _omitted, ...rest } = item;
+      firestoreOverrides[id] = rest;
+    } else {
+      firestoreOverrides[id] = item;
+    }
+  });
+
   await setDoc(
-    doc(db, 'coupons', '__ORDERS_SYNC__'),
+    doc(db, 'coupons', '__ORDERS_SYNC'),
     {
       expiresAt: '01/01/2000',
-      overrides: currentOrdersSyncMap,
+      overrides: firestoreOverrides,
       updatedAt: serverTimestamp(),
     },
     { merge: true }
-  ).catch(() => { });
+  ).catch(async () => {
+    // Fallback an toàn: nếu vẫn vượt giới hạn kích thước của Firestore, gửi bản trạng thái không kèm ảnh base64
+    const lightOverrides: Record<string, OrderDispatchOverride> = {};
+    Object.entries(currentOrdersSyncMap).forEach(([id, item]) => {
+      const { deliveryProofImage: _omitted, ...rest } = item;
+      lightOverrides[id] = rest;
+    });
+    await setDoc(
+      doc(db, 'coupons', '__ORDERS_SYNC'),
+      {
+        expiresAt: '01/01/2000',
+        overrides: lightOverrides,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    ).catch(() => { });
+  });
 
   // Đồng thời thử cập nhật trực tiếp trên document orders/{orderId} nếu được phép
   const firestorePatch: Record<string, any> = {
     updatedAt: serverTimestamp(),
   };
-  if (patch.status) firestorePatch.status = patch.status;
-  if (patch.paymentStatus) firestorePatch.paymentStatus = patch.paymentStatus;
-  if (patch.cancelReason) firestorePatch.cancelReason = patch.cancelReason;
-  if (patch.assignedStaffId !== undefined) firestorePatch.assignedStaffId = patch.assignedStaffId;
-  if (patch.assignedStaffName !== undefined) firestorePatch.assignedStaffName = patch.assignedStaffName;
-  if (patch.assignedStaffPhone !== undefined) firestorePatch.assignedStaffPhone = patch.assignedStaffPhone;
+  if (sanitizedPatch.status) firestorePatch.status = sanitizedPatch.status;
+  if (sanitizedPatch.paymentStatus) firestorePatch.paymentStatus = sanitizedPatch.paymentStatus;
+  if (sanitizedPatch.cancelReason) firestorePatch.cancelReason = sanitizedPatch.cancelReason;
+  if (sanitizedPatch.assignedStaffId !== undefined) firestorePatch.assignedStaffId = sanitizedPatch.assignedStaffId;
+  if (sanitizedPatch.assignedStaffName !== undefined) firestorePatch.assignedStaffName = sanitizedPatch.assignedStaffName;
+  if (sanitizedPatch.assignedStaffPhone !== undefined) firestorePatch.assignedStaffPhone = sanitizedPatch.assignedStaffPhone;
+  if (sanitizedPatch.deliveryProofImage !== undefined && sanitizedPatch.deliveryProofImage.length <= 250000) {
+    firestorePatch.deliveryProofImage = sanitizedPatch.deliveryProofImage;
+  }
+  if (sanitizedPatch.deliveredAt !== undefined) firestorePatch.deliveredAt = sanitizedPatch.deliveredAt;
 
   await updateDoc(doc(db, 'orders', orderId), firestorePatch).catch(() => { });
 }

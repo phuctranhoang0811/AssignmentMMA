@@ -60,13 +60,14 @@ export default function AdminLayout() {
 
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       window.history.pushState(null, '', window.location.href);
-      const onPopState = () => {
+      const onPopState = (e: PopStateEvent) => {
+        e.stopImmediatePropagation?.();
         window.history.pushState(null, '', window.location.href);
       };
-      window.addEventListener('popstate', onPopState);
+      window.addEventListener('popstate', onPopState, true);
       return () => {
         sub.remove();
-        window.removeEventListener('popstate', onPopState);
+        window.removeEventListener('popstate', onPopState, true);
       };
     }
 

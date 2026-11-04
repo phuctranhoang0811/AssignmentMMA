@@ -11,8 +11,13 @@ export type StoreSettings = {
   delivery?: DeliveryFeeConfig;
 };
 
-// Until an admin sets hours the store is open all day, so a fresh install never blocks orders by surprise.
-export const defaultStoreSettings: StoreSettings = { acceptingOrders: true, openTime: '00:00', closeTime: '00:00', closedMessage: '' };
+// Cửa hàng mở cửa từ 08:00 đến 22:00 hằng ngày (ngoài khung 22:00 - 08:00 cửa hàng đóng cửa).
+export const defaultStoreSettings: StoreSettings = {
+  acceptingOrders: true,
+  openTime: '08:00',
+  closeTime: '22:00',
+  closedMessage: '',
+};
 
 export type StoreStatus = { open: boolean; reason: 'PAUSED' | 'OUTSIDE_HOURS' | null; message: string };
 
@@ -26,13 +31,34 @@ const vietnamMinutes = (now: Date) => (now.getUTCHours() * 60 + now.getUTCMinute
 
 export function storeStatus(settings: StoreSettings, now: Date = new Date()): StoreStatus {
   if (!settings.acceptingOrders) {
-    return { open: false, reason: 'PAUSED', message: settings.closedMessage?.trim() || 'Cửa hàng đang tạm ngưng nhận đơn. Vui lòng quay lại sau.' };
+    return {
+      open: false,
+      reason: 'PAUSED',
+      message:
+        settings.closedMessage?.trim() ||
+        'Cửa hàng đang tạm ngưng nhận đơn. Vui lòng quay lại sau.',
+    };
   }
-  const open = minutes(settings.openTime);
-  const close = minutes(settings.closeTime);
+  const effOpenTime =
+    !settings.openTime || (settings.openTime === '00:00' && settings.closeTime === '00:00')
+      ? '08:00'
+      : settings.openTime;
+  const effCloseTime =
+    !settings.closeTime || (settings.openTime === '00:00' && settings.closeTime === '00:00')
+      ? '22:00'
+      : settings.closeTime;
+
+  const open = minutes(effOpenTime);
+  const close = minutes(effCloseTime);
   const current = vietnamMinutes(now);
-  // Equal times mean open all day.
-  const inside = open === close || (open < close ? current >= open && current < close : current >= open || current < close);
-  return inside ? { open: true, reason: null, message: '' }
-    : { open: false, reason: 'OUTSIDE_HOURS', message: `Cửa hàng mở cửa từ ${settings.openTime} đến ${settings.closeTime}. Vui lòng đặt hàng trong giờ mở cửa.` };
+  const inside =
+    open === close ||
+    (open < close ? current >= open && current < close : current >= open || current < close);
+  return inside
+    ? { open: true, reason: null, message: '' }
+    : {
+        open: false,
+        reason: 'OUTSIDE_HOURS',
+        message: `Hiện tại cửa hàng đã đóng cửa (${effCloseTime} – ${effOpenTime}). Vui lòng đặt hàng trong khung giờ hoạt động từ ${effOpenTime} đến ${effCloseTime}.`,
+      };
 }

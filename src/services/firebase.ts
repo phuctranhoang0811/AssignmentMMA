@@ -1,10 +1,28 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 // @ts-ignore - subpath cho react-native persistence trong Firebase v10/v11
 import { initializeAuth, getAuth, getReactNativePersistence } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  setLogLevel,
+  type Firestore,
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { LogBox, Platform } from 'react-native';
+
+// Ẩn cảnh báo nội bộ của Firestore khi mạng chập chờn để không bật màn hình đỏ trên điện thoại
+if (Platform.OS !== 'web') {
+  LogBox.ignoreLogs([
+    '@firebase/firestore',
+    'Could not reach Cloud Firestore backend',
+    'Backend didn\'t respond within 10 seconds',
+  ]);
+}
+
+try {
+  setLogLevel('silent');
+} catch {}
 
 // Cấu hình Firebase Console của dự án PizzaStore (pizzastore-59bad)
 const firebaseConfig = {
@@ -30,8 +48,18 @@ try {
   auth = getAuth(app);
 }
 
-// Khởi tạo Cloud Firestore Database
-const db = getFirestore(app);
+// Khởi tạo Cloud Firestore Database (bật Long Polling trên iOS/Android để tránh lỗi timeout 10s của WebChannel)
+let db: Firestore;
+try {
+  db = initializeFirestore(
+    app,
+    Platform.OS === 'web'
+      ? { experimentalAutoDetectLongPolling: true }
+      : { experimentalForceLongPolling: true }
+  );
+} catch {
+  db = getFirestore(app);
+}
 
 // Firebase Storage — dùng cho admin upload hình món ăn, avatar...
 const storage = getStorage(app);

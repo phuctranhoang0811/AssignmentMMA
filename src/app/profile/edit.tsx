@@ -24,15 +24,15 @@ export default function EditProfileScreen() {
   const [fullname, setFullname] = useState(user?.fullname || '');
   const [birthday, setBirthday] = useState(user?.birthday || '01/01/2000');
   const [gender, setGender] = useState(user?.gender || 'Nam');
-  const [phone, setPhone] = useState(user?.phone || '');
-  const [email, setEmail] = useState(user?.email || '');
+  const phone = user?.phone || '';
+  const email = user?.email || '';
   const [showGenderModal, setShowGenderModal] = useState(false);
 
   const handleToggleEdit = async () => {
     if (isEditing) {
-      // Save changes
+      // Save changes (chỉ cho phép sửa Tên, Ngày sinh, Giới tính; giữ nguyên SĐT và Email)
       try {
-        await updateProfile(fullname, phone, birthday, gender, email);
+        await updateProfile(fullname.trim() || fullname, phone, birthday, gender, email);
         if (Platform.OS === 'web') {
           alert('Cập nhật hồ sơ thành công!');
         } else {
@@ -129,34 +129,34 @@ export default function EditProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Số điện thoại */}
+        {/* Số điện thoại (Không cho phép chỉnh sửa) */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Số điện thoại</Text>
-          <View style={[styles.inputBox, isEditing && styles.inputBoxEditing]}>
+          <View style={[styles.inputBox, isEditing && { opacity: 0.65 }]}>
             <TextInput
-              style={styles.inputText}
+              style={[styles.inputText, isEditing && { color: '#6B7280' }]}
               value={phone}
-              onChangeText={setPhone}
-              editable={isEditing}
+              editable={false}
+              selectTextOnFocus={false}
               keyboardType="phone-pad"
-              placeholder="Nhập số điện thoại"
+              placeholder="Chưa cập nhật số điện thoại"
               placeholderTextColor="#9CA3AF"
             />
           </View>
         </View>
 
-        {/* Email */}
+        {/* Email (Không cho phép chỉnh sửa) */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Email</Text>
-          <View style={[styles.inputBox, isEditing && styles.inputBoxEditing]}>
+          <View style={[styles.inputBox, isEditing && { opacity: 0.65 }]}>
             <TextInput
-              style={styles.inputText}
+              style={[styles.inputText, isEditing && { color: '#6B7280' }]}
               value={email}
-              onChangeText={setEmail}
-              editable={isEditing}
+              editable={false}
+              selectTextOnFocus={false}
               keyboardType="email-address"
               autoCapitalize="none"
-              placeholder="Nhập email"
+              placeholder="Chưa cập nhật email"
               placeholderTextColor="#9CA3AF"
             />
           </View>
@@ -199,4 +199,3 @@ export default function EditProfileScreen() {
     </SafeAreaView>
   );
 }
-

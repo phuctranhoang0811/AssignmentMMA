@@ -121,7 +121,7 @@ export const styles = StyleSheet.create({
   },
   cardBody: {
     flex: 1,
-    height: 88,
+    minHeight: 88,
     justifyContent: 'space-between',
     paddingVertical: 2,
   },
@@ -129,11 +129,13 @@ export const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#111827',
+    lineHeight: 20,
   },
   cardSubtitle: {
-    fontSize: 14,
+    fontSize: 13.5,
     color: '#6B7280',
     marginTop: 4,
+    lineHeight: 18,
   },
   cardFooterRow: {
     flexDirection: 'row',
@@ -152,7 +154,8 @@ export const styles = StyleSheet.create({
   },
   deleteActionBtn: {
     width: 84,
-    height: 96,
+    minHeight: 96,
+    alignSelf: 'stretch',
     backgroundColor: BRAND_RED,
     justifyContent: 'center',
     alignItems: 'center',

@@ -15,13 +15,13 @@ type Props = {
 export function CheckoutRow({ icon, title, subtitle, badge, badgeTone = 'neutral', onPress }: Props) {
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.65} accessibilityRole="button">
-      <View style={styles.icon} accessible={false}>{icon}</View>
+      <View style={styles.icon}>{icon}</View>
       <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>
         {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
       </View>
       {!!badge && <Text style={[styles.badge, badgeTone === 'accent' && styles.accentBadge]}>{badge}</Text>}
-      <ChevronRight size={17} color="#9CA3AF" accessible={false} />
+      <ChevronRight size={17} color="#9CA3AF" />
     </TouchableOpacity>
   );
 }

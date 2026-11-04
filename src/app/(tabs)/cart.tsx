@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   ChevronLeft,
   ChevronRight,
@@ -25,7 +25,13 @@ import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
 import { triggerHaptic } from '../../utils/haptics';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { hasPromptedFreeShip, setPromptedFreeShip } from '../../utils/sessionFlags';
 import { calculateOrderTotals, getItemLineUnitPrice } from '../../utils/calculateTotals';
+import { geocodeAddressStrict, geocodeAddress, getCoordinatesForAddress } from '../../services/addressService';
+import { roadDistanceKm, type LatLng, type DeliveryFeeConfig } from '../../utils/deliveryFee';
+import { subscribeStoresConfig, DEFAULT_STORE_BRANCHES } from '../../services/storeSync';
+import { doc, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { db } from '../../services/firebase';
 import { StoreLocationModal } from '../../components/modals/StoreLocationModal';
 import {
   checkHasChosenAddress,
@@ -35,6 +41,8 @@ import {
 
 import { styles, BRAND_RED } from '../../styles/cart.styles';
 import { findCoupon, useCatalog, useCoupons } from '../../services/catalog';
+import { isCouponExpired } from '../../utils/coupons';
+import { fetchUserMemberStats } from '../../utils/memberTier';
 import { QuantityStepper } from '../../components/ui/QuantityStepper';
 import { StoreClosedBanner } from '../../components/store/StoreClosedBanner';
 import { useStoreStatus } from '../../services/storeSettings';
@@ -44,18 +52,29 @@ import { canEditCartProduct } from '../../utils/cartOperations';
 import { CartItem } from '../../types/order';
 import { Product } from '../../types/product';
 import { formatCustomizationSummary } from '../../types/pizzaCustomization';
-
-// Recommendation items for "Bạn sẽ thích"
-const RECOMMENDATION_IDS = ['PA002', 'PZ002', 'PA001'];
-
-
+import {
+  isProductDiscounted,
+  sortPopularProducts,
+  selectDefaultPopularIds,
+} from '../../utils/popularRecommendations';
 
 export default function CartScreen() {
   const { products, productsMap = {} } = useCatalog();
   const coupons = useCoupons();
   const router = useRouter();
-  const { items, removeItem, updateQuantity, promoCode, setPromoCode, fulfillmentType, setFulfillmentType,
-    isLoaded, needCutlery, setNeedCutlery } = useCart();
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  const {
+    items,
+    removeItem,
+    updateQuantity,
+    promoCode,
+    setPromoCode,
+    fulfillmentType,
+    setFulfillmentType,
+    isLoaded,
+    needCutlery,
+    setNeedCutlery,
+  } = useCart();
   const { showToast } = useToast();
   const store = useStoreStatus();
   const insets = useSafeAreaInsets();
@@ -65,27 +84,28 @@ export default function CartScreen() {
     [items]
   );
 
-  const adminPopularProducts = useMemo(
-    () => (products || Object.values(productsMap)).filter((p) => p?.isPopular && p?.isAvailable),
-    [products, productsMap]
-  );
+  const adminPopularProducts = useMemo(() => {
+    const allList = products && products.length > 0 ? products : Object.values(productsMap);
+    const popular = allList.filter(
+      (p) =>
+        p &&
+        p.isPopular &&
+        (p.categoryId !== 'pizza' || !isProductDiscounted(p))
+    );
+    if (popular.length > 0) {
+      return sortPopularProducts(popular);
+    }
+    const fallbackIds = selectDefaultPopularIds(allList);
+    return sortPopularProducts(allList.filter((p) => p && fallbackIds.has(p.id)));
+  }, [products, productsMap]);
 
   const RECOMMENDATIONS = useMemo(() => {
-    if (adminPopularProducts.length > 0) {
-      return adminPopularProducts.filter((p) => !inCartProductIds.has(p.id));
-    }
-    return RECOMMENDATION_IDS.map((id) => productsMap[id]).filter(
-      (product) => product?.isAvailable && !inCartProductIds.has(product?.id)
-    );
-  }, [adminPopularProducts, inCartProductIds, productsMap]);
+    return adminPopularProducts.filter((p) => !inCartProductIds.has(p.id));
+  }, [adminPopularProducts, inCartProductIds]);
 
   const hasAddedAllRecommendations = useMemo(() => {
-    const totalList =
-      adminPopularProducts.length > 0
-        ? adminPopularProducts
-        : RECOMMENDATION_IDS.map((id) => productsMap[id]).filter((product) => product?.isAvailable);
-    return totalList.length > 0 && RECOMMENDATIONS.length === 0;
-  }, [adminPopularProducts, productsMap, RECOMMENDATIONS]);
+    return adminPopularProducts.length > 0 && RECOMMENDATIONS.length === 0;
+  }, [adminPopularProducts, RECOMMENDATIONS]);
 
   // Cutlery state & modal (Image 2)
   const [cutleryModalVisible, setCutleryModalVisible] = useState(false);
@@ -96,16 +116,145 @@ export default function CartScreen() {
   const [inputVoucherCode, setInputVoucherCode] = useState('');
   const selectedVoucher = (promoCode && findCoupon(coupons, promoCode)) || null;
   const setSelectedVoucher = (voucher: { code: string } | null) => setPromoCode(voucher?.code || '');
+  const availableVouchers = useMemo(
+    () =>
+      coupons.filter(
+        (c) =>
+          c &&
+          !(c as any).deleted &&
+          !isCouponExpired(c) &&
+          !(c.usageLimit && (c.usedCount || 0) >= c.usageLimit)
+      ),
+    [coupons]
+  );
 
   // Modal xác nhận xóa món
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+  // Modal nhắc khách mua đủ mức freeship của Admin trước khi thanh toán (chỉ hỏi 1 lần trong 1 phiên)
+  const [freeShipPromptVisible, setFreeShipPromptVisible] = useState(false);
+  // Modal thông báo khi đơn giao hàng chưa đủ mức tối thiểu
+  const [minDeliveryPopupVisible, setMinDeliveryPopupVisible] = useState(false);
+  // Modal thông báo khi cửa hàng đóng cửa (sau 22:00 - trước 08:00)
+  const [storeClosedPopupVisible, setStoreClosedPopupVisible] = useState(false);
+
+  const { user } = useAuth();
+  const mustSignIn = !user || user.isDemo;
+  const isMember = !mustSignIn;
+
+  const isItemRewardOrGift = (it: CartItem) =>
+    Boolean((it as any)?.isRewardGift) ||
+    String(it.specialInstructions || '').includes('Quà đổi điểm FPT Rewards');
+
+  const isItemMemberGift = (it: CartItem) =>
+    /Quà đổi điểm FPT Rewards \([^)]+\)/.test(String(it.specialInstructions || ''));
+
+  const getMemberGiftMinRequired = (it: CartItem): number => {
+    const m = /\[MIN:(\d+)\]/.exec(String(it.specialInstructions || ''));
+    return m && m[1] ? Number(m[1]) : 280000;
+  };
+
+  const getRedeemedGiftPoints = (it: CartItem): number => {
+    const m = /\[PTS:(\d+)\]/.exec(String(it.specialInstructions || ''));
+    return m && m[1] ? Number(m[1]) : 0;
+  };
+
+  const targetDeleteItem = useMemo(
+    () => (itemToDelete ? items.find((i) => i.lineId === itemToDelete) || null : null),
+    [itemToDelete, items]
+  );
+
+  // Kiểm tra nếu xóa món này thì Quà của tôi (hoặc Voucher đang áp dụng) có bị mất điều kiện giá trị giỏ hàng tối thiểu hay không
+  const invalidatedMemberGiftLineIds = useMemo(() => {
+    if (!targetDeleteItem || isItemRewardOrGift(targetDeleteItem)) return [];
+    const mustSignInNow = !user || user.isDemo;
+    const isMemberNow = !mustSignInNow;
+    const remainingPaidSubtotal = items.reduce((acc, it) => {
+      if (it.lineId === targetDeleteItem.lineId) return acc;
+      if (isItemRewardOrGift(it)) return acc;
+      const prod = productsMap[it.productId];
+      const uPrice = getItemLineUnitPrice(it, prod, isMemberNow);
+      return acc + uPrice * (Number(it.quantity) || 1);
+    }, 0);
+
+    return items
+      .filter(
+        (it) =>
+          it.lineId !== targetDeleteItem.lineId &&
+          isItemMemberGift(it) &&
+          remainingPaidSubtotal < getMemberGiftMinRequired(it)
+      )
+      .map((it) => it.lineId);
+  }, [targetDeleteItem, items, productsMap, user]);
+
+  const willInvalidateVoucherOnDelete = useMemo(() => {
+    if (!targetDeleteItem || isItemRewardOrGift(targetDeleteItem) || !selectedVoucher) {
+      return false;
+    }
+    const mustSignInNow = !user || user.isDemo;
+    const isMemberNow = !mustSignInNow;
+    const remainingPaidSubtotal = items.reduce((acc, it) => {
+      if (it.lineId === targetDeleteItem.lineId) return acc;
+      if (isItemRewardOrGift(it)) return acc;
+      const prod = productsMap[it.productId];
+      const uPrice = getItemLineUnitPrice(it, prod, isMemberNow);
+      return acc + uPrice * (Number(it.quantity) || 1);
+    }, 0);
+    return remainingPaidSubtotal < (selectedVoucher.minSubtotal || 0);
+  }, [targetDeleteItem, items, productsMap, user, selectedVoucher]);
+
+  const deleteWillInvalidateOffer =
+    invalidatedMemberGiftLineIds.length > 0 || willInvalidateVoucherOnDelete;
 
   const handleConfirmDelete = () => {
     if (itemToDelete) {
       triggerHaptic('medium');
+      const deletingObj = items.find((i) => i.lineId === itemToDelete);
+      if (deletingObj && isItemRewardOrGift(deletingObj)) {
+        const refundPts = getRedeemedGiftPoints(deletingObj) * (Number(deletingObj.quantity) || 1);
+        if (refundPts > 0 && user && !user.isDemo && user.id) {
+          const uid = user.id;
+          getDoc(doc(db, 'users', uid))
+            .then((uSnap) => {
+              const uData = uSnap?.exists() ? uSnap.data() : undefined;
+              const prevGifts: any[] = Array.isArray(uData?.redeemedGifts)
+                ? [...uData.redeemedGifts]
+                : [];
+              let remainingToRefund = refundPts;
+              const nextGifts = prevGifts.filter((g) => {
+                const gPts = Number(g?.points || 0);
+                if (remainingToRefund > 0 && gPts > 0 && gPts <= remainingToRefund) {
+                  remainingToRefund -= gPts;
+                  return false;
+                }
+                return true;
+              });
+              return updateDoc(doc(db, 'users', uid), {
+                rewardPoints: increment(refundPts),
+                redeemedGifts: nextGifts,
+              });
+            })
+            .catch(() => {
+              updateDoc(doc(db, 'users', uid), {
+                rewardPoints: increment(refundPts),
+              }).catch(() => {});
+            });
+        }
+      }
+
       removeItem(itemToDelete);
+      if (invalidatedMemberGiftLineIds.length > 0) {
+        invalidatedMemberGiftLineIds.forEach((gLineId) => removeItem(gLineId));
+      }
+      if (willInvalidateVoucherOnDelete) {
+        setSelectedVoucher(null);
+      }
       setItemToDelete(null);
-      showToast({ message: 'Đã xóa món khỏi giỏ hàng', type: 'info' });
+      showToast({
+        message: deleteWillInvalidateOffer
+          ? 'Đã cập nhật giỏ hàng và gỡ ưu đãi không còn đủ điều kiện'
+          : 'Đã xóa món khỏi giỏ hàng',
+        type: 'info',
+      });
     }
   };
 
@@ -117,27 +266,195 @@ export default function CartScreen() {
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [isProceeding, setIsProceeding] = useState(false);
+  const [activeStorePoints, setActiveStorePoints] = useState(DEFAULT_STORE_BRANCHES);
+  const [syncedDeliveryConfig, setSyncedDeliveryConfig] = useState<DeliveryFeeConfig | null>(null);
+  const [syncedShippingEnabled, setSyncedShippingEnabled] = useState<boolean>(true);
+  const [located, setLocated] = useState<{ address: string; point: LatLng | null } | null>(null);
 
-  useEffect(() => {
+  useFocusEffect(() => {
     getSavedDeliveryAddress().then((saved) => {
       if (saved) setDeliveryAddress(saved);
     });
+  });
+
+  useEffect(() => {
+    const unsub = subscribeStoresConfig((state) => {
+      const pts = state.stores.filter((d) => d && d.isActive !== false && d.name);
+      if (pts.length > 0) setActiveStorePoints(pts);
+      setSyncedShippingEnabled(state.shippingEnabled !== false);
+      if (state.delivery) {
+        setSyncedDeliveryConfig(state.delivery);
+      }
+    });
+    return () => unsub();
   }, []);
 
-  const { user } = useAuth();
-  // Ordering needs a real account; say so here instead of after the guest has filled in checkout.
-  const mustSignIn = !user || user.isDemo;
+  const baseShippingRules: DeliveryFeeConfig = syncedDeliveryConfig || store.settings?.delivery || {
+    storeLat: 10.8291,
+    storeLng: 106.7183,
+    baseKm: 3,
+    baseFee: 0,
+    perKm: 5000,
+    maxKm: 20,
+    freeOver: 300000,
+    minDeliveryOrder: 50000,
+  };
+  const minDeliveryOrderAmount =
+    fulfillmentType === 'delivery' ? (baseShippingRules.minDeliveryOrder ?? 50000) : 0;
 
-  const handleProceedToCheckout = async () => {
+  const shippingConfig: DeliveryFeeConfig | undefined =
+    fulfillmentType === 'delivery' && syncedShippingEnabled ? baseShippingRules : undefined;
+
+  useEffect(() => {
+    if (!shippingConfig || !deliveryAddress.trim()) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      geocodeAddressStrict(deliveryAddress)
+        .then(async (point) => {
+          const resolved = point || (await geocodeAddress(deliveryAddress));
+          if (!cancelled) setLocated({ address: deliveryAddress, point: resolved });
+        })
+        .catch(() => {
+          if (!cancelled) setLocated({ address: deliveryAddress, point: null });
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [shippingConfig, deliveryAddress]);
+
+  const deliveryPoint =
+    shippingConfig && deliveryAddress.trim()
+      ? located?.address === deliveryAddress && located.point
+        ? located.point
+        : getCoordinatesForAddress(deliveryAddress)
+      : null;
+
+  const effectiveShippingConfig = useMemo(() => {
+    if (!shippingConfig) return undefined;
+    if (!deliveryPoint || activeStorePoints.length === 0) return shippingConfig;
+    let nearest = activeStorePoints[0];
+    let minDist = roadDistanceKm(nearest, deliveryPoint);
+    for (const pt of activeStorePoints) {
+      const d = roadDistanceKm(pt, deliveryPoint);
+      if (d < minDist) {
+        minDist = d;
+        nearest = pt;
+      }
+    }
+    return {
+      ...shippingConfig,
+      storeLat: nearest.lat,
+      storeLng: nearest.lng,
+      maxKm: shippingConfig.maxKm || 15,
+    };
+  }, [shippingConfig, deliveryPoint, activeStorePoints]);
+
+  const [memberDiscountRate, setMemberDiscountRate] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    if (user && !user.isDemo && user.id) {
+      fetchUserMemberStats(user.id).then((stats) => {
+        if (active) setMemberDiscountRate(stats.discountRate);
+      });
+    } else {
+      setMemberDiscountRate(0);
+    }
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  // Calculate totals safely (Khách vãng lai tính giá gốc; Thành viên tính giá ưu đãi)
+  const subtotal = items.reduce((sum, item) => {
+    const product = productsMap[item.productId];
+    const unitPrice = getItemLineUnitPrice(item, product, isMember) || 0;
+    const qty = Number(item.quantity) || 1;
+    return sum + unitPrice * qty;
+  }, 0);
+
+  // Tự động gỡ Quà của tôi / Voucher nếu khách bấm "Sửa" món làm giảm tổng tiền giỏ hàng xuống dưới mức tối thiểu
+  useEffect(() => {
+    if (!isLoaded || Object.keys(productsMap).length === 0 || itemToDelete !== null) return;
+    const invalidGiftLines = items.filter(
+      (it) => isItemMemberGift(it) && subtotal < getMemberGiftMinRequired(it)
+    );
+    const invalidVoucher =
+      Boolean(selectedVoucher) && subtotal < (selectedVoucher?.minSubtotal || 0);
+
+    if (invalidGiftLines.length > 0 || invalidVoucher) {
+      invalidGiftLines.forEach((it) => removeItem(it.lineId));
+      if (invalidVoucher) {
+        setPromoCode('');
+      }
+      showToast({
+        message: 'Ưu đãi đã tự động gỡ do giỏ hàng không còn đủ giá trị tối thiểu',
+        type: 'info',
+      });
+    }
+  }, [isLoaded, productsMap, subtotal, items, selectedVoucher, itemToDelete]);
+
+  const singleItemsSubtotal = items.reduce((sum, item) => {
+    const isRewardItem =
+      Boolean((item as any)?.isRewardGift) ||
+      String(item.specialInstructions || '').includes('Quà đổi điểm FPT Rewards');
+    if (isRewardItem) return sum;
+    const p = productsMap[item.productId];
+    const isComboOrPromo =
+      p?.categoryId === 'cheese_party' ||
+      p?.categoryId === 'member_deals' ||
+      p?.categoryId === 'hot_deals' ||
+      (p?.promoGroups || []).some((g) => ['cheese_party', 'member_deals', 'hot_deals'].includes(g)) ||
+      (!!p?.originalPrice && p.originalPrice > p.basePrice);
+    if (isComboOrPromo) return sum;
+    const unit = getItemLineUnitPrice(item, p, isMember) || 0;
+    return sum + unit * (Number(item.quantity) || 1);
+  }, 0);
+
+  const itemCount = items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
+
+  const totals = calculateOrderTotals(
+    items,
+    productsMap,
+    fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP',
+    selectedVoucher,
+    undefined,
+    effectiveShippingConfig && deliveryPoint
+      ? { config: effectiveShippingConfig, to: deliveryPoint }
+      : undefined,
+    isMember
+  );
+  const hasActivePromoVoucher = Boolean(
+    selectedVoucher && !selectedVoucher.freeShipping && subtotal >= selectedVoucher.minSubtotal
+  );
+  const memberDiscount =
+    isMember && memberDiscountRate > 0 && !hasActivePromoVoucher
+      ? Math.round(singleItemsSubtotal * memberDiscountRate)
+      : 0;
+  const subtotalAfterMember = Math.max(0, subtotal - memberDiscount);
+  const voucherDiscount = (() => {
+    if (!selectedVoucher || selectedVoucher.freeShipping) return 0;
+    if (subtotalAfterMember < selectedVoucher.minSubtotal && subtotal < selectedVoucher.minSubtotal) {
+      return 0;
+    }
+    if (selectedVoucher.discountType === 'PERCENT') {
+      const pctVal = Math.round((subtotalAfterMember * selectedVoucher.value) / 100);
+      const capped = selectedVoucher.maxDiscount
+        ? Math.min(pctVal, selectedVoucher.maxDiscount)
+        : pctVal;
+      return Math.min(capped, subtotalAfterMember);
+    }
+    return Math.min(selectedVoucher.value, subtotalAfterMember);
+  })();
+  const total = Math.max(0, subtotalAfterMember - voucherDiscount + totals.deliveryFee);
+  const earnedPoints = isMember ? Math.floor(total / 10000) : 0;
+  const freeOverThreshold = shippingConfig?.freeOver ?? 0;
+  const orderAfterDiscount = Math.max(0, subtotal - voucherDiscount - memberDiscount);
+
+  const continueToCheckout = async () => {
     if (isProceeding) return;
-    if (!store.open) {
-      showToast({ message: store.message, type: 'info' });
-      return;
-    }
-    if (false && mustSignIn) {
-      router.push({ pathname: '/auth/login', params: { returnTo: 'cart-checkout' } });
-      return;
-    }
     setIsProceeding(true);
     try {
       const hasChosen = await checkHasChosenAddress();
@@ -150,30 +467,82 @@ export default function CartScreen() {
       }
     } catch {
       showToast({ message: 'Chưa thể mở thanh toán. Vui lòng thử lại.', type: 'error' });
-    } finally { setIsProceeding(false); }
+    } finally {
+      setIsProceeding(false);
+    }
   };
 
-  // Calculate totals safely
-  const subtotal = items.reduce((sum, item) => {
-    const product = productsMap[item.productId];
-    const unitPrice = getItemLineUnitPrice(item, product) || 0;
-    const qty = Number(item.quantity) || 1;
-    return sum + unitPrice * qty;
-  }, 0);
-
-  const itemCount = items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
-
-  const totals = calculateOrderTotals(items, productsMap, fulfillmentType === 'delivery' ? 'DELIVERY' : 'PICKUP', selectedVoucher);
-  const { discount: voucherDiscount, total } = totals;
-  const earnedPoints = Math.floor(total / 10000);
+  const handleProceedToCheckout = async () => {
+    if (isProceeding) return;
+    if (!store.open) {
+      triggerHaptic('warning');
+      setStoreClosedPopupVisible(true);
+      return;
+    }
+    const soldOutItem = items.find((it) => productsMap[it.productId]?.isAvailable === false);
+    if (soldOutItem) {
+      const soldOutName =
+        productsMap[soldOutItem.productId]?.name || (soldOutItem as any).name || 'Sản phẩm';
+      triggerHaptic('warning');
+      showToast({
+        message: `Món "${soldOutName}" hiện đã tạm hết hàng. Vui lòng xóa khỏi giỏ trước khi thanh toán.`,
+        type: 'error',
+      });
+      return;
+    }
+    if (false && mustSignIn) {
+      router.push({ pathname: '/auth/login', params: { returnTo: 'cart-checkout' } });
+      return;
+    }
+    if (fulfillmentType === 'delivery' && !syncedShippingEnabled) {
+      triggerHaptic('warning');
+      showToast({
+        message: 'Cửa hàng hiện đang tạm ngưng giao hàng tận nơi. Vui lòng chuyển sang Nhận tại cửa hàng.',
+        type: 'error',
+      });
+      return;
+    }
+    if (
+      fulfillmentType === 'delivery' &&
+      minDeliveryOrderAmount > 0 &&
+      subtotal < minDeliveryOrderAmount
+    ) {
+      triggerHaptic('warning');
+      setMinDeliveryPopupVisible(true);
+      return;
+    }
+    if (
+      !hasPromptedFreeShip() &&
+      fulfillmentType === 'delivery' &&
+      syncedShippingEnabled &&
+      !!shippingConfig &&
+      freeOverThreshold > 0 &&
+      subtotal < freeOverThreshold &&
+      totals.deliveryFee > 0
+    ) {
+      setPromptedFreeShip(true);
+      triggerHaptic('light');
+      setFreeShipPromptVisible(true);
+      return;
+    }
+    await continueToCheckout();
+  };
 
   const handleEditItem = (item: CartItem) => {
     if (!canEditCartProduct(productsMap[item.productId])) return;
     router.push({ pathname: '/product/[id]', params: { id: item.productId, lineId: item.lineId } });
   };
 
-  const handleAddRecommendation = (rec: Product) => {
+  const handleOpenRecommendationDetail = (rec: Product) => {
+    if (rec.isAvailable === false) return;
     triggerHaptic('light');
+    router.push({ pathname: '/product/[id]', params: { id: rec.id } });
+  };
+
+  const handleQuickAddRecommendation = (rec: Product, e?: any) => {
+    e?.stopPropagation?.();
+    if (rec.isAvailable === false) return;
+    triggerHaptic('medium');
     router.push({ pathname: '/product/[id]', params: { id: rec.id } });
   };
 
@@ -222,6 +591,18 @@ export default function CartScreen() {
     </SafeAreaView>;
   }
 
+  const handleBackFromCart = () => {
+    if (from === 'checkout' && items.length > 0) {
+      router.replace('/checkout');
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/home');
+    }
+  };
+
   if (items.length === 0) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -229,7 +610,7 @@ export default function CartScreen() {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/home'))}
+            onPress={handleBackFromCart}
             activeOpacity={0.7}
           >
             <ChevronLeft size={26} color="#111827" />
@@ -266,7 +647,7 @@ export default function CartScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/home'))}
+          onPress={handleBackFromCart}
           activeOpacity={0.7}
         >
           <ChevronLeft size={26} color="#111827" />
@@ -292,15 +673,39 @@ export default function CartScreen() {
           {items.map((item, index) => {
             const product = productsMap[item.productId];
             const variant = product?.variants?.find((v) => v.id === item.variantId);
+            const fallbackVariantName =
+              item.variantId === 'small'
+                ? 'Cỡ Nhỏ'
+                : item.variantId === 'medium'
+                  ? 'Cỡ Vừa'
+                  : item.variantId === 'large'
+                    ? 'Cỡ Lớn'
+                    : undefined;
+            const isRewardItem =
+              Boolean((item as any)?.isRewardGift) ||
+              String(item.specialInstructions || '').includes('Quà đổi điểm FPT Rewards');
 
-            const unitPrice = getItemLineUnitPrice(item, product) || (item as any).basePrice || 0;
+            const unitPrice = isRewardItem
+              ? 0
+              : getItemLineUnitPrice(item, product, isMember) || (item as any).basePrice || 0;
+            const memberUnitPrice = isRewardItem
+              ? 0
+              : getItemLineUnitPrice(item, product, true) || unitPrice;
             const lineTotal = unitPrice * (Number(item.quantity) || 1);
 
+            const itemNote = (
+              item.specialInstructions ||
+              item.customization?.specialInstructions ||
+              ''
+            ).trim();
             const options = [
-              ...(item.customization ? formatCustomizationSummary(item.customization) : variant ? [variant.name] : []),
+              variant?.name || fallbackVariantName,
+              ...(item.customization ? formatCustomizationSummary(item.customization) : []),
               ...item.addonIds.map(id => product?.addons?.find(addon => addon.id === id)?.name).filter(Boolean),
-              item.specialInstructions,
-            ].filter(Boolean).join(' • ');
+            ]
+              .filter(Boolean)
+              .filter((val, idx, arr) => arr.indexOf(val) === idx)
+              .join(' • ');
             const isLast = index === items.length - 1;
 
             return (
@@ -329,39 +734,80 @@ export default function CartScreen() {
                     <Text style={styles.itemName} numberOfLines={2}>
                       {product?.name || (item as any).name || 'Sản phẩm'}
                     </Text>
+                    <Text style={styles.itemQuantity}>{item.quantity}</Text>
                   </View>
 
                   {!!options && <Text style={styles.itemOptions} numberOfLines={3}>{options}</Text>}
+                  {product?.isAvailable === false && (
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: BRAND_RED,
+                        fontWeight: '700',
+                        marginTop: 4,
+                      }}
+                    >
+                      Tạm hết hàng — vui lòng xóa món này để tiếp tục
+                    </Text>
+                  )}
+                  {!!itemNote && !isRewardItem && (
+                    <Text
+                      style={[
+                        styles.itemOptions,
+                        {
+                          color: '#B45309',
+                          fontWeight: '600',
+                          marginTop: 2,
+                        },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      Ghi chú: {itemNote}
+                    </Text>
+                  )}
+
+                  {!isMember && !isRewardItem && memberUnitPrice < unitPrice && (
+                    <Text style={{ fontSize: 12, color: BRAND_RED, fontWeight: '600', marginTop: 4 }}>
+                      Giá gốc khách vãng lai (Đăng nhập chỉ còn {formatCurrency(memberUnitPrice * (Number(item.quantity) || 1))})
+                    </Text>
+                  )}
 
                   {/* Actions & Price */}
                   <View style={styles.itemBottomLine}>
-                    <QuantityStepper value={item.quantity} onChange={value => updateQuantity(item.lineId, value)} />
-                    <Text style={styles.itemPriceText}>{formatCurrency(lineTotal)}</Text>
-                  </View>
-                  <View style={styles.actionLinksRow}>
-                    {canEditCartProduct(product) && (
+                    <View style={styles.actionLinksRow}>
+                      {isRewardItem ? (
+                        <View style={styles.itemAction}>
+                          <Text style={[styles.editActionText, { color: '#6B7280' }]}>
+                            Khuyến mãi
+                          </Text>
+                        </View>
+                      ) : (
+                        canEditCartProduct(product) && (
+                          <TouchableOpacity
+                            accessibilityLabel={`Sửa ${product?.name || "món"}`}
+                            accessibilityRole="button"
+                            style={styles.itemAction}
+                            onPress={() => handleEditItem(item)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.editActionText}>Sửa</Text>
+                          </TouchableOpacity>
+                        )
+                      )}
                       <TouchableOpacity
-                        accessibilityLabel={`Sửa ${product?.name || "món"}`}
                         accessibilityRole="button"
-                        style={styles.itemAction}
-                        onPress={() => handleEditItem(item)}
+                        accessibilityLabel={`Xóa ${product?.name || 'món'} khỏi giỏ hàng`}
+                        onPress={() => {
+                          triggerHaptic('light');
+                          setItemToDelete(item.lineId);
+                        }}
                         activeOpacity={0.7}
+                        style={styles.itemAction}
                       >
-                        <Text style={styles.editActionText}>Sửa</Text>
+                        <Text style={styles.deleteActionText}>Xóa</Text>
                       </TouchableOpacity>
-                    )}
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={`Xóa ${product?.name || 'món'} khỏi giỏ hàng`}
-                      onPress={() => {
-                        triggerHaptic('light');
-                        setItemToDelete(item.lineId);
-                      }}
-                      activeOpacity={0.7}
-                      style={styles.itemAction}
-                    >
-                      <Text style={styles.deleteActionText}>Xóa</Text>
-                    </TouchableOpacity>
+                    </View>
+                    <Text style={styles.itemPriceText}>{formatCurrency(lineTotal)}</Text>
                   </View>
                 </View>
               </View>
@@ -396,40 +842,98 @@ export default function CartScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.recommendationsList}
           >
-            {RECOMMENDATIONS.map((rec) => (
-              <TouchableOpacity
-                key={rec.id}
-                style={styles.recCard}
-                activeOpacity={0.88}
-                onPress={() => handleAddRecommendation(rec)}
-              >
-                <Image
-                  source={{ uri: rec.image }}
-                  style={styles.recImage}
-                  resizeMode="cover"
-                />
-                <View style={styles.recContent}>
-                  <Text style={styles.recTitle} numberOfLines={1}>
-                    {rec.name}
-                  </Text>
-                  <Text style={styles.recDescription} numberOfLines={2}>
-                    {rec.description}
-                  </Text>
-                  <View style={styles.recBottomRow}>
-                    <Text style={styles.recPrice}>{rec.variants?.length ? 'Từ ' : ''}{formatCurrency(rec.basePrice)}</Text>
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={`Xem chi tiết ${rec.name}`}
-                      style={styles.recAddBtn}
-                      onPress={() => handleAddRecommendation(rec)}
-                      activeOpacity={0.8}
-                    >
-                      <Plus size={18} color="#FFFFFF" strokeWidth={2.4} />
-                    </TouchableOpacity>
+            {RECOMMENDATIONS.map((rec) => {
+              const isSoldOut = rec.isAvailable === false;
+              return (
+                <TouchableOpacity
+                  key={rec.id}
+                  style={styles.recCard}
+                  activeOpacity={isSoldOut ? 1 : 0.88}
+                  disabled={isSoldOut}
+                  onPress={() => handleOpenRecommendationDetail(rec)}
+                >
+                  <View style={{ position: 'relative', borderRadius: 8, overflow: 'hidden' }}>
+                    <Image
+                      source={{ uri: rec.image }}
+                      style={[styles.recImage, isSoldOut && { opacity: 0.85 }]}
+                      resizeMode="contain"
+                    />
+                    {isSoldOut && (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          backgroundColor: 'rgba(17, 24, 39, 0.16)',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          borderRadius: 8,
+                        }}
+                      >
+                        <View
+                          style={{
+                            backgroundColor: 'rgba(31, 41, 55, 0.88)',
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            borderRadius: 999,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255, 255, 255, 0.6)',
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: '#FFFFFF',
+                              fontSize: 10,
+                              fontWeight: '800',
+                              letterSpacing: 0.4,
+                            }}
+                          >
+                            HẾT MÓN
+                          </Text>
+                        </View>
+                      </View>
+                    )}
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))}
+                  <View style={styles.recContent}>
+                    <Text
+                      style={[styles.recTitle, isSoldOut && { color: '#4B5563' }]}
+                      numberOfLines={1}
+                    >
+                      {rec.name}
+                    </Text>
+                    <Text
+                      style={[styles.recDescription, isSoldOut && { color: '#6B7280' }]}
+                      numberOfLines={2}
+                    >
+                      {rec.description}
+                    </Text>
+                    <View style={styles.recBottomRow}>
+                      <Text style={[styles.recPrice, isSoldOut && { color: '#6B7280' }]}>
+                        {rec.categoryId === 'pizza' || (rec.variants && rec.variants.length > 1)
+                          ? 'Từ '
+                          : ''}
+                        {formatCurrency(rec.basePrice)}
+                      </Text>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={`Thêm ${rec.name}`}
+                        style={[
+                          styles.recAddBtn,
+                          isSoldOut && { backgroundColor: '#D1D5DB' },
+                        ]}
+                        disabled={isSoldOut}
+                        onPress={(e) => handleQuickAddRecommendation(rec, e)}
+                        activeOpacity={isSoldOut ? 1 : 0.8}
+                      >
+                        <Plus size={18} color="#FFFFFF" strokeWidth={2.4} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </View>
 
@@ -501,10 +1005,23 @@ export default function CartScreen() {
             </View>
           )}
 
+          {memberDiscount > 0 && (
+            <View style={styles.pricingRow}>
+              <Text style={[styles.pricingLabel, { color: BRAND_RED }]}>
+                Giảm giá thành viên ({Math.round(memberDiscountRate * 100)}%)
+              </Text>
+              <Text style={[styles.pricingValue, { color: BRAND_RED }]}>
+                -{formatCurrency(memberDiscount)}
+              </Text>
+            </View>
+          )}
+
 
           {fulfillmentType === 'delivery' && (
             <View style={styles.pricingRow}>
-              <Text style={styles.pricingLabel}>Phí giao hàng</Text>
+              <Text style={styles.pricingLabel}>
+                Phí giao hàng{totals.deliveryDistanceKm ? ` (${totals.deliveryDistanceKm} km)` : ''}
+              </Text>
               <Text style={styles.pricingValue}>
                 {totals.deliveryFee === 0 ? 'Miễn phí' : formatCurrency(totals.deliveryFee)}
               </Text>
@@ -618,48 +1135,168 @@ export default function CartScreen() {
             {/* Subtext: "Hoặc chọn mã giảm giá của bạn" */}
             <Text style={styles.voucherSubheading}>Hoặc chọn mã giảm giá của bạn</Text>
 
-            {/* Selected Voucher Indicator (if any) */}
-            {selectedVoucher && (
-              <View style={styles.appliedVoucherBadge}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.appliedVoucherCode}>Đã áp dụng: {selectedVoucher.code}</Text>
-                  <Text style={styles.appliedVoucherTitle}>{selectedVoucher.description}</Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => setSelectedVoucher(null)}
-                  style={styles.removeVoucherBtn}
-                >
-                  <Text style={styles.removeVoucherText}>Gỡ bỏ</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+            {/* Danh sách mã giảm giá đồng bộ realtime từ Admin */}
+            {availableVouchers.length > 0 ? (
+              <ScrollView
+                style={{ flex: 1, marginTop: 12 }}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 24, gap: 10 }}
+              >
+                {availableVouchers.map((voucher) => {
+                  const isSelected =
+                    selectedVoucher?.code.toUpperCase() === voucher.code.toUpperCase();
+                  const hasOtherSelected = !!selectedVoucher && !isSelected;
+                  const canApply = subtotal >= (voucher.minSubtotal || 0);
+                  const isDimmed = !canApply || hasOtherSelected;
+                  const benefitLabel = voucher.freeShipping
+                    ? 'Miễn phí giao hàng'
+                    : voucher.discountType === 'PERCENT'
+                    ? `Giảm ${voucher.value}%${
+                        voucher.maxDiscount
+                          ? ` (tối đa ${formatCurrency(voucher.maxDiscount)})`
+                          : ''
+                      }`
+                    : `Giảm ${formatCurrency(voucher.value)}`;
 
-            {/* Empty State Center: Ticket with star + "Chưa có mã giảm giá" */}
-            {!selectedVoucher && (
-              <View style={styles.emptyVoucherBox}>
-                <EmptyTicketIcon />
-                <Text style={styles.emptyVoucherTitle}>Chưa có mã giảm giá</Text>
-                <Text style={styles.emptyVoucherSubtitle}>
-                  Thêm mã giảm giá có sẵn vào thanh nhập mã phía trên
-                </Text>
+                  return (
+                    <TouchableOpacity
+                      key={voucher.code}
+                      activeOpacity={canApply || isSelected ? 0.8 : 1}
+                      disabled={!canApply && !isSelected}
+                      onPress={() => {
+                        if (isSelected) {
+                          setSelectedVoucher(null);
+                          return;
+                        }
+                        if (!canApply) return;
+                        setSelectedVoucher(voucher);
+                        triggerHaptic('success');
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: isSelected
+                          ? '#FFF7F5'
+                          : !canApply
+                          ? '#F3F4F6'
+                          : '#FFFFFF',
+                        borderRadius: 12,
+                        padding: 14,
+                        borderWidth: 1.5,
+                        borderColor: isSelected ? BRAND_RED : '#E5E7EB',
+                        borderLeftWidth: 4,
+                        borderLeftColor: isSelected
+                          ? BRAND_RED
+                          : isDimmed
+                          ? '#9CA3AF'
+                          : BRAND_RED,
+                        opacity: isSelected ? 1 : !canApply ? 0.45 : hasOtherSelected ? 0.55 : 1,
+                      }}
+                    >
+                      <View style={{ flex: 1, paddingRight: 12 }}>
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 8,
+                            flexWrap: 'wrap',
+                            marginBottom: 6,
+                          }}
+                        >
+                          <View
+                            style={{
+                              backgroundColor: isSelected ? BRAND_RED : '#FEF2F2',
+                              paddingHorizontal: 8,
+                              paddingVertical: 3,
+                              borderRadius: 5,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 12.5,
+                                fontWeight: '800',
+                                color: isSelected ? '#FFFFFF' : BRAND_RED,
+                              }}
+                            >
+                              {voucher.code}
+                            </Text>
+                          </View>
+                          <View
+                            style={{
+                              backgroundColor: '#ECFDF5',
+                              borderWidth: 1,
+                              borderColor: '#A7F3D0',
+                              paddingHorizontal: 8,
+                              paddingVertical: 2,
+                              borderRadius: 6,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 11.5,
+                                fontWeight: '700',
+                                color: '#047857',
+                              }}
+                            >
+                              {benefitLabel}
+                            </Text>
+                          </View>
+                        </View>
 
-                {/* Helpful quick test chips */}
-                <View style={styles.quickVouchersWrap}>
-                  <Text style={styles.quickVouchersLabel}>Gợi ý mã dùng thử:</Text>
-                  <View style={styles.chipsRow}>
-                    {['PIZZAFPT', 'FPT40', 'FREESHIP'].map((code) => (
-                      <TouchableOpacity
-                        key={code}
-                        style={styles.chipBtn}
-                        onPress={() => setInputVoucherCode(code)}
-                        activeOpacity={0.7}
+                        <Text
+                          style={{
+                            fontSize: 13.5,
+                            fontWeight: '600',
+                            color: '#1F2937',
+                            marginBottom: 6,
+                          }}
+                        >
+                          {voucher.description}
+                        </Text>
+
+                        {!!voucher.expiresAt && (
+                          <Text style={{ fontSize: 12, color: '#6B7280' }}>
+                            HSD: {voucher.expiresAt}
+                          </Text>
+                        )}
+                      </View>
+
+                      <View
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 12,
+                          borderWidth: 2,
+                          borderColor: isSelected
+                            ? BRAND_RED
+                            : !canApply
+                            ? '#D1D5DB'
+                            : '#9CA3AF',
+                          backgroundColor: isSelected
+                            ? BRAND_RED
+                            : !canApply
+                            ? '#E5E7EB'
+                            : '#FFFFFF',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
                       >
-                        <Text style={styles.chipText}>{code}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                        {isSelected && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              !selectedVoucher && (
+                <View style={styles.emptyVoucherBox}>
+                  <EmptyTicketIcon />
+                  <Text style={styles.emptyVoucherTitle}>Chưa có mã giảm giá</Text>
+                  <Text style={styles.emptyVoucherSubtitle}>
+                    Thêm mã giảm giá có sẵn vào thanh nhập mã phía trên
+                  </Text>
                 </View>
-              </View>
+              )
             )}
           </View>
 
@@ -753,7 +1390,7 @@ export default function CartScreen() {
       </Modal>
 
       {/* ======================================================== */}
-      {/* MODAL 3: XÁC NHẬN XÓA MÓN (EXACT REPLICA CỦA ẢNH CHỤP)     */}
+      {/* MODAL 3: XÁC NHẬN XÓA MÓN / CẢNH BÁO MẤT ƯU ĐÃI           */}
       {/* ======================================================== */}
       <Modal
         visible={itemToDelete !== null}
@@ -763,10 +1400,14 @@ export default function CartScreen() {
       >
         <View style={styles.deleteModalOverlay}>
           <View style={styles.deleteModalCard}>
-            <Text style={styles.deleteModalTitle}>Xóa món</Text>
+            <Text style={styles.deleteModalTitle}>
+              {deleteWillInvalidateOffer ? 'Thông báo' : 'Xóa món'}
+            </Text>
             <View style={styles.deleteModalRedLine} />
             <Text style={styles.deleteModalMessage}>
-              Bạn có muốn xóa món này không?
+              {deleteWillInvalidateOffer
+                ? 'Ưu đãi của bạn sẽ không được áp dụng nếu bạn thay đổi giá trị giỏ hàng. Bạn muốn tiếp tục thao tác này không?'
+                : 'Bạn có muốn xóa món này không?'}
             </Text>
 
             <View style={styles.deleteModalButtonsRow}>
@@ -783,9 +1424,131 @@ export default function CartScreen() {
                 onPress={handleConfirmDelete}
                 activeOpacity={0.88}
               >
-                <Text style={styles.deleteModalConfirmText}>Xác nhận</Text>
+                <Text style={styles.deleteModalConfirmText}>
+                  {deleteWillInvalidateOffer ? 'Tiếp tục' : 'Xác nhận'}
+                </Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* MODAL 4: THÔNG BÁO ƯU ĐÃI MIỄN PHÍ GIAO HÀNG KHI THANH TOÁN */}
+      {/* ======================================================== */}
+      <Modal
+        visible={freeShipPromptVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFreeShipPromptVisible(false)}
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={styles.deleteModalCard}>
+            <Text style={styles.deleteModalTitle}>Ưu đãi miễn phí giao hàng</Text>
+            <View style={styles.deleteModalRedLine} />
+            <Text style={styles.deleteModalMessage}>
+              Đơn hàng từ {formatCurrency(freeOverThreshold)} trở lên sẽ được miễn phí giao hàng. Bạn có muốn chọn thêm món không?
+            </Text>
+
+            <View style={styles.deleteModalButtonsRow}>
+              <TouchableOpacity
+                style={[styles.deleteModalBtn, styles.deleteModalCancelBtn]}
+                onPress={() => {
+                  setFreeShipPromptVisible(false);
+                  void continueToCheckout();
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deleteModalCancelText}>Thanh toán tiếp</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.deleteModalBtn, styles.deleteModalConfirmBtn]}
+                onPress={() => {
+                  triggerHaptic('light');
+                  setFreeShipPromptVisible(false);
+                  router.push('/(tabs)/menu');
+                }}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.deleteModalConfirmText}>Chấp nhận</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* MODAL 5: THÔNG BÁO CHƯA ĐỦ ĐIỀU KIỆN GIAO HÀNG           */}
+      {/* ======================================================== */}
+      <Modal
+        visible={minDeliveryPopupVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMinDeliveryPopupVisible(false)}
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={styles.deleteModalCard}>
+            <Text style={styles.deleteModalTitle}>Thông báo</Text>
+            <View style={styles.deleteModalRedLine} />
+            <Text style={styles.deleteModalMessage}>
+              Đợi đã! Bạn vui lòng mua thêm{' '}
+              {formatCurrency(Math.max(0, minDeliveryOrderAmount - subtotal))} để đủ điều
+              kiện giao hàng
+            </Text>
+
+            <TouchableOpacity
+              style={{
+                width: '100%',
+                backgroundColor: BRAND_RED,
+                borderRadius: 8,
+                paddingVertical: 13,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginTop: 4,
+              }}
+              onPress={() => setMinDeliveryPopupVisible(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.deleteModalConfirmText}>Xác nhận</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* MODAL 6: THÔNG BÁO CỬA HÀNG ĐÓNG CỬA (SAU 22:00 - 08:00)  */}
+      {/* ======================================================== */}
+      <Modal
+        visible={storeClosedPopupVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setStoreClosedPopupVisible(false)}
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={styles.deleteModalCard}>
+            <Text style={styles.deleteModalTitle}>Thông báo</Text>
+            <View style={styles.deleteModalRedLine} />
+            <Text style={styles.deleteModalMessage}>
+              {store.message ||
+                'Hiện tại cửa hàng đã đóng cửa (22:00 – 08:00). Vui lòng đặt hàng trong khung giờ hoạt động từ 08:00 đến 22:00.'}
+            </Text>
+
+            <TouchableOpacity
+              style={{
+                width: '100%',
+                backgroundColor: BRAND_RED,
+                borderRadius: 8,
+                paddingVertical: 13,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginTop: 4,
+              }}
+              onPress={() => setStoreClosedPopupVisible(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.deleteModalConfirmText}>Xác nhận</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

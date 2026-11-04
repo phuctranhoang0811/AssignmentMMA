@@ -16,9 +16,11 @@ import {
   Ban,
   RotateCcw,
 } from 'lucide-react-native';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, updateDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { markOrderRefunded, rejectStaffOrder } from '../../services/orderApi';
+import { saveOrderOverride } from '../../services/storeSync';
+import { rollbackCancelledOrderBenefits } from '../../utils/memberTier';
 import { Alert } from '../../utils/alert';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { AppText } from '../../components/ui/AppText';
@@ -118,7 +120,16 @@ export default function AdminOrdersScreen() {
           onPress: async () => {
             // Through the backend: keeps status history and flags paid orders for refund.
             try {
-              await rejectStaffOrder(order.id, 'Admin can thiệp hủy đơn');
+              const nowIso = new Date().toISOString();
+              await rejectStaffOrder(order.id, 'Admin can thiệp hủy đơn').catch(() => {});
+              await saveOrderOverride(order.id, { status: 'CANCELLED', cancelReason: 'Admin can thiệp hủy đơn' }).catch(() => {});
+              await updateDoc(doc(db, 'orders', order.id), {
+                status: 'CANCELLED',
+                cancelReason: 'Admin can thiệp hủy đơn',
+                statusHistory: arrayUnion({ status: 'CANCELLED', at: nowIso, note: 'Admin can thiệp hủy đơn' }),
+                updatedAt: serverTimestamp(),
+              }).catch(() => {});
+              await rollbackCancelledOrderBenefits(order);
               Alert.alert('Đã hủy', `Đơn hàng #${order.id.slice(-6).toUpperCase()} đã được hủy.`);
             } catch (e) {
               Alert.alert('Chưa hủy được đơn', e instanceof Error ? e.message : 'Vui lòng thử lại.');

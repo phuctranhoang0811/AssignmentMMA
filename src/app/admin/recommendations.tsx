@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
-  FlatList,
+  ScrollView,
   TextInput,
   TouchableOpacity,
   Image,
   ActivityIndicator,
-  RefreshControl,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -14,498 +14,515 @@ import {
   Search,
   Sparkles,
   X,
-  Flame,
-  Star,
-  ShoppingBag,
-  Medal,
+  Plus,
+  Trash2,
 } from 'lucide-react-native';
 import {
   collection,
   onSnapshot,
-  query,
   doc,
-  updateDoc,
+  setDoc,
   serverTimestamp,
-  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
+import { useToast } from '../../state/ToastContext';
+import { productService } from '../../services';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { AppText } from '../../components/ui/AppText';
 import { colors } from '../../theme/colors';
-import { styles } from '../../styles/adminRecommendations.styles';
+import { styles } from '../../styles/adminProducts.styles';
 import { Product } from '../../types/product';
-import { mockProducts } from '../../data/mockProducts';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { Alert } from '../../utils/alert';
 import { triggerHaptic } from '../../utils/haptics';
 import { reportAdminAction } from '../../services/orderApi';
+import {
+  isProductDiscounted,
+  sortPopularProducts,
+  ensureDefaultPopularRecommendations,
+} from '../../utils/popularRecommendations';
 
-interface ProductWithSales extends Product {
-  soldCount: number;
-  totalRevenue: number;
-}
+const CATEGORY_TABS = [
+  { id: 'all', name: 'Tất cả' },
+  { id: 'pizza', name: 'Pizza' },
+  { id: 'starters', name: 'Khai vị' },
+  { id: 'drinks', name: 'Thức uống' },
+] as const;
+
+const CAT_LABELS: Record<string, string> = {
+  pizza: 'PIZZA NGUYÊN GIÁ',
+  starters: 'KHAI VỊ',
+  drinks: 'THỨC UỐNG',
+};
+
+const norm = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 export default function AdminRecommendationsScreen() {
   const router = useRouter();
+  const { showToast } = useToast();
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<string>('all');
   const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
 
-  // 1. Lắng nghe real-time từ collection 'products'
+  // Modal thêm món vào "Bạn sẽ thích"
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerCategory, setPickerCategory] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Lắng nghe 100% dữ liệu thật từ Firestore 'products' (không dùng mockProducts)
   useEffect(() => {
-    const unsubProducts = onSnapshot(
+    const unsub = onSnapshot(
       collection(db, 'products'),
       (snapshot) => {
-        if (!snapshot.empty) {
-          const list: Product[] = [];
-          snapshot.forEach((d) => {
-            const data = d.data();
-            list.push({
-              id: d.id,
-              name: data.name || 'Món ăn',
-              categoryId: data.categoryId || data.category || 'pizza',
-              description: data.description || '',
-              image:
-                data.image ||
-                data.imageUrl ||
-                'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500',
-              basePrice: Number(data.basePrice || data.price || 0),
-              isAvailable: data.isAvailable !== false,
-              isPopular: Boolean(data.isPopular),
-              variants: data.variants || [],
-              addons: data.addons || [],
-            } as Product);
-          });
-          setProducts(list);
-        } else {
-          setProducts(mockProducts);
-        }
+        const list: (Product & { sortOrder?: number })[] = [];
+        snapshot.forEach((d) => {
+          if (d.id.startsWith('__')) return;
+          const data = d.data();
+          list.push({
+            id: d.id,
+            name: data.name || 'Món ăn',
+            categoryId: data.categoryId || data.category || 'pizza',
+            description: data.description || '',
+            image: data.image || data.imageUrl || '',
+            basePrice: Number(data.basePrice || data.price || 0),
+            originalPrice: data.originalPrice ? Number(data.originalPrice) : undefined,
+            discountPercent: data.discountPercent ? Number(data.discountPercent) : undefined,
+            memberDiscountTag: data.memberDiscountTag || undefined,
+            promoGroups: Array.isArray(data.promoGroups) ? data.promoGroups : undefined,
+            isAvailable: data.isAvailable !== false,
+            isPopular: Boolean(data.isPopular),
+            isNew: Boolean(data.isNew),
+            isSpicy: Boolean(data.isSpicy),
+            variants: Array.isArray(data.variants) ? data.variants : [],
+            addons: Array.isArray(data.addons) ? data.addons : [],
+            sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 999,
+          } as Product & { sortOrder?: number });
+        });
+        list.sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
+        setProducts(list);
         setLoading(false);
+        void ensureDefaultPopularRecommendations(list);
       },
       (err) => {
         console.warn('Lỗi đọc products realtime:', err.message);
-        setProducts(mockProducts);
+        setProducts([]);
         setLoading(false);
       }
     );
 
-    return () => unsubProducts();
+    return () => unsub();
   }, []);
 
-  // 2. Lắng nghe real-time từ collection 'orders' để thống kê số lượng bán
-  useEffect(() => {
-    const unsubOrders = onSnapshot(
-      query(collection(db, 'orders')),
-      (snapshot) => {
-        const orderList: any[] = [];
-        snapshot.forEach((d) => {
-          orderList.push({ id: d.id, ...d.data() });
-        });
-        setOrders(orderList);
-      },
-      (err) => {
-        console.warn('Lỗi đọc orders realtime:', err.message);
-      }
-    );
-
-    return () => unsubOrders();
-  }, []);
-
-  // 3. Tính toán số lượng bán & sắp xếp giảm dần theo lượt mua
-  const rankedProducts: ProductWithSales[] = useMemo(() => {
-    const salesMap: Record<string, { count: number; revenue: number }> = {};
-
-    orders.forEach((o) => {
-      // Chỉ tính đơn hàng đã hoàn tất hoặc đã giao
-      if (o.status === 'COMPLETED' || o.status === 'DELIVERED') {
-        (o.items || []).forEach((item: any) => {
-          const key = item.productId || item.id || item.productName || item.name;
-          const qty = Number(item.quantity) || 1;
-          const lineTotal = Number(item.lineTotal || (item.unitPrice || 0) * qty);
-
-          if (!salesMap[key]) {
-            salesMap[key] = { count: 0, revenue: 0 };
-          }
-          salesMap[key].count += qty;
-          salesMap[key].revenue += lineTotal;
-
-          // Cũng gán theo tên món nếu key là ID hoặc ngược lại
-          if (item.name && item.productId && item.name !== item.productId) {
-            if (!salesMap[item.name]) salesMap[item.name] = { count: 0, revenue: 0 };
-            salesMap[item.name].count += qty;
-            salesMap[item.name].revenue += lineTotal;
-          }
-        });
-      }
-    });
-
-    const enriched = products.map((p) => {
-      const stats = salesMap[p.id] || salesMap[p.name] || { count: 0, revenue: 0 };
-      return {
-        ...p,
-        soldCount: stats.count,
-        totalRevenue: stats.revenue,
-      };
-    });
-
-    // Sắp xếp: Số lượng bán nhiều nhất lên đầu
-    return enriched.sort((a, b) => {
-      if (b.soldCount !== a.soldCount) {
-        return b.soldCount - a.soldCount;
-      }
-      return a.name.localeCompare(b.name);
-    });
-  }, [products, orders]);
-
-  // Bộ lọc tìm kiếm
-  const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) return rankedProducts;
-    const queryLower = searchQuery.toLowerCase().trim();
-    return rankedProducts.filter(
+  // Danh sách các món đang hiển thị trong "Bạn sẽ thích" (Pizza nguyên giá + Khai vị + Nước)
+  const popularProducts = useMemo(() => {
+    const raw = products.filter(
       (p) =>
-        p.name.toLowerCase().includes(queryLower) ||
-        p.categoryId.toLowerCase().includes(queryLower)
+        p.isPopular &&
+        (p.categoryId !== 'pizza' || !isProductDiscounted(p))
     );
-  }, [rankedProducts, searchQuery]);
-
-  // Đếm số món đang được đưa vào mục "Bạn sẽ thích"
-  const popularCount = useMemo(() => {
-    return products.filter((p) => p.isPopular).length;
+    return sortPopularProducts(raw);
   }, [products]);
 
-  // 4. Bật / Tắt trạng thái "Bạn sẽ thích" cho từng món
-  const handleTogglePopular = async (product: ProductWithSales) => {
-    const nextState = !product.isPopular;
-    setActionInProgressId(product.id);
-    triggerHaptic('medium');
+  const countsByCategory = useMemo(() => {
+    return {
+      all: popularProducts.length,
+      pizza: popularProducts.filter((p) => p.categoryId === 'pizza').length,
+      starters: popularProducts.filter((p) => p.categoryId === 'starters').length,
+      drinks: popularProducts.filter((p) => p.categoryId === 'drinks').length,
+    };
+  }, [popularProducts]);
 
-    try {
-      const docRef = doc(db, 'products', product.id);
-      await updateDoc(docRef, {
-        isPopular: nextState,
-        updatedAt: serverTimestamp(),
-      });
+  const displayedPopular = useMemo(() => {
+    if (activeTab === 'all') return popularProducts;
+    return popularProducts.filter((p) => p.categoryId === activeTab);
+  }, [popularProducts, activeTab]);
 
-      void reportAdminAction(
-        nextState ? 'ADD_TO_RECOMMENDATIONS' : 'REMOVE_FROM_RECOMMENDATIONS',
-        product.name,
-        { productId: product.id, isPopular: nextState }
-      );
+  // Danh sách các món có thể thêm vào "Bạn sẽ thích":
+  // - Chưa có trong "Bạn sẽ thích"
+  // - Nếu là Pizza thì phải CHƯA có giảm giá (!isProductDiscounted)
+  // - Thuộc 3 nhóm: pizza, starters, drinks
+  const pickableProducts = useMemo(() => {
+    return products
+      .filter((p) => !p.isPopular)
+      .filter((p) => ['pizza', 'starters', 'drinks'].includes(p.categoryId))
+      .filter((p) => p.categoryId !== 'pizza' || !isProductDiscounted(p))
+      .filter((p) => pickerCategory === 'all' || p.categoryId === pickerCategory)
+      .filter((p) => !searchQuery.trim() || norm(p.name).includes(norm(searchQuery)));
+  }, [products, pickerCategory, searchQuery]);
 
-      triggerHaptic('success');
+  const handleAddPopular = async (item: Product) => {
+    if (item.categoryId === 'pizza' && isProductDiscounted(item)) {
       Alert.alert(
-        'Thành công',
-        nextState
-          ? `Đã thêm "${product.name}" vào mục "Bạn sẽ thích" của khách hàng.`
-          : `Đã gỡ "${product.name}" khỏi mục "Bạn sẽ thích".`
+        'Món đã có giảm giá',
+        'Chỉ được thêm các món Pizza nguyên giá (chưa thuộc nhóm ưu đãi) vào mục "Bạn sẽ thích".'
       );
-    } catch (error: any) {
-      triggerHaptic('error');
-      Alert.alert('Lỗi', error?.message || 'Không thể cập nhật trạng thái.');
+      return;
+    }
+    setActionInProgressId(item.id);
+    triggerHaptic('medium');
+    try {
+      await setDoc(
+        doc(db, 'products', item.id),
+        {
+          isPopular: true,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      productService.invalidateCache?.();
+      setProducts((prev) =>
+        prev.map((p) => (p.id === item.id ? { ...p, isPopular: true } : p))
+      );
+      void reportAdminAction('ADD_TO_RECOMMENDATIONS', item.name, {
+        productId: item.id,
+        categoryId: item.categoryId,
+      });
+      triggerHaptic('success');
+      showToast({
+        message: `Đã thêm "${item.name}" vào Bạn sẽ thích`,
+        type: 'success',
+      });
+      setPickerVisible(false);
+    } catch (e: any) {
+      Alert.alert('Không thể thêm món', e?.message || 'Vui lòng thử lại.');
     } finally {
       setActionInProgressId(null);
     }
   };
 
-  // 5. Thao tác nhanh: Áp dụng Top 3 hoặc Top 5 món bán chạy nhất
-  const handleApplyTopBatch = (topN: number) => {
-    const topItems = rankedProducts.slice(0, topN);
-    if (topItems.length === 0) {
-      Alert.alert('Thông báo', 'Chưa có sản phẩm nào để áp dụng.');
-      return;
-    }
-
-    Alert.alert(
-      'Xác nhận áp dụng',
-      `Bạn có chắc chắn muốn đưa Top ${topN} món bán chạy nhất vào mục "Bạn sẽ thích" trên app khách hàng?`,
-      [
-        { text: 'Hủy', style: 'cancel' },
+  const handleRemovePopular = async (item: Product) => {
+    setActionInProgressId(item.id);
+    triggerHaptic('light');
+    try {
+      await setDoc(
+        doc(db, 'products', item.id),
         {
-          text: 'Đồng ý',
-          style: 'default',
-          onPress: async () => {
-            triggerHaptic('medium');
-            setLoading(true);
-            try {
-              const batch = writeBatch(db);
-              const topIds = new Set(topItems.map((item) => item.id));
-
-              // Đặt isPopular: true cho top N, giữ nguyên hoặc gỡ các món khác
-              rankedProducts.forEach((p) => {
-                const shouldBePopular = topIds.has(p.id);
-                if (p.isPopular !== shouldBePopular) {
-                  const pRef = doc(db, 'products', p.id);
-                  batch.update(pRef, {
-                    isPopular: shouldBePopular,
-                    updatedAt: serverTimestamp(),
-                  });
-                }
-              });
-
-              await batch.commit();
-              void reportAdminAction('APPLY_TOP_RECOMMENDATIONS', `Top ${topN} Products`, {
-                count: topN,
-              });
-
-              triggerHaptic('success');
-              Alert.alert(
-                'Thành công',
-                `Đã cập nhật Top ${topN} món bán chạy nhất vào mục "Bạn sẽ thích"!`
-              );
-            } catch (err: any) {
-              triggerHaptic('error');
-              Alert.alert('Lỗi', err?.message || 'Không thể cập nhật danh sách.');
-            } finally {
-              setLoading(false);
-            }
-          },
+          isPopular: false,
+          updatedAt: serverTimestamp(),
         },
-      ]
-    );
-  };
-
-  const getRankBadgeStyle = (index: number) => {
-    if (index === 0) return styles.rankGold;
-    if (index === 1) return styles.rankSilver;
-    if (index === 2) return styles.rankBronze;
-    return null;
-  };
-
-  const renderRankBadgeContent = (index: number) => {
-    if (index === 0) return <Medal size={16} color="#D97706" />;
-    if (index === 1) return <Medal size={16} color="#4B5563" />;
-    if (index === 2) return <Medal size={16} color="#B45309" />;
-    return (
-      <AppText variant="captionSemiBold" color={colors.textSecondary}>
-        {`#${index + 1}`}
-      </AppText>
-    );
-  };
-
-  const renderProductItem = ({ item, index }: { item: ProductWithSales; index: number }) => {
-    const isBusy = actionInProgressId === item.id;
-    const isPopular = Boolean(item.isPopular);
-
-    return (
-      <View style={[styles.itemCard, isPopular && styles.itemCardHighlighted]}>
-        <View style={styles.itemTopRow}>
-          {/* Thứ hạng theo lượt mua */}
-          <View style={[styles.rankBadge, getRankBadgeStyle(index)]}>
-            {renderRankBadgeContent(index)}
-          </View>
-
-          {/* Ảnh món */}
-          <Image
-            source={{ uri: item.image }}
-            style={styles.productImage}
-            resizeMode="cover"
-          />
-
-          {/* Thông tin món */}
-          <View style={styles.productInfo}>
-            <View style={styles.titleRow}>
-              <AppText
-                variant="bodySemiBold"
-                color={colors.textPrimary}
-                numberOfLines={1}
-                style={{ flex: 1, marginRight: 6 }}
-              >
-                {item.name}
-              </AppText>
-              {isPopular && (
-                <Star
-                  size={16}
-                  color={colors.warning}
-                  fill={colors.warning}
-                  style={{ flexShrink: 0 }}
-                />
-              )}
-            </View>
-
-            <AppText variant="caption" color={colors.textSecondary}>
-              Giá gốc: {formatCurrency(item.basePrice)}
-            </AppText>
-
-            <View style={styles.statsRow}>
-              <View style={styles.salesBadge}>
-                <Flame size={14} color={item.soldCount > 0 ? colors.primary : colors.textDisabled} />
-                <AppText
-                  variant="captionMedium"
-                  color={item.soldCount > 0 ? colors.primary : colors.textSecondary}
-                >
-                  Đã bán: {item.soldCount} phần
-                </AppText>
-              </View>
-
-              {!item.isAvailable && (
-                <AppText variant="small" color={colors.error}>
-                  (Tạm hết món)
-                </AppText>
-              )}
-            </View>
-          </View>
-        </View>
-
-        {/* Hàng hành động */}
-        <View style={styles.cardActionRow}>
-          <View style={styles.statusIndicator}>
-            <View
-              style={[
-                styles.dot,
-                { backgroundColor: isPopular ? colors.success : colors.textDisabled },
-              ]}
-            />
-            <AppText
-              variant="captionMedium"
-              color={isPopular ? colors.success : colors.textSecondary}
-            >
-              {isPopular ? 'Đang trong "Bạn sẽ thích"' : 'Chưa hiển thị'}
-            </AppText>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.toggleBtn, isPopular && styles.removeBtn]}
-            activeOpacity={0.8}
-            disabled={isBusy}
-            onPress={() => handleTogglePopular(item)}
-          >
-            {isBusy ? (
-              <ActivityIndicator size="small" color={isPopular ? colors.textPrimary : colors.white} />
-            ) : isPopular ? (
-              <>
-                <X size={15} color={colors.textSecondary} />
-                <AppText variant="captionMedium" color={colors.textSecondary}>
-                  Gỡ bỏ
-                </AppText>
-              </>
-            ) : (
-              <>
-                <Sparkles size={15} color={colors.white} />
-                <AppText variant="captionMedium" color={colors.white}>
-                  {'Đưa vào "Bạn sẽ thích"'}
-                </AppText>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
+        { merge: true }
+      );
+      productService.invalidateCache?.();
+      setProducts((prev) =>
+        prev.map((p) => (p.id === item.id ? { ...p, isPopular: false } : p))
+      );
+      void reportAdminAction('REMOVE_FROM_RECOMMENDATIONS', item.name, {
+        productId: item.id,
+      });
+      showToast({
+        message: `Đã gỡ "${item.name}" khỏi Bạn sẽ thích`,
+        type: 'info',
+      });
+    } catch (e: any) {
+      Alert.alert('Không thể gỡ món', e?.message || 'Vui lòng thử lại.');
+    } finally {
+      setActionInProgressId(null);
+    }
   };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScreenHeader
-        title="Gợi Ý 'Bạn Sẽ Thích'"
-        subtitle="Danh sách món được mua nhiều nhất"
+        title="Bạn Sẽ Thích"
+        subtitle="Hiển thị đồng bộ tại Trang chủ & Giỏ hàng (3 Pizza nguyên giá · 3 Khai vị · 2 Nước)"
         showBack={true}
-        onBack={() => router.back()}
+        onBack={() => (router.canGoBack() ? router.back() : router.replace('/admin/products'))}
       />
 
-      {/* Thẻ tóm tắt & Thao tác nhanh */}
-      <View style={styles.summaryCard}>
-        <View style={styles.summaryRow}>
-          <View style={styles.summaryLeft}>
-            <AppText variant="cardTitle" color={colors.textPrimary}>
-              Món đề xuất cho khách
-            </AppText>
-            <AppText variant="caption" color={colors.textSecondary}>
-              Sắp xếp theo số lượng mua từ cao đến thấp
-            </AppText>
-          </View>
-
-          <View style={styles.badgePill}>
-            <Sparkles size={15} color={colors.primary} />
-            <AppText variant="captionMedium" color={colors.primary}>
-              Đang chọn: {popularCount} món
-            </AppText>
-          </View>
-        </View>
-
-        {/* Nút thao tác nhanh theo Top */}
-        <View style={styles.quickActionRow}>
-          <TouchableOpacity
-            style={styles.quickActionBtn}
-            activeOpacity={0.7}
-            onPress={() => handleApplyTopBatch(3)}
-          >
-            <Flame size={15} color={colors.primary} />
-            <AppText variant="captionMedium" color={colors.primary}>
-              Áp dụng Top 3
-            </AppText>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.quickActionBtn}
-            activeOpacity={0.7}
-            onPress={() => handleApplyTopBatch(5)}
-          >
-            <Sparkles size={15} color={colors.primary} />
-            <AppText variant="captionMedium" color={colors.primary}>
-              Áp dụng Top 5
-            </AppText>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Ô tìm kiếm món */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputWrap}>
-          <Search size={18} color={colors.textSecondary} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Tìm tên món ăn..."
-            placeholderTextColor={colors.textDisabled}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            clearButtonMode="while-editing"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <X size={16} color={colors.textSecondary} />
+      {/* Thanh tab lọc theo danh mục (Tất cả / Pizza / Khai vị / Thức uống) */}
+      <View
+        style={{
+          flexDirection: 'row',
+          paddingHorizontal: 16,
+          paddingTop: 10,
+          paddingBottom: 10,
+          gap: 8,
+          backgroundColor: colors.surface,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+        }}
+      >
+        {CATEGORY_TABS.map((t) => {
+          const isActive = activeTab === t.id;
+          const count = countsByCategory[t.id as keyof typeof countsByCategory] ?? 0;
+          return (
+            <TouchableOpacity
+              key={t.id}
+              style={[
+                styles.categoryPill,
+                { flex: 1, paddingHorizontal: 6 },
+                isActive && styles.categoryPillActive,
+              ]}
+              activeOpacity={0.7}
+              onPress={() => setActiveTab(t.id)}
+            >
+              <AppText
+                variant="captionMedium"
+                color={isActive ? colors.white : colors.textPrimary}
+                numberOfLines={1}
+              >
+                {`${t.name} (${count})`}
+              </AppText>
             </TouchableOpacity>
-          )}
-        </View>
+          );
+        })}
       </View>
 
-      {/* Danh sách món */}
       {loading ? (
-        <View style={styles.loadingContainer}>
+        <View style={styles.emptyContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <AppText variant="caption" color={colors.textSecondary}>
-            Đang phân tích số lượng bán...
-          </AppText>
         </View>
       ) : (
-        <FlatList
-          data={filteredProducts}
-          keyExtractor={(item) => item.id}
-          renderItem={renderProductItem}
-          contentContainerStyle={styles.listContent}
+        <ScrollView
           showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                setTimeout(() => setRefreshing(false), 800);
-              }}
-              colors={[colors.primary]}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <ShoppingBag size={42} color={colors.textDisabled} />
-              <AppText variant="bodyMedium" color={colors.textSecondary}>
-                Không tìm thấy món ăn nào.
+          contentContainerStyle={[styles.listContent, { paddingTop: 12 }]}
+        >
+          {/* Khối tóm tắt gọn & nút + Thêm món */}
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: colors.border,
+              padding: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Sparkles size={15} color={colors.primary} />
+                <AppText variant="cardTitle" color={colors.textPrimary}>
+                  {`Đang hiển thị ${popularProducts.length} món`}
+                </AppText>
+              </View>
+              <AppText variant="small" color={colors.textSecondary} style={{ marginTop: 2 }}>
+                {`${countsByCategory.pizza} Pizza nguyên giá · ${countsByCategory.starters} Khai vị · ${countsByCategory.drinks} Nước`}
               </AppText>
             </View>
-          }
-        />
+
+            <TouchableOpacity
+              style={styles.addBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                setPickerCategory(activeTab === 'all' ? 'all' : activeTab);
+                setSearchQuery('');
+                setPickerVisible(true);
+              }}
+            >
+              <Plus size={18} color={colors.white} />
+              <AppText variant="captionSemiBold" color={colors.white}>
+                Thêm món
+              </AppText>
+            </TouchableOpacity>
+          </View>
+
+          {/* Danh sách món đang nằm trong "Bạn sẽ thích" */}
+          {displayedPopular.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <AppText variant="bodyMedium" color={colors.textSecondary}>
+                Chưa có món nào trong mục này. Bấm &quot;+ Thêm món&quot; để thêm ngay.
+              </AppText>
+            </View>
+          ) : (
+            displayedPopular.map((item) => {
+              const isBusy = actionInProgressId === item.id;
+              return (
+                <View key={item.id} style={styles.productCard}>
+                  <View style={styles.cardMainRow}>
+                    <Image
+                      source={{ uri: item.image }}
+                      style={styles.productImage}
+                      resizeMode="contain"
+                    />
+                    <View style={styles.productInfo}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={styles.categoryBadge}>
+                          <AppText variant="small" color={colors.textSecondary} style={{ fontWeight: '700' }}>
+                            {CAT_LABELS[item.categoryId] || item.categoryId.toUpperCase()}
+                          </AppText>
+                        </View>
+                      </View>
+                      <AppText variant="cardTitle" color={colors.textPrimary} numberOfLines={2}>
+                        {item.name}
+                      </AppText>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <AppText variant="price" color={colors.primary}>
+                          {formatCurrency(item.basePrice)}
+                        </AppText>
+                      </View>
+                    </View>
+
+                    <TouchableOpacity
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 8,
+                        backgroundColor: colors.errorSoft,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      disabled={isBusy}
+                      onPress={() => handleRemovePopular(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Gỡ ${item.name} khỏi Bạn sẽ thích`}
+                    >
+                      {isBusy ? (
+                        <ActivityIndicator size="small" color={colors.error} />
+                      ) : (
+                        <Trash2 size={15} color={colors.error} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
       )}
+
+      {/* Modal chọn món từ Menu thật để thêm vào "Bạn sẽ thích" */}
+      <Modal
+        visible={pickerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPickerVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <AppText variant="h3" color={colors.textPrimary}>
+                Thêm vào &quot;Bạn sẽ thích&quot;
+              </AppText>
+              <TouchableOpacity onPress={() => setPickerVisible(false)}>
+                <X size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <AppText variant="small" color={colors.textSecondary} style={{ marginBottom: 10 }}>
+              Chỉ hiển thị món trong Menu chưa chọn (Pizza chỉ lấy các món chưa có giảm giá).
+            </AppText>
+
+            {/* Bộ lọc danh mục trong Modal */}
+            <View
+              style={{
+                flexDirection: 'row',
+                gap: 6,
+                marginBottom: 10,
+              }}
+            >
+              {CATEGORY_TABS.map((t) => {
+                const isSelected = pickerCategory === t.id;
+                return (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[
+                      styles.categoryPill,
+                      { flex: 1, paddingHorizontal: 4, height: 34 },
+                      isSelected && styles.categoryPillActive,
+                    ]}
+                    activeOpacity={0.7}
+                    onPress={() => setPickerCategory(t.id)}
+                  >
+                    <AppText
+                      variant="small"
+                      color={isSelected ? colors.white : colors.textPrimary}
+                      style={{ fontWeight: '700' }}
+                      numberOfLines={1}
+                    >
+                      {t.name}
+                    </AppText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Ô tìm kiếm không dấu */}
+            <View style={[styles.searchInputWrap, { flex: 0, height: 42, marginBottom: 12 }]}>
+              <Search size={18} color={colors.textSecondary} />
+              <TextInput
+                placeholder="Tìm tên Pizza, Khai vị, Nước..."
+                placeholderTextColor={colors.textSecondary}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                style={styles.searchInput}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <X size={16} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={{ maxHeight: 360 }}
+              contentContainerStyle={{ gap: 8, paddingBottom: 12 }}
+            >
+              {pickableProducts.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <AppText variant="bodyMedium" color={colors.textSecondary}>
+                    Không còn món phù hợp để thêm.
+                  </AppText>
+                </View>
+              ) : (
+                pickableProducts.map((item) => {
+                  const isBusy = actionInProgressId === item.id;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[
+                        styles.cardMainRow,
+                        {
+                          paddingVertical: 8,
+                          paddingHorizontal: 10,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: colors.border,
+                          backgroundColor: colors.surface,
+                        },
+                      ]}
+                      activeOpacity={0.7}
+                      disabled={isBusy}
+                      onPress={() => handleAddPopular(item)}
+                    >
+                      <Image
+                        source={{ uri: item.image }}
+                        style={{ ...styles.productImage, width: 48, height: 48 }}
+                        resizeMode="contain"
+                      />
+                      <View style={styles.productInfo}>
+                        <AppText variant="cardTitle" color={colors.textPrimary} numberOfLines={1}>
+                          {item.name}
+                        </AppText>
+                        <AppText variant="small" color={colors.textSecondary}>
+                          {`${CAT_LABELS[item.categoryId] || item.categoryId} · ${formatCurrency(item.basePrice)}`}
+                        </AppText>
+                      </View>
+                      {isBusy ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <Plus size={18} color={colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

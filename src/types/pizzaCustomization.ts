@@ -65,24 +65,24 @@ export const PIZZA_SIZES: { id: PizzaSizeId; name: string; diameter: string }[] 
 export const PIZZA_CRUSTS: PizzaCrust[] = [
   {
     id: 'classic-hand-tossed',
-    name: 'Classic Hand-Tossed',
+    name: 'Đế Kéo Tay Truyền Thống',
     description: 'Đế vừa truyền thống giòn xốp bên ngoài, mềm thơm bên trong',
     price: 0,
     supportedSizes: ['small', 'medium', 'large'],
     isPopular: true,
   },
   {
-    id: 'thin-crispy',
-    name: 'Thin & Crispy',
-    description: 'Đế siêu mỏng giòn rụm đậm vị topping',
+    id: 'thick-pan',
+    name: 'Đế Giòn Xốp',
+    description: 'Đế dày vàng ươm giòn rụm bên ngoài xốp mềm ruột',
     price: 0,
     supportedSizes: ['small', 'medium', 'large'],
   },
   {
-    id: 'thick-pan',
-    name: 'Thick Pan',
-    description: 'Đế dày vàng ươm giòn rụm bên ngoài xốp mềm ruột',
-    price: 15000,
+    id: 'thin-crispy',
+    name: 'Đế Mỏng Giòn',
+    description: 'Đế siêu mỏng giòn rụm đậm vị topping',
+    price: 0,
     supportedSizes: ['small', 'medium', 'large'],
   },
   {
@@ -198,7 +198,7 @@ export function formatCustomizationSummary(customization?: PizzaCustomizationSta
   const tags: string[] = [];
 
   const crust = PIZZA_CRUSTS.find((c) => c.id === customization.crustId);
-  if (crust && crust.id !== 'classic-hand-tossed') {
+  if (crust) {
     tags.push(crust.name);
   }
 

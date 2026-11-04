@@ -20,11 +20,16 @@ AsyncStorage.multiRemove([
   '@pizza_checkout_customer_info_v2',
 ]).catch(() => { });
 
+let cachedDeliveryAddress: string | null = null;
+let cachedHasChosenAddress = false;
+
 /**
  * Xóa sạch hoàn toàn dữ liệu địa chỉ trong Local Storage
  */
 export async function clearDeliveryAddress(): Promise<void> {
   try {
+    cachedDeliveryAddress = null;
+    cachedHasChosenAddress = false;
     await AsyncStorage.multiRemove([
       ADDRESS_STORAGE_KEY,
       HAS_CHOSEN_ADDRESS_KEY,
@@ -44,10 +49,16 @@ export async function clearDeliveryAddress(): Promise<void> {
  * Lấy địa chỉ giao hàng đã lưu trong máy
  */
 export async function getSavedDeliveryAddress(): Promise<string | null> {
+  if (cachedDeliveryAddress) return cachedDeliveryAddress;
   try {
-    return await AsyncStorage.getItem(ADDRESS_STORAGE_KEY);
+    const saved = await AsyncStorage.getItem(ADDRESS_STORAGE_KEY);
+    if (saved) {
+      cachedDeliveryAddress = saved;
+      cachedHasChosenAddress = true;
+    }
+    return saved;
   } catch {
-    return null;
+    return cachedDeliveryAddress;
   }
 }
 
@@ -58,6 +69,8 @@ export async function saveDeliveryAddress(address: string): Promise<void> {
   try {
     const trimmed = (address || '').trim();
     if (trimmed) {
+      cachedDeliveryAddress = trimmed;
+      cachedHasChosenAddress = true;
       await AsyncStorage.setItem(ADDRESS_STORAGE_KEY, trimmed);
       await AsyncStorage.setItem(HAS_CHOSEN_ADDRESS_KEY, 'true');
     }
@@ -70,11 +83,22 @@ export async function saveDeliveryAddress(address: string): Promise<void> {
  * Kiểm tra xem người dùng/khách đã từng chọn địa chỉ chưa
  */
 export async function checkHasChosenAddress(): Promise<boolean> {
+  if (cachedHasChosenAddress || cachedDeliveryAddress) return true;
   try {
     const flag = await AsyncStorage.getItem(HAS_CHOSEN_ADDRESS_KEY);
-    return flag === 'true';
-  } catch {
+    if (flag === 'true') {
+      cachedHasChosenAddress = true;
+      return true;
+    }
+    const addr = await AsyncStorage.getItem(ADDRESS_STORAGE_KEY);
+    if (addr && addr.trim().length > 0) {
+      cachedDeliveryAddress = addr.trim();
+      cachedHasChosenAddress = true;
+      return true;
+    }
     return false;
+  } catch {
+    return cachedHasChosenAddress;
   }
 }
 

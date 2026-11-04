@@ -1,20 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, TouchableOpacity } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Image, Text, TextInput } from 'react-native';
 import { Alert } from '../../utils/alert';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Heart } from 'lucide-react-native';
+import { ChevronLeft, Plus, Minus } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { AppText } from '../../components/ui/AppText';
-import { AppInput } from '../../components/ui/AppInput';
-import { QuantityStepper } from '../../components/ui/QuantityStepper';
-import { BottomActionBar } from '../../components/ui/BottomActionBar';
-import { VariantSelector } from '../../components/product/VariantSelector';
-import { AddonSelector } from '../../components/product/AddonSelector';
-import { PizzaCustomizer } from '../../components/product/pizza/PizzaCustomizer';
-import { ProductImage } from '../../components/product/ProductImage';
-import { ProductCard } from '../../components/product/ProductCard';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { getProductVariantOrBasePrice } from '../../utils/calculateTotals';
 import { productService } from '../../services';
 import { Product, ProductVariant } from '../../types/product';
 import {
@@ -29,7 +22,6 @@ import { useCart } from '../../state/CartContext';
 import { useAuth } from '../../state/AuthContext';
 import { hasPromptedMemberDiscount } from '../../utils/sessionFlags';
 import { memberDiscountLabel } from '../../utils/memberDiscount';
-import { useFavorites } from '../../state/FavoritesContext';
 import { useToast } from '../../state/ToastContext';
 import { replaceCartItem } from '../../utils/cartOperations';
 import { triggerHaptic } from '../../utils/haptics';
@@ -44,16 +36,15 @@ export default function ProductDetailScreen() {
   const { id, lineId } = useLocalSearchParams<{ id: string; lineId?: string }>();
   const [product, setProduct] = useState<Product | null>(null);
   const [notFound, setNotFound] = useState(false);
-  const [related, setRelated] = useState<Product[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [quantity, setQuantity] = useState(1);
 
-  // Pizza Customization State
+  // Pizza Customization State (mặc định cỡ Nhỏ + Đế Giòn Xốp chuẩn ảnh 4)
   const [pizzaCustomization, setPizzaCustomization] = useState<PizzaCustomizationState>({
     sizeId: 'small',
-    crustId: 'classic-hand-tossed',
+    crustId: 'thick-pan',
     sauceId: 'classic-tomato',
     hasExtraSauce: false,
     toppings: [],
@@ -66,9 +57,9 @@ export default function ProductDetailScreen() {
 
   const insets = useSafeAreaInsets();
   const { items, addItem, updateItem } = useCart();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const isMember = Boolean(isAuthenticated && user && !user.isDemo);
   const editingItem = items.find(item => item.lineId === lineId);
-  const { isFavorite, toggleFavorite } = useFavorites();
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -78,40 +69,37 @@ export default function ProductDetailScreen() {
         if (!active) return;
         setProduct(p);
         setNotFound(!p);
-        if (p) {
-          productService.list({ categoryId: p.categoryId, onlyAvailable: true })
-            .then(list => { if (active) setRelated(list.filter(x => x.id !== p.id).slice(0, 6)); })
-            .catch(() => {});
-        }
         if (editingItem && p) {
           setSelectedVariant(p.variants?.find(v => v.id === editingItem.variantId) || null);
           setSelectedAddonIds(editingItem.addonIds);
-          setSpecialInstructions(editingItem.specialInstructions || '');
+          const existingNote =
+            editingItem.specialInstructions ||
+            editingItem.customization?.specialInstructions ||
+            '';
+          setSpecialInstructions(existingNote);
           setQuantity(editingItem.quantity);
-          if (editingItem.customization) setPizzaCustomization(editingItem.customization);
+          if (editingItem.customization) {
+            setPizzaCustomization({
+              ...editingItem.customization,
+              specialInstructions: existingNote,
+            });
+          }
           return;
         }
         if (p?.variants && p.variants.length > 0) {
-          // Pre-select first variant as default
-          setSelectedVariant(p.variants[0]);
+          const smallVar = p.variants.find((v) => v.id === 'small') || p.variants[0];
+          setSelectedVariant(smallVar);
         }
 
-        // Set initial default sauce based on pizza recipe if applicable
         if (p && isCustomizablePizza(p)) {
-          let defaultSauceId = 'classic-tomato';
-          const lowerName = p.name.toLowerCase();
-          if (lowerName.includes('bbq')) {
-            defaultSauceId = 'smoky-bbq';
-          } else if (lowerName.includes('carbonara') || lowerName.includes('white') || lowerName.includes('hải sản')) {
-            defaultSauceId = 'creamy-white';
-          } else if (lowerName.includes('pesto')) {
-            defaultSauceId = 'basil-pesto';
-          }
-
+          const defaultSize = (p.variants?.find((v) => v.id === 'small')?.id ||
+            p.variants?.[0]?.id ||
+            'small') as PizzaSizeId;
           setPizzaCustomization((prev) => ({
             ...prev,
-            sauceId: defaultSauceId,
-            sizeId: (p.variants?.[0]?.id as PizzaSizeId) || 'small',
+            sauceId: 'classic-tomato',
+            crustId: 'thick-pan',
+            sizeId: defaultSize,
           }));
         }
       });
@@ -146,28 +134,16 @@ export default function ProductDetailScreen() {
     );
   }
 
-  const favorited = isFavorite(product.id);
   const isPizza = isCustomizablePizza(product);
-  // Display-only facts already present in the menu data.
-  const fromPrice = product.variants?.length ? Math.min(...product.variants.map(v => v.price)) : product.basePrice;
-  // 'Popular' is the English tag for the same thing as isPopular; Set drops exact duplicates such as 'Mới'.
-  const badges = [...new Set([
-    ...(product.isNew ? ['Mới'] : []),
-    ...(product.isSpicy ? ['🌶 Cay'] : []),
-    ...(product.isPopular ? ['Phổ biến'] : []),
-    ...(product.tags ?? []).filter(tag => !(tag === 'Popular' && product.isPopular)),
-  ])];
-
-  const handleToggleAddon = (addonId: string) => {
-    setSelectedAddonIds((prev) =>
-      prev.includes(addonId) ? prev.filter((i) => i !== addonId) : [...prev, addonId]
-    );
-  };
+  const displayVariants = (product.variants || []).map((v) => ({
+    ...v,
+    price: getProductVariantOrBasePrice(product, v.id, isMember),
+  }));
 
   // Calculate unit price:
   // For Pizza: variantPrice + customizationExtra
   // For other items: (variantPrice || basePrice) + addonsTotal
-  const baseOrVariantPrice = selectedVariant ? selectedVariant.price : product.basePrice;
+  const baseOrVariantPrice = getProductVariantOrBasePrice(product, selectedVariant?.id, isMember);
   const addonsTotal = selectedAddonIds.reduce((sum, aId) => {
     const addon = product.addons.find((a) => a.id === aId);
     return sum + (addon ? addon.price : 0);
@@ -193,14 +169,20 @@ export default function ProductDetailScreen() {
       return;
     }
 
+    const cleanNote =
+      (specialInstructions || pizzaCustomization.specialInstructions || '').trim() || undefined;
+    const finalCustomization = fittedCustomization
+      ? { ...fittedCustomization, specialInstructions: cleanNote }
+      : undefined;
+
     const item = {
       productId: product.id,
       variantId: selectedVariant?.id,
       addonIds: isPizza ? [] : selectedAddonIds,
-      specialInstructions: (isPizza ? pizzaCustomization.specialInstructions : specialInstructions)?.trim() || undefined,
+      specialInstructions: cleanNote,
       quantity,
       // The backend requires the builder's size to equal the chosen variant and the crust to fit that size.
-      ...(fittedCustomization ? { customization: fittedCustomization } : {}),
+      ...(finalCustomization ? { customization: finalCustomization } : {}),
     };
     if (lineId) {
       if (replaceCartItem(items, lineId, item) === items) {
@@ -223,9 +205,14 @@ export default function ProductDetailScreen() {
       const isMemberDiscount =
         product.categoryId === 'cheese_party' ||
         product.categoryId === 'member_deals' ||
-        product.categoryId === 'hot_deals';
+        product.categoryId === 'hot_deals' ||
+        (product.promoGroups || []).some((g) =>
+          ['cheese_party', 'member_deals', 'hot_deals'].includes(g)
+        ) ||
+        !!memberDiscountLabel(product) ||
+        (!!product.originalPrice && product.originalPrice > product.basePrice);
 
-      const shouldPrompt = !isAuthenticated && isMemberDiscount && !hasPromptedMemberDiscount();
+      const shouldPrompt = !isMember && isMemberDiscount && !hasPromptedMemberDiscount();
 
       router.replace({
         pathname: '/(tabs)/menu',
@@ -234,189 +221,413 @@ export default function ProductDetailScreen() {
     }
   };
 
-  const handleToggleFavorite = () => {
-    triggerHaptic('medium');
-    toggleFavorite(product.id);
+  // Giao diện Chi tiết chuẩn mẫu Pizza Hut cho cả Món lẻ (Khai vị/Nước) và Pizza (chọn Kích thước + Đế viền)
+  const orderedPizzaVariants = (() => {
+    const order = ['medium', 'large', 'small'];
+    const byId = new Map(displayVariants.map((v) => [v.id, v]));
+    if (order.every((id) => byId.has(id))) {
+      return order.map((id) => byId.get(id)!);
+    }
+    return displayVariants;
+  })();
+
+  const getShortSizeLabel = (v?: ProductVariant | null) => {
+    if (!v) return 'Nhỏ';
+    const lower = `${v.id} ${v.name}`.toLowerCase();
+    if (lower.includes('medium') || lower.includes('vừa') || lower.includes('9"')) return 'Vừa';
+    if (lower.includes('large') || lower.includes('lớn') || lower.includes('12"')) return 'Lớn';
+    return 'Nhỏ';
   };
 
+  const selectedSizeShort = getShortSizeLabel(selectedVariant);
+  const pizzaCrustOptions = PIZZA_CRUSTS.slice(0, 3);
+
   return (
-    <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Hero Image Section */}
-        <View style={styles.imageContainer}>
-          <ProductImage uri={product.image} style={styles.heroImage} iconSize={64} />
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }} edges={['top', 'bottom']}>
+      {/* Header: <  Chi tiết */}
+      <View
+        style={{
+          height: 52,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 14,
+          backgroundColor: '#FFFFFF',
+        }}
+      >
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.back()}
+          style={{ width: 36, height: 36, justifyContent: 'center', alignItems: 'flex-start' }}
+          accessibilityRole="button"
+          accessibilityLabel="Quay lại"
+        >
+          <ChevronLeft size={26} color="#111827" strokeWidth={2} />
+        </TouchableOpacity>
+        <Text style={{ fontSize: 17, fontWeight: '700', color: '#111827' }}>Chi tiết</Text>
+        <View style={{ width: 36 }} />
+      </View>
 
-          {/* Floating Navigation Controls */}
-          <SafeAreaView style={styles.floatingNav} edges={['top']}>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => router.back()}
-              style={styles.circleButton}
-              accessibilityRole="button"
-              accessibilityLabel="Quay lại"
-            >
-              <ArrowLeft size={22} color={colors.textPrimary} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={handleToggleFavorite}
-              style={styles.circleButton}
-              accessibilityRole="button"
-              accessibilityLabel={favorited ? 'Bỏ yêu thích' : 'Yêu thích'}
-              accessibilityState={{ selected: favorited }}
-            >
-              <Heart
-                size={22}
-                color={favorited ? colors.primary : colors.textPrimary}
-                fill={favorited ? colors.primary : 'transparent'}
-              />
-            </TouchableOpacity>
-          </SafeAreaView>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 28 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Hình ảnh sản phẩm ở trên cùng trên nền trắng */}
+        <View
+          style={{
+            width: '100%',
+            height: 180,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#FFFFFF',
+            paddingVertical: isPizza ? 4 : 8,
+          }}
+        >
+          <Image
+            source={{ uri: product.image }}
+            style={{
+              width: isPizza ? '88%' : product.categoryId === 'starters' ? 230 : 175,
+              height: 168,
+              backgroundColor: '#FFFFFF',
+            }}
+            resizeMode="contain"
+          />
         </View>
 
-        {/* Content Details */}
-        <View style={styles.bodyContent}>
-          <AppText variant="h1" style={styles.title}>
+        {/* Tên món + Mô tả + Nhãn New / Cay */}
+        <View style={{ paddingHorizontal: 18, paddingTop: 6, paddingBottom: 16 }}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#111827' }}>
             {product.name}
-          </AppText>
-
-          {badges.length > 0 && (
-            <View style={styles.badgeRow}>
-              {badges.map(tag => (
-                <View key={tag} style={styles.badgeChip}>
-                  <AppText variant="captionMedium" color={colors.primary}>{tag}</AppText>
-                </View>
-              ))}
-            </View>
-          )}
-
-          <View style={styles.priceRow} accessibilityLabel={`Giá chỉ từ ${formatCurrency(fromPrice)}`}>
-            <AppText variant="caption" color={colors.textSecondary}>{product.variants?.length > 1 ? 'Chỉ từ' : 'Giá'}</AppText>
-            <AppText variant="h2" color={colors.primary} style={styles.priceValue}>{formatCurrency(fromPrice)}</AppText>
-            {!!product.originalPrice && product.originalPrice > fromPrice && (
-              <AppText variant="body" color={colors.textSecondary} style={styles.originalPrice}>
-                {formatCurrency(product.originalPrice)}
-              </AppText>
-            )}
-            {!!product.discountPercent && (
-              <View style={styles.discountChip}>
-                <AppText variant="captionMedium" color={colors.white}>-{product.discountPercent}%</AppText>
-              </View>
-            )}
-          </View>
-          {!!memberDiscountLabel(product) && (
-            <AppText variant="captionMedium" color={colors.success} style={styles.memberNote}>
-              🎁 {memberDiscountLabel(product)}
-            </AppText>
-          )}
-
-          {!product.isAvailable && (
-            <View style={styles.soldOutBox} accessibilityLiveRegion="polite">
-              <AppText variant="bodyMedium" color={colors.warning}>Món này tạm hết. Bạn có thể chọn món khác bên dưới.</AppText>
-            </View>
-          )}
-
-          <AppText variant="body" color={colors.textSecondary} style={styles.description}>
-            {product.description}
-          </AppText>
-
-          {product.ingredients && product.ingredients.length > 0 && (
-            <View style={styles.ingredientsBox}>
-              <AppText variant="captionMedium" color={colors.textSecondary}>
-                Thành phần công thức chuẩn:
-              </AppText>
-              <AppText variant="caption" color={colors.textPrimary} style={styles.ingredientsText}>
-                {product.ingredients.join(' • ')}
-              </AppText>
-            </View>
-          )}
-
-          {/* PIZZA CUSTOMIZATION (5 GROUPS) FOR PIZZA ITEMS */}
-          {isPizza && product.variants && product.variants.length > 0 ? (
-            <PizzaCustomizer
-              variants={product.variants}
-              selectedVariant={selectedVariant}
-              onSelectVariant={setSelectedVariant}
-              customization={pizzaCustomization}
-              onChangeCustomization={setPizzaCustomization}
-              ingredients={product.ingredients}
-            />
-          ) : (
-            <>
-              {/* Standard Size Variant Selector for other items */}
-              {product.variants && product.variants.length > 0 && (
-                <VariantSelector
-                  variants={product.variants}
-                  selectedId={selectedVariant?.id}
-                  onSelect={setSelectedVariant}
-                />
-              )}
-
-              {/* Standard Add-ons Selector */}
-              {product.addons && product.addons.length > 0 && (
-                <AddonSelector
-                  addons={product.addons}
-                  selectedIds={selectedAddonIds}
-                  onToggle={handleToggleAddon}
-                />
-              )}
-
-              {/* Standard Special Instructions Note */}
-              <View style={styles.noteContainer}>
-                <AppText variant="h3" style={styles.noteTitle}>
-                  Ghi chú cho bếp
-                </AppText>
-                <AppInput
-                  placeholder="Ví dụ: Ít đá, không đường, tương ớt riêng..."
-                  value={specialInstructions}
-                  onChangeText={(text) => {
-                    if (text.length <= 150) {
-                      setSpecialInstructions(text);
-                    }
+          </Text>
+          <Text style={{ fontSize: 14.5, color: '#374151', marginTop: 4, lineHeight: 21 }}>
+            {product.description || product.name}
+          </Text>
+          {(product.isNew || product.isSpicy) && (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                marginTop: 8,
+              }}
+            >
+              {product.isNew && (
+                <View
+                  style={{
+                    backgroundColor: colors.primary,
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                    borderRadius: 4,
                   }}
-                  multiline
-                  numberOfLines={2}
-                  helperText={`${specialInstructions.length}/150 ký tự`}
-                />
-              </View>
-            </>
-          )}
-
-          {/* Quantity Stepper */}
-          <View style={styles.quantityRow}>
-            <View>
-              <AppText variant="bodyMedium">Số lượng</AppText>
-              <AppText variant="caption" color={colors.textSecondary}>
-                Tối đa 20 phần mỗi lượt
-              </AppText>
+                >
+                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
+                    New
+                  </Text>
+                </View>
+              )}
+              {product.isSpicy && <Text style={{ fontSize: 15 }}>🌶️</Text>}
             </View>
-            <QuantityStepper value={quantity} onChange={setQuantity} min={1} max={20} />
-          </View>
+          )}
         </View>
 
-        {related.length > 0 && (
-          <View style={styles.relatedSection}>
-            <AppText variant="h3" style={styles.relatedTitle}>Món cùng loại</AppText>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.relatedList}>
-              {related.map(item => (
-                <ProductCard key={item.id} product={item} layout="horizontal" style={styles.relatedCard} />
-              ))}
-            </ScrollView>
+        {/* Khu vực chọn Kích thước + Đế viền cho Pizza (chuẩn Ảnh 4) */}
+        {displayVariants.length > 0 && (
+          <View style={{ paddingHorizontal: 18, paddingBottom: 16 }}>
+            <Text
+              style={{
+                fontSize: 15.5,
+                fontWeight: '700',
+                color: '#111827',
+                marginBottom: 10,
+              }}
+            >
+              Kích thước
+            </Text>
+
+            <View
+              style={{
+                flexDirection: 'row',
+                borderWidth: 1,
+                borderColor: '#E5E7EB',
+                borderRadius: 8,
+                overflow: 'hidden',
+                marginBottom: isPizza ? 20 : 4,
+              }}
+            >
+              {orderedPizzaVariants.map((v, idx) => {
+                const isSelected = selectedVariant?.id === v.id;
+                const label = getShortSizeLabel(v);
+                return (
+                  <TouchableOpacity
+                    key={v.id}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setSelectedVariant(v);
+                      if (isPizza) {
+                        setPizzaCustomization((prev) =>
+                          fitToSize(prev, v.id as PizzaSizeId)
+                        );
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      height: 44,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: isSelected ? colors.primary : '#FFFFFF',
+                      borderLeftWidth: idx > 0 ? 1 : 0,
+                      borderLeftColor: '#E5E7EB',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: isSelected ? '700' : '600',
+                        color: isSelected ? '#FFFFFF' : '#111827',
+                      }}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {isPizza && (
+              <View>
+                <Text
+                  style={{
+                    fontSize: 15.5,
+                    fontWeight: '700',
+                    color: '#111827',
+                    marginBottom: 6,
+                  }}
+                >
+                  Đế viền
+                </Text>
+
+                {pizzaCrustOptions.map((crust) => {
+                  const isSelected = pizzaCustomization.crustId === crust.id;
+                  const crustPrice = baseOrVariantPrice + crust.price;
+                  return (
+                    <TouchableOpacity
+                      key={crust.id}
+                      activeOpacity={0.75}
+                      onPress={() => {
+                        triggerHaptic('light');
+                        setPizzaCustomization((prev) => ({
+                          ...prev,
+                          crustId: crust.id,
+                        }));
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingVertical: 13,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                        <View
+                          style={{
+                            width: 20,
+                            height: 20,
+                            borderRadius: 10,
+                            borderWidth: 1.5,
+                            borderColor: isSelected ? colors.primary : '#E5E7EB',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: '#FFFFFF',
+                          }}
+                        >
+                          {isSelected && (
+                            <View
+                              style={{
+                                width: 10,
+                                height: 10,
+                                borderRadius: 5,
+                                backgroundColor: colors.primary,
+                              }}
+                            />
+                          )}
+                        </View>
+                        <Text
+                          style={{
+                            fontSize: 15,
+                            fontWeight: '600',
+                            color: '#111827',
+                          }}
+                        >
+                          {crust.name}({selectedSizeShort})
+                        </Text>
+                      </View>
+
+                      <Text
+                        style={{
+                          fontSize: 15,
+                          fontWeight: '500',
+                          color: '#111827',
+                        }}
+                      >
+                        {formatCurrency(crustPrice)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
           </View>
         )}
+
+        {/* Đường kẻ phân cách */}
+        <View style={{ height: 1, backgroundColor: '#F3F4F6' }} />
+
+        {/* Ô Ghi chú (không bắt buộc) 0/72 */}
+        <View style={{ paddingHorizontal: 18, paddingTop: 16 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 10,
+            }}
+          >
+            <Text style={{ fontSize: 15, color: '#111827' }}>
+              <Text style={{ fontWeight: '700' }}>Ghi chú</Text> (không bắt buộc)
+            </Text>
+            <Text style={{ fontSize: 13.5, color: '#6B7280' }}>
+              {specialInstructions.length}/72
+            </Text>
+          </View>
+
+          <TextInput
+            value={specialInstructions}
+            onChangeText={(text) => {
+              if (text.length <= 72) {
+                setSpecialInstructions(text);
+                setPizzaCustomization((prev) => ({
+                  ...prev,
+                  specialInstructions: text,
+                }));
+              }
+            }}
+            maxLength={72}
+            placeholder="Chúng tôi sẽ làm hết sức để phục vụ bạn!"
+            placeholderTextColor="#6B7280"
+            style={{
+              borderWidth: 1,
+              borderColor: '#E5E7EB',
+              borderRadius: 10,
+              paddingHorizontal: 14,
+              paddingVertical: 14,
+              fontSize: 14.5,
+              color: '#111827',
+              backgroundColor: '#FFFFFF',
+            }}
+          />
+        </View>
       </ScrollView>
 
-      {/* The hero runs under the status bar; once scrolled, keep the clock/battery off the text. */}
-      <View pointerEvents="none" style={[styles.statusBarBackdrop, { height: insets.top }]} />
+      {/* Thanh dưới đáy: [-] 1 [+] và Nút đỏ Thêm vào giỏ hàng • Giá */}
+      <View
+        style={{
+          paddingHorizontal: 18,
+          paddingTop: 10,
+          paddingBottom: Math.max(insets.bottom, 14),
+          backgroundColor: '#FFFFFF',
+        }}
+      >
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 18,
+            marginBottom: 16,
+          }}
+        >
+          <TouchableOpacity
+            activeOpacity={0.75}
+            disabled={quantity <= 1}
+            onPress={() => setQuantity((q) => Math.max(1, q - 1))}
+            style={{
+              width: 42,
+              height: 38,
+              borderRadius: 8,
+              backgroundColor: quantity <= 1 ? '#E5E7EB' : '#FFFFFF',
+              borderWidth: quantity <= 1 ? 0 : 1,
+              borderColor: '#E5E7EB',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Minus size={18} color={colors.primary} strokeWidth={2.5} />
+          </TouchableOpacity>
 
-      <BottomActionBar
-        title={lineId ? "Lưu thay đổi" : "Thêm vào giỏ"}
-        price={totalPrice}
-        priceLabel="Tổng cộng"
-        onPress={handleAddToCart}
-        disabled={!product.isAvailable}
-      />
-    </View>
+          <Text
+            style={{
+              fontSize: 16,
+              fontWeight: '600',
+              color: '#111827',
+              minWidth: 28,
+              textAlign: 'center',
+            }}
+          >
+            {quantity}
+          </Text>
+
+          <TouchableOpacity
+            activeOpacity={0.75}
+            disabled={quantity >= 20}
+            onPress={() => setQuantity((q) => Math.min(20, q + 1))}
+            style={{
+              width: 42,
+              height: 38,
+              borderRadius: 8,
+              backgroundColor: '#FFFFFF',
+              borderWidth: 1,
+              borderColor: '#E5E7EB',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Plus size={18} color={colors.primary} strokeWidth={2.5} />
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          activeOpacity={0.85}
+          disabled={!product.isAvailable}
+          onPress={handleAddToCart}
+          style={{
+            backgroundColor: product.isAvailable ? colors.primary : '#9CA3AF',
+            height: 48,
+            borderRadius: 10,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+          }}
+        >
+          <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
+            {lineId ? 'Lưu thay đổi' : 'Thêm vào giỏ hàng'}
+          </Text>
+          <View
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: '#FFFFFF',
+            }}
+          />
+          <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
+            {formatCurrency(totalPrice)}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 }

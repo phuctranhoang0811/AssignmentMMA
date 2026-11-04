@@ -50,13 +50,13 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   categoryPill: {
-    paddingHorizontal: spacing.base,
+    flex: 1,
+    paddingHorizontal: spacing.sm,
     height: 36,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceAlt,
-    marginRight: spacing.xs,
   },
   categoryPillActive: {
     backgroundColor: colors.primary,
@@ -142,12 +142,15 @@ export const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   modalSheet: {
+    width: '100%',
+    maxWidth: 420,
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
-    maxHeight: '90%',
+    maxHeight: '88%',
     padding: spacing.lg,
   },
   modalHeader: {
@@ -186,4 +189,3 @@ export const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
 });
-

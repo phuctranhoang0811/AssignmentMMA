@@ -7,16 +7,59 @@ import { deliveryFeeQuote, type DeliveryFeeConfig, type LatLng } from './deliver
 // Catalog prices are the displayed item prices; no extra tax is added at checkout.
 export const DEFAULT_TAX_RATE = 0;
 
-export function getItemLineUnitPrice(item: CartItem, product?: Product): number {
+export function getProductVariantOrBasePrice(
+  product?: Product,
+  variantId?: string,
+  isMember: boolean = true
+): number {
   if (!product) return 0;
-  
-  let unitPrice = product.basePrice;
-  if (product.variants && product.variants.length > 0 && item.variantId) {
-    const variant = product.variants.find((v) => v.id === item.variantId);
-    if (variant) {
-      unitPrice = variant.price;
-    }
+  const hasDiscount =
+    typeof product.originalPrice === 'number' &&
+    product.originalPrice > product.basePrice &&
+    product.basePrice > 0;
+
+  const variant =
+    product.variants && product.variants.length > 0 && variantId
+      ? product.variants.find((v) => v.id === variantId)
+      : undefined;
+
+  if (!variant) {
+    if (!hasDiscount) return product.basePrice;
+    return isMember ? product.basePrice : product.originalPrice!;
   }
+
+  if (!hasDiscount) {
+    return variant.price;
+  }
+
+  const minVariantPrice = Math.min(...product.variants.map((v) => v.price));
+  const variantsAlreadyDiscounted = minVariantPrice <= product.basePrice;
+
+  if (variantsAlreadyDiscounted) {
+    const discountDelta = product.originalPrice! - product.basePrice;
+    return isMember ? variant.price : variant.price + discountDelta;
+  } else {
+    if (!isMember) return variant.price;
+    if (variant.price === product.originalPrice) return product.basePrice;
+    const ratio = product.basePrice / product.originalPrice!;
+    return Math.round((variant.price * ratio) / 1000) * 1000;
+  }
+}
+
+export function getItemLineUnitPrice(
+  item: CartItem,
+  product?: Product,
+  isMember: boolean = true
+): number {
+  if (
+    (item as any)?.isRewardGift ||
+    String(item?.specialInstructions || '').includes('Quà đổi điểm FPT Rewards')
+  ) {
+    return 0;
+  }
+  if (!product) return 0;
+
+  let unitPrice = getProductVariantOrBasePrice(product, item.variantId, isMember);
 
   if (item.addonIds && item.addonIds.length > 0 && product.addons) {
     const addonsTotal = item.addonIds.reduce((sum, addonId) => {
@@ -42,11 +85,12 @@ export function calculateOrderTotals(
   _fulfillmentType: FulfillmentType = 'DELIVERY',
   coupon?: Coupon | null,
   taxRate: number = DEFAULT_TAX_RATE,
-  delivery?: DeliveryPricing
+  delivery?: DeliveryPricing,
+  isMember: boolean = true
 ): OrderPricing & { deliveryDistanceKm?: number; riderPay?: number; outOfRange?: boolean } {
   const subtotal = items.reduce((acc, item) => {
     const product = productsMap[item.productId];
-    const unitPrice = getItemLineUnitPrice(item, product);
+    const unitPrice = getItemLineUnitPrice(item, product, isMember);
     return acc + unitPrice * item.quantity;
   }, 0);
 
@@ -65,10 +109,8 @@ export function calculateOrderTotals(
 
   // Fee by distance from the store (see deliveryFee.ts); Ahamove orders bring their own fee and pass no price list here.
   const shipping = delivery && _fulfillmentType === 'DELIVERY'
-    ? deliveryFeeQuote(delivery.config, delivery.to, taxableAmount, !!coupon?.freeShipping && subtotal >= coupon.minSubtotal) : undefined;
-  const isFreeShipCoupon = Boolean(coupon?.freeShipping && subtotal >= coupon.minSubtotal);
-  const fallbackDeliveryFee = _fulfillmentType === 'DELIVERY' && subtotal > 0 && !isFreeShipCoupon ? 22000 : 0;
-  const deliveryFee = shipping ? shipping.fee : fallbackDeliveryFee;
+    ? deliveryFeeQuote(delivery.config, delivery.to, subtotal, !!coupon?.freeShipping && subtotal >= coupon.minSubtotal) : undefined;
+  const deliveryFee = shipping ? shipping.fee : 0;
 
   const tax = Math.round(taxableAmount * taxRate);
   const total = Math.max(0, taxableAmount + deliveryFee + tax);

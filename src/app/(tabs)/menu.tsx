@@ -12,9 +12,11 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { Search, Plus, X } from 'lucide-react-native';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../../services/firebase';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { triggerHaptic } from '../../utils/haptics';
 import { hasPromptedMemberDiscount, setPromptedMemberDiscount } from '../../utils/sessionFlags';
@@ -124,10 +126,14 @@ const CATEGORY_BANNERS: Record<string, BannerData> = {
 };
 
 const PizzaHutProductCard = ({ product }: { product: Product }) => {
+  const isDrinkOrStarter =
+    product.categoryId === 'drinks' || product.categoryId === 'starters';
+  const isSoldOut = product.isAvailable === false;
+
   const handleAdd = (e: any) => {
     e.stopPropagation?.();
+    if (isSoldOut) return;
     triggerHaptic('medium');
-    // Bấm dấu cộng chuyển vào trang chi tiết món ăn
     router.push({
       pathname: '/product/[id]',
       params: { id: product.id },
@@ -135,6 +141,7 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
   };
 
   const handlePressCard = () => {
+    if (isSoldOut) return;
     triggerHaptic('light');
     router.push({
       pathname: '/product/[id]',
@@ -142,11 +149,17 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
     });
   };
 
+  const showFromLabel =
+    !isDrinkOrStarter &&
+    ((product.variants && product.variants.length > 1) ||
+      product.categoryId === 'pizza' ||
+      product.categoryId === 'cheese_party');
+
   return (
     <View style={styles.cardOuter}>
       {/* Red Member Discount Badge — hiển thị % giảm + giá sau giảm */}
       {!!memberDiscountLabel(product) && (
-        <View style={styles.memberTagWrapper}>
+        <View style={[styles.memberTagWrapper, isSoldOut && { opacity: 0.55 }]}>
           <View style={styles.memberTag}>
             <Text style={styles.memberTagText}>{memberDiscountLabel(product)}</Text>
           </View>
@@ -155,33 +168,51 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
 
       {/* Main White Card */}
       <TouchableOpacity
-        activeOpacity={0.88}
+        activeOpacity={isSoldOut ? 1 : 0.88}
+        disabled={isSoldOut}
         onPress={handlePressCard}
-        style={styles.cardContainer}
+        style={[styles.cardContainer, isSoldOut && styles.cardContainerSoldOut]}
       >
         {/* Left Column: Image */}
-        <View style={styles.imageWrapper}>
+        <View style={[styles.imageWrapper, isDrinkOrStarter && { backgroundColor: '#FFFFFF' }]}>
           <Image
             source={{ uri: product.image }}
-            style={styles.productImage}
-            resizeMode="cover"
+            style={[
+              styles.productImage,
+              isDrinkOrStarter && { backgroundColor: '#FFFFFF' },
+              isSoldOut && { opacity: 0.85 },
+            ]}
+            resizeMode={isDrinkOrStarter ? 'contain' : 'cover'}
           />
+          {isSoldOut && (
+            <View style={styles.soldOutImageOverlay}>
+              <View style={styles.soldOutBadge}>
+                <Text style={styles.soldOutBadgeText}>HẾT MÓN</Text>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Right Column: Information */}
         <View style={styles.infoWrapper}>
-          <Text style={styles.productTitle} numberOfLines={2}>
+          <Text
+            style={[styles.productTitle, isSoldOut && styles.soldOutTitleText]}
+            numberOfLines={2}
+          >
             {product.name}
           </Text>
 
           {!!product.description && (
-            <Text style={styles.productDesc} numberOfLines={2}>
+            <Text
+              style={[styles.productDesc, isSoldOut && styles.soldOutSubText]}
+              numberOfLines={2}
+            >
               {product.description}
             </Text>
           )}
 
           {/* New / Spicy Badges */}
-          <View style={styles.badgesRow}>
+          <View style={[styles.badgesRow, isSoldOut && { opacity: 0.7 }]}>
             {product.isNew && (
               <View style={styles.newBadge}>
                 <Text style={styles.newBadgeText}>New</Text>
@@ -195,9 +226,13 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
           {/* Price & Action Row */}
           <View style={styles.priceRow}>
             <View style={styles.priceCol}>
-              <Text style={styles.priceLabel}>Chỉ từ</Text>
+              {showFromLabel && (
+                <Text style={[styles.priceLabel, isSoldOut && styles.soldOutSubText]}>
+                  Chỉ từ
+                </Text>
+              )}
               <View style={styles.priceNumbersRow}>
-                <Text style={styles.currentPrice}>
+                <Text style={[styles.currentPrice, isSoldOut && styles.soldOutSubText]}>
                   {formatCurrency(product.basePrice)}
                 </Text>
                 {!!product.originalPrice && product.originalPrice > product.basePrice && (
@@ -209,8 +244,9 @@ const PizzaHutProductCard = ({ product }: { product: Product }) => {
             </View>
 
             <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.plusButton}
+              activeOpacity={isSoldOut ? 1 : 0.8}
+              disabled={isSoldOut}
+              style={[styles.plusButton, isSoldOut && styles.plusButtonDisabled]}
               onPress={handleAdd}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
@@ -235,9 +271,11 @@ export default function MenuScreen() {
   const [isSearchActive, setIsSearchActive] = useState(false);
   const [showMemberModal, setShowMemberModal] = useState(false);
 
-  // Khi thêm món ưu đãi từ trang chi tiết và quay lại menu, hiển thị popup hỏi đăng nhập
+  // Khi thêm món ưu đãi từ trang chi tiết và quay lại menu, hiển thị popup hỏi đăng nhập (chỉ hỏi 1 lần trong 1 phiên)
   useEffect(() => {
     if (promptMemberDiscount === '1' && !hasPromptedMemberDiscount()) {
+      setPromptedMemberDiscount(true);
+      router.setParams({ promptMemberDiscount: undefined });
       const timer = setTimeout(() => {
         setShowMemberModal(true);
       }, 350);
@@ -261,15 +299,49 @@ export default function MenuScreen() {
   const mainScrollRef = useRef<any>(null);
   const tabsScrollRef = useRef<any>(null);
   const isManualScrolling = useRef(false);
+  const manualScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Store layout Y coordinates for each section
+  // Store layout Y coordinates & DOM refs for each section
   const sectionOffsets = useRef<{ [key: string]: number }>({});
-  // Store layout X coordinates for each tab
+  const sectionRefs = useRef<{ [key: string]: any }>({});
+  // Store layout X coordinates & DOM refs for each tab
   const tabOffsets = useRef<{ [key: string]: number }>({});
+  const tabRefs = useRef<{ [key: string]: any }>({});
+
+  const getSectionY = useCallback((catId: string): number => {
+    const scrollNode =
+      mainScrollRef.current?.getScrollableNode?.() ?? mainScrollRef.current;
+    const sectionNode = sectionRefs.current[catId];
+    if (
+      scrollNode &&
+      sectionNode &&
+      typeof scrollNode.getBoundingClientRect === 'function' &&
+      typeof sectionNode.getBoundingClientRect === 'function'
+    ) {
+      const scrollRect = scrollNode.getBoundingClientRect();
+      const sectionRect = sectionNode.getBoundingClientRect();
+      const computedY = (scrollNode.scrollTop || 0) + (sectionRect.top - scrollRect.top);
+      sectionOffsets.current[catId] = computedY;
+      return computedY;
+    }
+    if (sectionNode && typeof sectionNode.offsetTop === 'number') {
+      sectionOffsets.current[catId] = sectionNode.offsetTop;
+      return sectionNode.offsetTop;
+    }
+    return sectionOffsets.current[catId] ?? 0;
+  }, []);
+
+  const getTabX = useCallback((catId: string): number => {
+    const tabNode = tabRefs.current[catId];
+    if (tabNode && typeof tabNode.offsetLeft === 'number') {
+      tabOffsets.current[catId] = tabNode.offsetLeft;
+      return tabNode.offsetLeft;
+    }
+    return tabOffsets.current[catId] ?? 0;
+  }, []);
 
   // Load all products initially
   const loadMenu = useCallback(async () => {
-    setIsLoading(true);
     try {
       const data = await productService.list();
       setAllProducts(data);
@@ -278,31 +350,78 @@ export default function MenuScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadMenu();
-  }, [loadMenu]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadMenu();
+    }, [loadMenu])
+  );
 
-  // Nhóm đang được lọc từ home ('category' trên URL). null = xem toàn bộ menu.
-  const filterCategory = useMemo<CategoryId | null>(() => {
-    const catId = typeof categoryParam === 'string' && categoryParam !== 'all' ? categoryParam : null;
-    return catId && mockCategories.some((c) => c.id === catId) ? (catId as CategoryId) : null;
-  }, [categoryParam]);
-
-  // Khi bấm card category từ home: chỉ hiện nhóm đó, cuộn tab tương ứng lên đầu
   useEffect(() => {
-    if (!filterCategory) return;
-    setSelectedCategory(filterCategory);
+    const unsub = onSnapshot(
+      collection(db, 'products'),
+      (snap) => {
+        const list: (Product & { sortOrder?: number })[] = [];
+        snap.forEach((d) => {
+          if (d.id.startsWith('__')) return;
+          const data = d.data();
+          list.push({
+            id: d.id,
+            name: data.name || '',
+            categoryId: data.categoryId || data.category || 'pizza',
+            description: data.description || '',
+            image: data.image || data.imageUrl || '',
+            basePrice: Number(data.basePrice || data.price || 0),
+            originalPrice: data.originalPrice ? Number(data.originalPrice) : undefined,
+            isAvailable: data.isAvailable !== false,
+            isPopular: Boolean(data.isPopular),
+            isNew: Boolean(data.isNew),
+            isSpicy: Boolean(data.isSpicy),
+            discountPercent: data.discountPercent ? Number(data.discountPercent) : undefined,
+            memberDiscountTag: data.memberDiscountTag || undefined,
+            promoGroups: Array.isArray(data.promoGroups) ? data.promoGroups : undefined,
+            variants: Array.isArray(data.variants) ? data.variants : [],
+            addons: Array.isArray(data.addons) ? data.addons : [],
+            sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 999,
+          } as Product & { sortOrder?: number });
+        });
+        list.sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
+        setAllProducts(list);
+        setIsLoading(false);
+      },
+      () => {}
+    );
+    return () => unsub();
+  }, []);
+
+  // Nhóm được chọn từ Home ('category' trên URL) -> tự cuộn xuống đúng khu vực đó
+  useEffect(() => {
+    if (isLoading || allProducts.length === 0) return;
+    const catId =
+      typeof categoryParam === 'string' && categoryParam !== 'all'
+        ? categoryParam
+        : null;
+    if (!catId || !mockCategories.some((c) => c.id === catId)) return;
+
+    const targetCat = catId as CategoryId;
+    setSelectedCategory(targetCat);
     setIsSearchActive(false);
     setSearchQuery('');
-    mainScrollRef.current?.scrollTo({ y: 0, animated: false });
-    const targetTabX = tabOffsets.current[filterCategory] ?? 0;
-    setTimeout(() => {
+
+    const timer = setTimeout(() => {
+      const targetTabX = getTabX(targetCat);
       tabsScrollRef.current?.scrollTo({
         x: Math.max(0, targetTabX - 60),
+        animated: false,
+      });
+      const targetY = getSectionY(targetCat);
+      mainScrollRef.current?.scrollTo({
+        y: Math.max(0, targetY - 4),
         animated: true,
       });
-    }, 50);
-  }, [filterCategory]);
+    }, 80);
+
+    return () => clearTimeout(timer);
+  }, [categoryParam, isLoading, allProducts.length, getSectionY, getTabX]);
 
   // Nhóm promo = nhãn dán lên món, KHÔNG phải danh mục gốc:
   // món vẫn ở Pizza/Khai vị/Nước uống đồng thời hiện thêm trong Tiệc Cheese / Thành Viên / Deal Hot.
@@ -310,27 +429,58 @@ export default function MenuScreen() {
   const inPromoGroup = (p: Product, g: string) =>
     (p.promoGroups || []).includes(g) || p.categoryId === g; // categoryId === group: dữ liệu kiểu cũ
 
-  // Group products by category
+  const hasDiscountCard = (p: Product) =>
+    Boolean(memberDiscountLabel(p)) ||
+    Boolean(p.originalPrice && p.originalPrice > p.basePrice) ||
+    Boolean(p.promoGroups && p.promoGroups.length > 0);
+
+  // Group products by category (trong danh mục gốc như Pizza/Khai vị/Nước: ưu tiên xếp các card có giảm giá lên đầu trước)
   const productsByCategory = useMemo(() => {
     const map: Record<string, Product[]> = {};
     for (const cat of mockCategories) {
       map[cat.id] = ['cheese_party', 'member_deals', 'hot_deals'].includes(cat.id)
         ? allProducts.filter((p) => inPromoGroup(p, cat.id))
-        : allProducts.filter((p) => p.categoryId === cat.id);
+        : allProducts
+            .filter((p) => p.categoryId === cat.id)
+            .sort((a, b) => Number(hasDiscountCard(b)) - Number(hasDiscountCard(a)));
     }
     return map;
   }, [allProducts]);
 
-  // Filtered products for search mode
+  const normalizeSearchText = (str: string) =>
+    (str || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  // Filtered products for search mode (hỗ trợ tìm cả có dấu lẫn không dấu theo đúng tên món)
   const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLowerCase().trim();
-    return allProducts.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.description?.toLowerCase().includes(q) ||
-        p.ingredients?.some((ing) => ing.toLowerCase().includes(q))
-    );
+    if (!searchQuery.trim()) return allProducts;
+    const qRaw = searchQuery.toLowerCase().trim();
+    const qNorm = normalizeSearchText(searchQuery);
+    const tokens = qNorm.split(' ').filter(Boolean);
+
+    const matched = allProducts.filter((p) => {
+      const nameRaw = p.name.toLowerCase();
+      if (nameRaw.includes(qRaw)) return true;
+
+      const nameNorm = normalizeSearchText(p.name);
+      if (nameNorm.includes(qNorm)) return true;
+
+      return tokens.length > 0 && tokens.every((tok) => nameNorm.includes(tok));
+    });
+
+    // Ưu tiên món khớp nguyên từ (ví dụ gõ "mi" thì "Mì Ý..." lên trước "Mirinda...")
+    return matched.sort((a, b) => {
+      const aWords = normalizeSearchText(a.name).split(' ');
+      const bWords = normalizeSearchText(b.name).split(' ');
+      const aExact = tokens.every((tok) => aWords.includes(tok)) ? 1 : 0;
+      const bExact = tokens.every((tok) => bWords.includes(tok)) ? 1 : 0;
+      return bExact - aExact;
+    });
   }, [allProducts, searchQuery]);
 
   // Tab Icon Renderer
@@ -356,45 +506,51 @@ export default function MenuScreen() {
   // Scroll to section when tab is pressed
   const handleSelectCategory = (catId: CategoryId) => {
     triggerHaptic('light');
+    const wasSearchActive = isSearchActive;
     setIsSearchActive(false);
     setSearchQuery('');
     setSelectedCategory(catId);
 
-    const targetTabX = tabOffsets.current[catId] ?? 0;
+    if (manualScrollTimer.current) {
+      clearTimeout(manualScrollTimer.current);
+    }
+    isManualScrolling.current = true;
+
+    const targetTabX = getTabX(catId);
     tabsScrollRef.current?.scrollTo({
       x: Math.max(0, targetTabX - 60),
-      animated: true,
+      animated: false,
     });
 
-    // Chế độ chỉ xem 1 nhóm (bấm từ home): bấm tab sẽ đổi sang nhóm đó
-    if (filterCategory) {
-      mainScrollRef.current?.scrollTo({ y: 0, animated: false });
-      if (catId !== filterCategory) {
-        router.setParams({ category: String(catId) });
-      }
-      return;
+    const performScroll = () => {
+      const targetY = getSectionY(catId);
+      mainScrollRef.current?.scrollTo({
+        y: Math.max(0, targetY - 4),
+        animated: true,
+      });
+    };
+
+    if (wasSearchActive) {
+      setTimeout(performScroll, 60);
+    } else if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(performScroll);
+    } else {
+      performScroll();
     }
 
-    isManualScrolling.current = true;
-    const targetY = sectionOffsets.current[catId] ?? 0;
-    mainScrollRef.current?.scrollTo({
-      y: Math.max(0, targetY - 4),
-      animated: true,
-    });
-
-    setTimeout(() => {
+    manualScrollTimer.current = setTimeout(() => {
       isManualScrolling.current = false;
-    }, 700);
+    }, 1000);
   };
 
   // Handle user scrolling to update active tab
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (isManualScrolling.current || isSearchActive || filterCategory) return;
+    if (isManualScrolling.current || isSearchActive) return;
     const scrollY = event.nativeEvent.contentOffset.y;
 
     let activeCat = mockCategories[0].id;
     for (const cat of mockCategories) {
-      const offset = sectionOffsets.current[cat.id] ?? 0;
+      const offset = getSectionY(cat.id);
       if (scrollY >= offset - 80) {
         activeCat = cat.id;
       }
@@ -402,10 +558,10 @@ export default function MenuScreen() {
 
     if (activeCat !== selectedCategory) {
       setSelectedCategory(activeCat);
-      const targetTabX = tabOffsets.current[activeCat] ?? 0;
+      const targetTabX = getTabX(activeCat);
       tabsScrollRef.current?.scrollTo({
         x: Math.max(0, targetTabX - 60),
-        animated: true,
+        animated: false,
       });
     }
   };
@@ -478,6 +634,9 @@ export default function MenuScreen() {
             return (
               <TouchableOpacity
                 key={cat.id}
+                ref={(el) => {
+                  tabRefs.current[cat.id] = el;
+                }}
                 accessibilityLabel={cat.name}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: isActive }}
@@ -539,6 +698,7 @@ export default function MenuScreen() {
       ) : isSearchActive ? (
         /* SEARCH RESULTS VIEW */
         <ScrollView
+          style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
         >
@@ -556,18 +716,16 @@ export default function MenuScreen() {
           )}
         </ScrollView>
       ) : (
-        /* Danh sách: chỉ hiện 1 nhóm khi bấm từ home, ngược lại nối tiếp 6 nhóm */
+        /* Danh sách nối tiếp đầy đủ 6 nhóm thực đơn */
         <ScrollView
           ref={mainScrollRef}
+          style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
           onScroll={handleScroll}
           contentContainerStyle={styles.listContent}
         >
-          {(filterCategory
-            ? mockCategories.filter((cat) => cat.id === filterCategory)
-            : mockCategories
-          ).map((cat) => {
+          {mockCategories.map((cat) => {
             const items = productsByCategory[cat.id] || [];
             const banner = CATEGORY_BANNERS[cat.id] || CATEGORY_BANNERS.cheese_party;
             const categoryTitle = cat.name.toUpperCase();
@@ -575,6 +733,9 @@ export default function MenuScreen() {
             return (
               <View
                 key={cat.id}
+                ref={(el) => {
+                  sectionRefs.current[cat.id] = el;
+                }}
                 onLayout={(e) => {
                   sectionOffsets.current[cat.id] = e.nativeEvent.layout.y;
                 }}
@@ -654,4 +815,3 @@ export default function MenuScreen() {
     </SafeAreaView>
   );
 }
-

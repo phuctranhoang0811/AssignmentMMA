@@ -38,6 +38,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const translateY = useRef(new Animated.Value(-100)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const useNative = Platform.OS !== 'web';
 
   const hideToast = useCallback(() => {
     if (timerRef.current) {
@@ -48,17 +49,17 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       Animated.timing(translateY, {
         toValue: -100,
         duration: 220,
-        useNativeDriver: true,
+        useNativeDriver: useNative,
       }),
       Animated.timing(opacity, {
         toValue: 0,
         duration: 180,
-        useNativeDriver: true,
+        useNativeDriver: useNative,
       }),
     ]).start(() => {
       setToast(null);
     });
-  }, [opacity, translateY]);
+  }, [opacity, translateY, useNative]);
 
   const showToast = useCallback(
     ({
@@ -90,12 +91,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           toValue: 0,
           friction: 8,
           tension: 65,
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
         Animated.timing(opacity, {
           toValue: 1,
           duration: 200,
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
       ]).start();
 
@@ -103,7 +104,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         hideToast();
       }, duration);
     },
-    [hideToast, opacity, translateY]
+    [hideToast, opacity, translateY, useNative]
   );
 
   const getIcon = () => {

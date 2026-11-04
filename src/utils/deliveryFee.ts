@@ -14,6 +14,8 @@ export type DeliveryFeeConfig = {
   maxKm: number;
   /** Orders worth at least this much (after discount) ship free. 0 or absent = never. */
   freeOver?: number;
+  /** Minimum order subtotal required for delivery (shipper). 0 = no minimum. Pickup has no minimum. */
+  minDeliveryOrder?: number;
 };
 
 // Straight-line distance understates the ride; a flat factor is close enough for a price list.
@@ -49,6 +51,14 @@ export function parseDeliveryFeeConfig(data: unknown): DeliveryFeeConfig | undef
   const value = data as Record<string, unknown> | undefined;
   if (!value || !isNumber(value.storeLat) || !isNumber(value.storeLng) || !isNumber(value.baseKm) || !isNumber(value.baseFee) ||
     !isNumber(value.perKm) || !isNumber(value.maxKm)) return undefined;
-  return { storeLat: value.storeLat, storeLng: value.storeLng, baseKm: value.baseKm, baseFee: value.baseFee, perKm: value.perKm,
-    maxKm: value.maxKm, ...(isNumber(value.freeOver) && value.freeOver > 0 ? { freeOver: value.freeOver } : {}) };
+  return {
+    storeLat: value.storeLat,
+    storeLng: value.storeLng,
+    baseKm: value.baseKm,
+    baseFee: value.baseFee,
+    perKm: value.perKm,
+    maxKm: value.maxKm,
+    ...(isNumber(value.freeOver) && value.freeOver > 0 ? { freeOver: value.freeOver } : {}),
+    minDeliveryOrder: isNumber(value.minDeliveryOrder) && value.minDeliveryOrder >= 0 ? value.minDeliveryOrder : 50000,
+  };
 }

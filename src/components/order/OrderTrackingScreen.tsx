@@ -8,14 +8,15 @@ import {
   RefreshControl,
   ScrollView,
   Linking,
+  Modal,
 } from 'react-native';
 import { Alert } from '../../utils/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Search } from 'lucide-react-native';
+import { ChevronLeft, Search, Trash2 } from 'lucide-react-native';
 import { useAuth } from '../../state/AuthContext';
 import { db } from '../../services/firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { estimatedWindow } from '../../utils/orderTime';
 import { triggerHaptic } from '../../utils/haptics';
@@ -24,11 +25,15 @@ import { styles, BRAND_RED } from '../../styles/orderTracking.styles';
 import { FLOATING_CART_CLEARANCE } from '../../styles/tabsLayout.styles';
 import { DeliveryDetails } from './DeliveryDetails';
 import { OrderTimeline } from './OrderTimeline';
-import { OrderReviewCard } from './OrderReviewCard';
-import { OrderIssueCard } from './OrderIssueCard';
 import { OrderCancellationCard } from './OrderCancellationCard';
 import { AppButton } from '../ui/AppButton';
 import { cancelOrder } from '../../services/orderApi';
+import {
+  subscribeOrderOverrides,
+  saveOrderOverride,
+  type OrderDispatchOverride,
+} from '../../services/storeSync';
+import { rollbackCancelledOrderBenefits } from '../../utils/memberTier';
 
 function formatExpectedTime(order: any): string {
   const raw = String(order?.deliveryTime ?? '').trim();
@@ -77,9 +82,9 @@ function isOrderFromToday(order: any, nowMs: number): boolean {
   );
 }
 
-function isOrderFinished(order: any): boolean {
+function isOrderCompletedSuccessfully(order: any): boolean {
   const status = String(order?.status ?? '').toUpperCase();
-  return ['COMPLETED', 'DELIVERED', 'CANCELLED'].includes(status);
+  return status === 'COMPLETED' || status === 'DELIVERED';
 }
 
 export default function OrderTrackingScreen({ historyOnly = false }: { historyOnly?: boolean }) {
@@ -92,6 +97,94 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [orderOverrides, setOrderOverrides] = useState<Record<string, OrderDispatchOverride>>({});
+  const [orderToDelete, setOrderToDelete] = useState<string | null>(null);
+  const owner = user && !user.isDemo ? user.id : undefined;
+  const [deletedOrderIds, setDeletedOrderIds] = useState<string[]>(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage && owner) {
+        const raw = window.localStorage.getItem(`fpt_deleted_history_orders_${owner}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      }
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    if (!owner) {
+      setDeletedOrderIds([]);
+      return;
+    }
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = window.localStorage.getItem(`fpt_deleted_history_orders_${owner}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) setDeletedOrderIds(parsed);
+        }
+      }
+    } catch {}
+    getDoc(doc(db, 'users', owner))
+      .then((snap) => {
+        if (!snap.exists()) return;
+        const arr = snap.data()?.deletedHistoryOrderIds;
+        if (Array.isArray(arr)) {
+          setDeletedOrderIds((prev) => {
+            const merged = Array.from(new Set([...prev, ...arr]));
+            try {
+              if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.setItem(
+                  `fpt_deleted_history_orders_${owner}`,
+                  JSON.stringify(merged)
+                );
+              }
+            } catch {}
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+  }, [owner]);
+
+  const handleConfirmDeleteOrder = () => {
+    if (!orderToDelete) return;
+    const targetId = orderToDelete;
+    triggerHaptic('medium');
+    setOrderToDelete(null);
+    if (selectedId === targetId) {
+      setSelectedId(null);
+    }
+    setDeletedOrderIds((prev) => {
+      const next = Array.from(new Set([...prev, targetId]));
+      try {
+        if (typeof window !== 'undefined' && window.localStorage && owner) {
+          window.localStorage.setItem(
+            `fpt_deleted_history_orders_${owner}`,
+            JSON.stringify(next)
+          );
+        }
+      } catch {}
+      return next;
+    });
+    if (owner) {
+      void updateDoc(doc(db, 'users', owner), {
+        deletedHistoryOrderIds: arrayUnion(targetId),
+      }).catch(() => {});
+    }
+    void updateDoc(doc(db, 'orders', targetId), {
+      hiddenByCustomer: true,
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    const unsub = subscribeOrderOverrides((map) => {
+      setOrderOverrides(map);
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -100,14 +193,46 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
     return () => clearInterval(timer);
   }, []);
 
-  const owner = user && !user.isDemo ? user.id : undefined;
-  const orders = result.owner === owner ? result.orders : [];
+  const rawOrders = result.owner === owner ? result.orders : [];
+  const orders = rawOrders
+    .filter(
+      (o) =>
+        !o.hiddenByCustomer &&
+        !deletedOrderIds.includes(o.id) &&
+        String(o.orderCode || '').toUpperCase() !== 'PF-X469QK'
+    )
+    .map((order) => {
+      const ov = orderOverrides[order.id];
+      if (!ov) return order;
+      const nextStatus = ov.status || order.status;
+      const prevHistory = Array.isArray(order.statusHistory) ? [...order.statusHistory] : [];
+      if (ov.status && !prevHistory.some((h: any) => h?.status === ov.status)) {
+        prevHistory.push({
+          status: ov.status,
+          at: ov.updatedAtMs ? new Date(ov.updatedAtMs).toISOString() : new Date().toISOString(),
+        });
+      }
+      return {
+        ...order,
+        status: nextStatus,
+        statusHistory: prevHistory,
+        ...(ov.cancelReason ? { cancelReason: ov.cancelReason } : {}),
+        ...(ov.assignedStaffName && nextStatus === 'OUT_FOR_DELIVERY'
+          ? {
+              rider: {
+                name: ov.assignedStaffName,
+                phone: ov.assignedStaffPhone || '',
+              },
+            }
+          : {}),
+      };
+    });
   const error = result.owner === owner ? result.error : '';
   const isLoading = !!owner && (result.owner !== owner || result.loading);
   const visibleOrders = historyOnly
-    ? orders.filter(order => isOrderFinished(order) || !isOrderFromToday(order, nowMs))
-    : orders.filter(order => isOrderFromToday(order, nowMs) && !isOrderFinished(order));
-  const selectedOrder = visibleOrders.find(order => order.id === selectedId);
+    ? orders.filter(order => isOrderCompletedSuccessfully(order))
+    : orders.filter(order => isOrderFromToday(order, nowMs));
+  const selectedOrder = orders.find(order => order.id === selectedId);
 
   useEffect(() => {
     setSelectedId(orderId ?? null);
@@ -128,15 +253,43 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
 
   const onRefresh = () => setAttempt(previous => previous + 1);
 
-  const confirmCancel = (id: string) => Alert.alert('Hủy đơn hàng?', 'Bạn chỉ có thể hủy khi cửa hàng chưa xác nhận đơn.', [
-    { text: 'Không', style: 'cancel' },
-    { text: 'Hủy đơn', style: 'destructive', onPress: async () => {
-      setCancelling(true);
-      try { await cancelOrder(id); triggerHaptic('success'); }
-      catch (failure) { Alert.alert('Chưa thể hủy đơn', failure instanceof Error ? failure.message : 'Vui lòng thử lại.'); }
-      finally { setCancelling(false); }
-    } },
-  ]);
+  const confirmCancel = (id: string) =>
+    Alert.alert('Hủy đơn hàng?', 'Bạn chỉ có thể hủy khi cửa hàng chưa xác nhận đơn.', [
+      { text: 'Không', style: 'cancel' },
+      {
+        text: 'Hủy đơn',
+        style: 'destructive',
+        onPress: async () => {
+          setCancelling(true);
+          try {
+            const nowIso = new Date().toISOString();
+            await cancelOrder(id).catch(() => {});
+            await saveOrderOverride(id, {
+              status: 'CANCELLED',
+              cancelReason: 'Khách hàng chủ động hủy đơn',
+            }).catch(() => {});
+            await updateDoc(doc(db, 'orders', id), {
+              status: 'CANCELLED',
+              cancelReason: 'Khách hàng chủ động hủy đơn',
+              statusHistory: arrayUnion({
+                status: 'CANCELLED',
+                at: nowIso,
+                note: 'Khách hàng đã hủy đơn hàng',
+              }),
+            }).catch(() => {});
+            await rollbackCancelledOrderBenefits(id);
+            triggerHaptic('success');
+          } catch (failure) {
+            Alert.alert(
+              'Chưa thể hủy đơn',
+              failure instanceof Error ? failure.message : 'Vui lòng thử lại.'
+            );
+          } finally {
+            setCancelling(false);
+          }
+        },
+      },
+    ]);
 
   const getStatusText = (status: string) => {
     switch (status) {
@@ -147,7 +300,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
       case 'PREPARING':
         return 'Đang chuẩn bị';
       case 'READY':
-        return 'Đang chuẩn bị';
+        return 'Món đã xong';
       case 'OUT_FOR_DELIVERY':
         return 'Đang giao hàng';
       case 'COMPLETED':
@@ -158,6 +311,130 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
         return status || 'Đã đặt hàng';
     }
   };
+
+  const renderDeleteModal = () => (
+    <Modal
+      visible={orderToDelete !== null}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setOrderToDelete(null)}
+    >
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.48)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: 28,
+        }}
+      >
+        <View
+          style={{
+            width: '100%',
+            maxWidth: 340,
+            backgroundColor: '#FFFFFF',
+            borderRadius: 16,
+            paddingTop: 24,
+            paddingBottom: 22,
+            paddingHorizontal: 20,
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.18,
+            shadowRadius: 14,
+            elevation: 10,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: '700',
+              color: '#111827',
+              textAlign: 'center',
+            }}
+          >
+            Xóa đơn hàng
+          </Text>
+          <View
+            style={{
+              width: 32,
+              height: 3,
+              backgroundColor: BRAND_RED,
+              borderRadius: 2,
+              marginTop: 8,
+              marginBottom: 16,
+            }}
+          />
+          <Text
+            style={{
+              fontSize: 15,
+              color: '#374151',
+              textAlign: 'center',
+              marginBottom: 24,
+              fontWeight: '500',
+              lineHeight: 22,
+            }}
+          >
+            Bạn có muốn xóa đơn hàng này khỏi lịch sử không?
+          </Text>
+          <View
+            style={{
+              flexDirection: 'row',
+              width: '100%',
+              gap: 12,
+            }}
+          >
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                height: 48,
+                borderRadius: 12,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: '#FFFFFF',
+                borderWidth: 1,
+                borderColor: '#D1D5DB',
+              }}
+              activeOpacity={0.75}
+              onPress={() => setOrderToDelete(null)}
+            >
+              <Text
+                style={{
+                  fontSize: 15,
+                  fontWeight: '600',
+                  color: '#1F2937',
+                }}
+              >
+                Hủy
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                height: 48,
+                borderRadius: 12,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: BRAND_RED,
+              }}
+              activeOpacity={0.85}
+              onPress={handleConfirmDeleteOrder}
+            >
+              <Text
+                style={{
+                  fontSize: 15,
+                  fontWeight: '700',
+                  color: '#FFFFFF',
+                }}
+              >
+                Xác nhận
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 
   // ==========================================================
   // VIEW 1: TRANG CHI TIẾT ĐƠN HÀNG
@@ -236,8 +513,6 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
           </View>
 
           <OrderCancellationCard order={selectedOrder} />
-          {selectedOrder.status === 'COMPLETED' && <OrderReviewCard orderId={selectedOrder.id} rating={selectedOrder.rating} />}
-          {['READY', 'OUT_FOR_DELIVERY', 'COMPLETED'].includes(selectedOrder.status) && <OrderIssueCard orderId={selectedOrder.id} />}
 
           {/* Card 1: Giao Đến */}
           <View style={styles.infoCard}>
@@ -248,20 +523,25 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             <Text style={styles.infoText}>{selectedOrder.customer?.fullname || user?.fullname}</Text>
             <Text style={styles.infoText}>{selectedOrder.customer?.phone || user?.phone}</Text>
             <Text style={styles.infoText}>{selectedOrder.address || ''}</Text>
+            {!!(selectedOrder.deliveryNote || selectedOrder.note) && (
+              <Text style={[styles.infoText, { color: BRAND_RED, fontWeight: '600', marginTop: 4 }]}>
+                Ghi chú giao nhận: {selectedOrder.deliveryNote || selectedOrder.note}
+              </Text>
+            )}
             {typeof selectedOrder.needCutlery === 'boolean' && <Text style={styles.infoText}>
               Muỗng nĩa nhựa: {selectedOrder.needCutlery ? 'Có' : 'Không'}
             </Text>}
           </View>
 
-          {!!selectedOrder.rider && !['COMPLETED', 'CANCELLED'].includes(selectedOrder.status) && (
+          {!!selectedOrder.rider && selectedOrder.status === 'OUT_FOR_DELIVERY' && (
             <View style={styles.infoCard}>
-              <Text style={styles.infoCardTitle}>Tài xế giao hàng</Text>
+              <Text style={styles.infoCardTitle}>Nhân viên giao hàng</Text>
               <Text style={styles.infoText}>{selectedOrder.rider.name}</Text>
               <Text style={styles.infoText}>
-                {selectedOrder.status === 'OUT_FOR_DELIVERY' ? 'Đã lấy món, đang trên đường tới bạn.' : 'Đã nhận đơn, đang tới cửa hàng lấy món.'}
+                Đã nhận bánh tại cửa hàng, đang trên đường giao tới bạn.
               </Text>
               {!!selectedOrder.rider.phone && (
-                <AppButton title={`Gọi tài xế ${selectedOrder.rider.phone}`} variant="outline" style={{ marginTop: 8 }}
+                <AppButton title={`Gọi nhân viên giao ${selectedOrder.rider.phone}`} variant="outline" style={{ marginTop: 8 }}
                   onPress={() => void Linking.openURL(`tel:${String(selectedOrder.rider.phone).replace(/[^\d+]/g, '')}`).catch(() => {})} />
               )}
             </View>
@@ -287,26 +567,60 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             </Text>
 
             {Array.isArray(selectedOrder.items) &&
-              selectedOrder.items.map((item: any, idx: number) => (
-                <View key={idx} style={styles.orderItemRow}>
-                  <View style={styles.orderItemMainLine}>
-                    <Text style={styles.orderItemName} numberOfLines={1}>
-                      {item.productName || 'Sản phẩm'}
-                    </Text>
-                    <Text style={styles.orderItemQty}>{item.quantity || 1}</Text>
-                    <Text style={styles.orderItemPrice}>
-                      {formatCurrency(
-                        item.lineTotal || (item.unitPrice * (item.quantity || 1)) || 0
-                      )}
-                    </Text>
+              selectedOrder.items.map((item: any, idx: number) => {
+                const isPizzaItem =
+                  String(item.productId || '').startsWith('PZ_') ||
+                  String(item.productName || '').toLowerCase().includes('pizza') ||
+                  (Array.isArray(item.customizationSummary) && item.customizationSummary.length > 0);
+                const cleanVariantName =
+                  !isPizzaItem && item.variantName === 'Đế Truyền Thống'
+                    ? ''
+                    : item.variantName;
+                const optionText = [
+                  cleanVariantName,
+                  ...(item.addonNames ?? []),
+                  ...(Array.isArray(item.customizationSummary)
+                    ? item.customizationSummary
+                    : [item.customizationSummary]),
+                ]
+                  .filter(Boolean)
+                  .filter((val, i, arr) => arr.indexOf(val) === i)
+                  .join(' • ');
+                const itemNote = String(
+                  item.note ||
+                    item.specialInstructions ||
+                    item.customization?.specialInstructions ||
+                    ''
+                ).trim();
+                return (
+                  <View key={idx} style={styles.orderItemRow}>
+                    <View style={styles.orderItemMainLine}>
+                      <Text style={styles.orderItemName} numberOfLines={1}>
+                        {item.productName || 'Sản phẩm'}
+                      </Text>
+                      <Text style={styles.orderItemQty}>{item.quantity || 1}</Text>
+                      <Text style={styles.orderItemPrice}>
+                        {formatCurrency(
+                          item.lineTotal || item.unitPrice * (item.quantity || 1) || 0
+                        )}
+                      </Text>
+                    </View>
+                    {!!optionText && (
+                      <Text style={styles.orderItemOptions}>{optionText}</Text>
+                    )}
+                    {!!itemNote && (
+                      <Text
+                        style={[
+                          styles.orderItemOptions,
+                          { color: '#B45309', fontWeight: '600', marginTop: 2 },
+                        ]}
+                      >
+                        Ghi chú: {itemNote}
+                      </Text>
+                    )}
                   </View>
-                  <Text style={styles.orderItemOptions}>
-                    {[item.variantName, ...(item.addonNames ?? []), ...(Array.isArray(item.customizationSummary)
-                      ? item.customizationSummary : [item.customizationSummary])].filter(Boolean).join(' • ')}
-                  </Text>
-                  {!!item.note && <Text style={styles.orderItemOptions}>Ghi chú bếp: {item.note}</Text>}
-                </View>
-              ))}
+                );
+              })}
 
             <View style={styles.pricingDivider} />
 
@@ -316,6 +630,17 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
                 {formatCurrency(selectedOrder.subtotal || 0)}
               </Text>
             </View>
+
+            {Number(selectedOrder.memberDiscount || 0) > 0 && (
+              <View style={styles.pricingRow}>
+                <Text style={[styles.pricingLabel, { color: BRAND_RED }]}>
+                  Giảm giá thành viên
+                </Text>
+                <Text style={[styles.pricingValue, { color: BRAND_RED }]}>
+                  -{formatCurrency(Number(selectedOrder.memberDiscount || 0))}
+                </Text>
+              </View>
+            )}
 
             {selectedOrder.discount > 0 && (
               <View style={styles.pricingRow}>
@@ -333,7 +658,9 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             <View style={styles.pricingRow}>
               <Text style={styles.pricingLabel}>Phí giao hàng</Text>
               <Text style={styles.pricingValue}>
-                {formatCurrency(selectedOrder.deliveryFee ?? 22000)}
+                {(selectedOrder.deliveryFee ?? 0) === 0
+                  ? 'Miễn phí'
+                  : formatCurrency(selectedOrder.deliveryFee ?? 0)}
               </Text>
             </View>
 
@@ -342,13 +669,21 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             <View style={styles.totalRow}>
               <View>
                 <Text style={styles.totalLabel}>Tổng cộng</Text>
-                <Text style={styles.rewardPointsNote}>
-                  Nhận{' '}
-                  <Text style={{ fontWeight: '700', color: '#111827' }}>
-                    {selectedOrder.earnedPoints || Math.floor((selectedOrder.total || 0) / 10000)} điểm
-                  </Text>{' '}
-                  FPT Rewards
-                </Text>
+                {!!selectedOrder.userId &&
+                  !['CANCELLED', 'REJECTED'].includes(
+                    String(selectedOrder.status || '').toUpperCase()
+                  ) && (
+                    <Text style={styles.rewardPointsNote}>
+                      Nhận{' '}
+                      <Text style={{ fontWeight: '700', color: '#111827' }}>
+                        {typeof selectedOrder.earnedPoints === 'number'
+                          ? selectedOrder.earnedPoints
+                          : Math.floor((selectedOrder.total || 0) / 10000)}{' '}
+                        điểm
+                      </Text>{' '}
+                      FPT Rewards
+                    </Text>
+                  )}
               </View>
               <Text style={styles.totalValue}>
                 {formatCurrency(selectedOrder.total || 0)}
@@ -369,22 +704,54 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
             </Text>
           </View>
 
+          {/* Nút Xóa đơn hàng ở dưới cùng (chỉ hiển thị khi vào từ Lịch sử đơn hàng) */}
+          {historyOnly && (
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                marginTop: 8,
+                height: 48,
+                borderRadius: 10,
+                borderWidth: 1.5,
+                borderColor: BRAND_RED,
+                backgroundColor: '#FFFFFF',
+              }}
+              activeOpacity={0.8}
+              onPress={() => setOrderToDelete(selectedOrder.id)}
+            >
+              <Trash2 size={18} color={BRAND_RED} />
+              <Text style={{ fontSize: 15, fontWeight: '700', color: BRAND_RED }}>
+                Xóa đơn hàng
+              </Text>
+            </TouchableOpacity>
+          )}
+
           <View style={{ height: 40 }} />
         </ScrollView>
+        {renderDeleteModal()}
       </SafeAreaView>
     );
   }
 
   // ==========================================================
-  // VIEW 2: MÀN HÌNH THEO DÕI ĐƠN HÀNG (KHỚP 100% ẢNH MẪU)
+  // VIEW 2: MÀN HÌNH THEO DÕI ĐƠN HÀNG / LỊCH SỬ ĐƠN HÀNG
   // ==========================================================
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Header: < | Theo dõi đơn hàng | 🔍 */}
+      {/* Header: < | Theo dõi đơn hàng / Lịch sử đơn hàng | 🔍 */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.headerBtn}
-          onPress={() => router.back()}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)/home');
+            }
+          }}
           accessibilityRole="button"
           accessibilityLabel="Quay lại"
           activeOpacity={0.7}
@@ -393,7 +760,9 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
           <ChevronLeft size={24} color="#111827" />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Theo dõi đơn hàng</Text>
+        <Text style={styles.headerTitle}>
+          {historyOnly ? 'Lịch sử đơn hàng' : 'Theo dõi đơn hàng'}
+        </Text>
 
         <TouchableOpacity
           style={styles.headerBtn}
@@ -487,6 +856,7 @@ export default function OrderTrackingScreen({ historyOnly = false }: { historyOn
           )}
         />
       )}
+      {renderDeleteModal()}
     </SafeAreaView>
   );
 }

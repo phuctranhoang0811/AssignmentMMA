@@ -58,6 +58,7 @@ export default function AdminStoreScreen() {
   const [perKm, setPerKm] = useState('5000');
   const [maxKm, setMaxKm] = useState('10');
   const [freeOver, setFreeOver] = useState('300000');
+  const [minDeliveryOrder, setMinDeliveryOrder] = useState('50000');
   const [savingShipping, setSavingShipping] = useState(false);
 
   // Modal Thêm / Sửa cửa hàng
@@ -87,6 +88,11 @@ export default function AdminStoreScreen() {
           typeof state.delivery.freeOver === 'number' && state.delivery.freeOver > 0
             ? String(state.delivery.freeOver)
             : ''
+        );
+        setMinDeliveryOrder(
+          typeof state.delivery.minDeliveryOrder === 'number' && state.delivery.minDeliveryOrder >= 0
+            ? String(state.delivery.minDeliveryOrder)
+            : '50000'
         );
       }
       setLoading(false);
@@ -126,6 +132,8 @@ export default function AdminStoreScreen() {
     const parsedPerKm = parseNum(perKm);
     const parsedMaxKm = parseNum(maxKm);
     const parsedFreeOver = freeOver.trim() === '' ? 0 : parseNum(freeOver);
+    const parsedMinDeliveryOrder =
+      minDeliveryOrder.trim() === '' ? 0 : parseNum(minDeliveryOrder);
 
     if (
       shippingEnabled &&
@@ -139,7 +147,9 @@ export default function AdminStoreScreen() {
         parsedMaxKm <= 0 ||
         parsedMaxKm < parsedBaseKm ||
         !Number.isFinite(parsedFreeOver) ||
-        parsedFreeOver < 0)
+        parsedFreeOver < 0 ||
+        !Number.isFinite(parsedMinDeliveryOrder) ||
+        parsedMinDeliveryOrder < 0)
     ) {
       Alert.alert(
         'Thông số chưa hợp lệ',
@@ -164,6 +174,7 @@ export default function AdminStoreScreen() {
               perKm: parsedPerKm,
               maxKm: parsedMaxKm,
               ...(parsedFreeOver > 0 ? { freeOver: parsedFreeOver } : { freeOver: 0 }),
+              minDeliveryOrder: parsedMinDeliveryOrder,
             }
           : null,
         shippingEnabled
@@ -270,7 +281,7 @@ export default function AdminStoreScreen() {
       const resolvedCoords =
         coords ||
         (await Promise.race([
-          geocodeAddress(trimmedAddress),
+          geocodeAddress(`${trimmedName}, ${trimmedAddress}`),
           new Promise<{ lat: number; lng: number }>((resolve) =>
             setTimeout(() => resolve({ lat: 10.8291, lng: 106.7183 }), 2000)
           ),
@@ -415,8 +426,8 @@ export default function AdminStoreScreen() {
               setActiveScreen('shipping');
             }}
           >
-            <View style={[styles.hubIconWrap, { backgroundColor: colors.successSoft }]}>
-              <Truck size={24} color={colors.success} />
+            <View style={[styles.hubIconWrap, { backgroundColor: colors.primarySoft }]}>
+              <Truck size={24} color={colors.primary} />
             </View>
 
             <View style={{ flex: 1, paddingHorizontal: 14 }}>
@@ -437,7 +448,7 @@ export default function AdminStoreScreen() {
                   : 'Đang tắt thu phí giao hàng theo km'}
               </AppText>
               <View style={styles.hubBadgeRow}>
-                <AppText variant="small" color={colors.success}>
+                <AppText variant="small" color={colors.primary}>
                   Cấu hình số km miễn phí & đơn giá mỗi km
                 </AppText>
               </View>
@@ -551,6 +562,19 @@ export default function AdminStoreScreen() {
 
                 <View style={{ gap: 5 }}>
                   <AppText variant="captionMedium" color={colors.textPrimary}>
+                    Đơn tối thiểu giao hàng / Shipper (đ, Nhận tại cửa hàng không giới hạn)
+                  </AppText>
+                  <TextInput
+                    value={minDeliveryOrder}
+                    onChangeText={setMinDeliveryOrder}
+                    placeholder="50000"
+                    keyboardType="numeric"
+                    style={styles.input}
+                  />
+                </View>
+
+                <View style={{ gap: 5 }}>
+                  <AppText variant="captionMedium" color={colors.textPrimary}>
                     Miễn phí ship cho đơn từ (đ, để trống nếu không áp dụng)
                   </AppText>
                   <TextInput
@@ -564,8 +588,15 @@ export default function AdminStoreScreen() {
 
                 <View style={styles.previewBox}>
                   <AppText variant="small" color={colors.textSecondary}>
-                    • Từ 0 – {baseKm || '3'} km:{' '}
-                    <AppText variant="captionSemiBold" color={colors.success}>
+                    • Đơn tối thiểu giao tận nơi (Shipper):{' '}
+                    <AppText variant="captionSemiBold" color={colors.primary}>
+                      {Number(minDeliveryOrder) > 0
+                        ? `${Number(minDeliveryOrder).toLocaleString('vi-VN')}đ`
+                        : 'Không giới hạn'}
+                    </AppText>{' '}
+                    (Nhận tại cửa hàng: Không giới hạn)
+                    {'\n'}• Từ 0 – {baseKm || '3'} km:{' '}
+                    <AppText variant="captionSemiBold" color={colors.primary}>
                       {Number(baseFee) === 0
                         ? 'Miễn phí (0đ)'
                         : `${Number(baseFee || 0).toLocaleString('vi-VN')}đ`}
@@ -673,7 +704,7 @@ export default function AdminStoreScreen() {
                     </AppText>
                     <AppText
                       variant="small"
-                      color={branch.isActive ? colors.success : colors.textSecondary}
+                      color={branch.isActive ? colors.primary : colors.textSecondary}
                     >
                       {branch.isActive ? '● Đang hiển thị bên User' : '○ Đang ẩn'}
                     </AppText>
@@ -766,7 +797,10 @@ export default function AdminStoreScreen() {
               </AppText>
               <TextInput
                 value={nameInput}
-                onChangeText={setNameInput}
+                onChangeText={(txt) => {
+                  setNameInput(txt);
+                  setCoords(null);
+                }}
                 placeholder="VD: Pizza FPT Cầu Giấy (Signature)"
                 placeholderTextColor="#9CA3AF"
                 style={styles.input}
@@ -805,6 +839,7 @@ export default function AdminStoreScreen() {
                   onChangeText={(txt) => {
                     setSuppressSearch(false);
                     setAddressInput(txt);
+                    setCoords(null);
                   }}
                   placeholder="Nhập địa chỉ cửa hàng..."
                   placeholderTextColor="#9CA3AF"
