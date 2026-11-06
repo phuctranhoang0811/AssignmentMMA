@@ -430,7 +430,8 @@ export default function AdminUsersScreen() {
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      const msg = 'Email không đúng định dạng (Ví dụ đúng: quanly@pizzaht.vn).';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      const msg = 'Email không đúng định dạng (Ví dụ đúng: quanly@pizzafpt.com).';
       setCreateError(msg);
       showToast({ message: msg, type: 'error' });
       Alert.alert('Email không hợp lệ', msg);
@@ -441,6 +442,8 @@ export default function AdminUsersScreen() {
       setCreateError(msg);
       showToast({ message: msg, type: 'error' });
       Alert.alert('Số điện thoại không hợp lệ', msg);
+      return;
+    }
       return;
     }
     if (cPassword.trim().length < 6) {

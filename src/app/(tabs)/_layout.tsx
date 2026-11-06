@@ -53,6 +53,7 @@ export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const cartScaleAnim = useRef(new Animated.Value(itemCount > 0 ? 1 : 0)).current;
 
+
   const isAndroid = Platform.OS === 'android';
   const bottomInset = insets.bottom;
   const tabBottomPadding = Math.max(bottomInset, isAndroid ? 12 : 8);

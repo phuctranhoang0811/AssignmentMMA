@@ -162,8 +162,12 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+  },
+  shell: {
+    flex: 1,
     backgroundColor: colors.background,
   },
   tabBar: {

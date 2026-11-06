@@ -397,6 +397,7 @@ export default function AdminDashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      {/* Không có nút back: admin không quay lại giao diện khách hàng được nữa */}
       <ScreenHeader
         title="Tổng quan"
         subtitle={selectedStore ? selectedStore.name : 'Tất cả cơ sở Pizza FPT'}

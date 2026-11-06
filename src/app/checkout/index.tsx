@@ -68,6 +68,7 @@ import { EmptyTicketIcon } from '../../components/ui/EmptyTicketIcon';
 import { StoreClosedBanner } from '../../components/store/StoreClosedBanner';
 import { useStoreStatus } from '../../services/storeSettings';
 import { contactError, normalizePhone, type ContactField } from '../../utils/contact';
+import { isAdminRole } from '../../utils/staff';
 
 // Payment Methods
 const PAYMENT_METHODS = [
@@ -83,6 +84,11 @@ export default function CheckoutScreen() {
   const { items, isLoaded: cartLoaded, clearCart, promoCode, setPromoCode, fulfillmentType, setFulfillmentType, needCutlery } = useCart();
   const { user } = useAuth();
   const store = useStoreStatus();
+
+  // Admin/Manager chỉ quản lý, không đặt hàng: chặn đường vào checkout (deep link/URL) và đưa về trang quản trị.
+  useEffect(() => {
+    if (isAdminRole(user?.role)) router.replace('/admin/dashboard');
+  }, [user?.role, router]);
 
   // Address & Notes
   const [address, setAddress] = useState('');
